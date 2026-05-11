@@ -6,6 +6,38 @@
 
 ### Added
 
+- 2026-05-11 — **IssuePilot P0 Phase 6（Orchestrator）完成。** `@issuepilot/orchestrator` 实现完整编排引擎，包含 8 个子模块、11 spec / 57 cases 全绿：
+  - `feat(orchestrator): runtime state and concurrency slots` — 内存 RunEntry 管理 + 按状态查询/汇总、N 槽位并发控制。10 个测试。
+  - `feat(orchestrator): claim candidates with optimistic labels` — 从 GitLab 拉候选 Issue、乐观 label 转换、冲突跳过、slot 感知。4 个测试。
+  - `feat(orchestrator): classify errors and schedule retries` — 按 spec §13 把任意异常三分为 blocked/failed/retryable，retry 策略判断。14 个测试。
+  - `feat(orchestrator): deterministic post-run reconciliation` — push / 创建或更新 MR / workpad note / label 转换 handoff，7 种缺失组合覆盖。7 个测试。
+  - `feat(orchestrator): dispatch run through workspace and runner` — 串联 mirror → worktree → hooks → prompt → agent → reconcile 全流程，错误分类 + 重试决策。6 个测试。
+  - `feat(orchestrator): main loop with reload and reconcile-on-start` — setInterval 驱动 tick、重启兜底 reconcile、inflight drain。5 个测试。
+  - `feat(orchestrator): fastify HTTP API and SSE stream` — `/api/state`、`/api/runs`、`/api/runs/:runId`、`/api/events/stream` SSE 端点。5 个测试。
+  - `feat(orchestrator): cli entry with run/validate/doctor` — commander CLI，run/validate/doctor 三命令冒烟验证。5 个测试。
+
+- 2026-05-11 — **IssuePilot P0 Phase 6.x（Observability）完成。** `@issuepilot/observability` 实现 secret 脱敏、内存事件总线、JSONL 事件存储、原子 run 记录存储、pino 日志工厂。验证：27/27 全绿；observability 包内 6 spec / 25 cases 全绿。包含 5 个子模块：
+  - `feat(observability): redact secrets in events and logs` — 基于 token 模式（glpat-/glrt-/Bearer/sk-）和字段名黑名单（password/secret/api_key/token 等）的递归脱敏。7 个测试。
+  - `feat(observability): in-memory event bus` — 泛型 pub/sub，支持过滤函数和 unsubscribe，订阅者错误隔离。5 个测试。
+  - `feat(observability): append-only event store` — JSONL 按 `<projectSlug>-<issueIid>.jsonl` 切文件，支持 limit/offset 分页。4 个测试。
+  - `feat(observability): atomic run record store` — JSON 按 `<projectSlug>-<issueIid>.json` 存储，写入先到 .tmp 再 rename 保证原子性。5 个测试。
+  - `feat(observability): pino logger with run context` — pino factory 支持 stdout + 可选文件双输出，child logger 注入 runId/issueIid。2 个测试。
+
+- 2026-05-11 — **IssuePilot P0 Phase 5（M5 Codex App-Server Runner）完成。** `@issuepilot/runner-codex-app-server` 实现 spec §10 的 JSON-RPC stdio client、线程/回合生命周期编排、事件标准化和 spec §11 的 9 个 GitLab dynamic tools。验证：`pnpm -w turbo run build test typecheck --force` 27/27 全绿；runner 包内 5 spec / 24 cases 全绿。包含 5 个 Task：
+  - **Task 5.1（commit 07ab23a）** `feat(runner): newline-delimited JSON-RPC stdio client` — `spawnRpc` 封装 `execa` 实现双向 NDJSON-RPC，支持 request/response（带 pending map）、通知、malformed 行处理、进程退出清理。6 个测试。
+  - **Task 5.2（commit 6568a69）** `feat(runner): drive thread/turn lifecycle with timeouts` — `driveLifecycle` 编排 initialize → thread/start → turn/start 循环，处理 completed/failed/cancelled/timeout 四种回合结局，支持 maxTurns 限制。3 个测试。
+  - **Task 5.3（commit 46a455f）** `feat(runner): normalize app-server notifications into events` — 把 turn/notification、tool/*、approval/request、turn/input_required 映射成标准 IssuePilotEvent；policy=never 自动 approve；input 请求自动回复 non-interactive 消息。8 个测试。
+  - **Task 5.4（commit 2e8ac42）** `feat(runner): expose allowlisted GitLab dynamic tools` — `createGitLabTools` 生成 9 个 ToolDefinition，每个 handler 用 `safe()` 包装，成功返回 `{ok:true,data}`，失败返回 `{ok:false,error}`。5 个测试。
+  - **Task 5.5（commit d36884d）** `feat(runner): expose codex runner facade` — 汇总导出所有 runner 功能到 index.ts。
+
+- 2026-05-11 — **IssuePilot P0 Phase 4（M4 Workspace Manager）完成。** `@issuepilot/workspace` 实现 spec §9 的 bare mirror + git worktree 模型和 hooks 执行。验证：`pnpm -w turbo run build test typecheck --force` 27/27 全绿；workspace 包内 6 spec / 37 cases 全绿，覆盖路径安全、mirror 克隆/fetch、worktree 创建/复用/脏检测、hook 执行/超时/跳过、失败标记保留。包含 6 个 Task：
+  - **Task 4.1（commit 2585c4e）** `feat(workspace): path safety and branch sanitizer` — `slugify` 仅保留 `[a-z0-9-]`，collapses 连字符，空返 `untitled`，支持 maxLen；`assertWithinRoot` 用 `fs.realpath` canonicalize 后校验子路径在根路径下，防 symlink escape 和 `..` traversal；`branchName` 生成 `prefix/iid-titleSlug`，校验 ≤200 字符且不含 `..`/`:`/`~`/`^`/`\\`。新增 15 个测试。
+  - **Task 4.2（commit 0f3c7bb）** `feat(workspace): ensure bare mirror via execa` — `ensureMirror` 首次调用 `git clone --mirror`，后续调用 `git fetch --prune origin`，支持 `~` 路径展开。新增 4 个测试覆盖 first clone、fetch reuse、新 commit pickup、无效 URL 报错。
+  - **Task 4.3（commit 963302e）** `feat(workspace): worktree create-or-reuse with safety checks` — `ensureWorktree` 路径确定 `<root>/<slug>/<iid>`，先 `assertWithinRoot`；不存在时 `git worktree add -B <branch> <baseBranch>`；存在时校验 is-worktree、branch 一致、工作区干净，脏工作区抛 `WorkspaceDirtyError`。新增 4 个测试。
+  - **Task 4.4（commit db48996）** `feat(workspace): execute hooks with timeout and size cap` — `runHook` 用 `bash -lc` 在 workspace cwd 执行自定义脚本，支持 env 注入、可配 timeout（默认 600s）、stdout/stderr 1MB 截断；空/undefined script 跳过返回 `skipped: true`；非零退出或超时抛 `HookFailedError`。新增 7 个测试。
+  - **Task 4.5（commit 3a92e41）** `feat(workspace): mark workspace failure for forensics` — `cleanupOnFailure` 不删除文件，仅在 `.issuepilot/failed-at-<iso>` 写入失败 context JSON；`pruneWorktree` 为 P1 占位。新增 4 个测试。
+  - **Task 4.6（commit def715b）** `feat(workspace): expose workspace manager facade` — 汇总导出 slugify/assertWithinRoot/branchName/ensureMirror/ensureWorktree/runHook/cleanupOnFailure/pruneWorktree 及三个 Error class，index.test.ts 增加 facade 契约测试。
+
 - 2026-05-11 — **IssuePilot P0 Phase 3（M3 GitLab Adapter）完成。** `@issuepilot/tracker-gitlab` 用 `@gitbeaker/rest@^43.8` 实现 spec §11 的 9 个适配器方法 + 三分类错误（auth/permission/not_found/validation/rate_limit/transient/unknown），retriable 默认与 spec §13 对齐。验证（无缓存）：`pnpm -w turbo run build test typecheck lint --force` 36/36 全绿；tracker-gitlab 包内 9 spec / 57 cases 全绿，覆盖 client 错误分类、issue 列表/详情、label 乐观锁、note workpad、MR 幂等 CRUD、pipeline 状态映射。包含 6 个 Task：
   - **Task 3.1（commit 6b21b3c）** `feat(tracker-gitlab): client factory with classified errors` — `createGitLabClient` 接受 baseUrl / tokenEnv / projectId，通过 `resolveGitLabToken` 校验 env name 合法（`^[A-Za-z_][A-Za-z0-9_]*$`）+ trim 后非空，token 用 `Object.defineProperty({ enumerable: false })` + 自定义 `toJSON` 双重隐藏；`request(label, fn)` 统一把抛错 normalize 成 `GitLabError`：401→auth / 403→permission / 404→not_found / 400-409-422→validation / 429→rate_limit / 5xx→transient / 其它→unknown。新增 13 个测试。
   - **Task 3.2（commit d61c2c1）** `feat(tracker-gitlab): list candidate issues with exclude filter` — `listCandidateIssues(client, opts)` 用 `Issues.all({ state: "opened", labels: activeLabels.join(","), orderBy: "updated_at", sort: "asc", perPage: opts.perPage ?? 50 })`，本地用 `Set(excludeLabels)` 过滤；`toIssueRef` 把 REST 的数字 id 映射成 `gid://gitlab/Issue/<n>` 并 `Object.freeze` labels 数组。同时拆出 `src/api-shape.ts` 给 `@gitbeaker/rest` 的最小接口定义（Issues/IssueNotes/MergeRequests/MergeRequestNotes/Pipelines + 配套 Raw* 行 schema），让 stub 注入和真实 ctor 共享类型。新增 7 个测试。

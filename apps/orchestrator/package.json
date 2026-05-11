@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "issuepilot": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -19,10 +22,22 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src --max-warnings 0",
-    "dev": "echo \"dev: placeholder until Phase 6 wires Fastify daemon\""
+    "dev": "pnpm build && node dist/bin.js"
   },
   "devDependencies": {
+    "@types/node": "^25.6.2",
     "typescript": "^5.5.4",
     "vitest": "^2.1.4"
+  },
+  "dependencies": {
+    "@issuepilot/observability": "workspace:*",
+    "@issuepilot/runner-codex-app-server": "workspace:*",
+    "@issuepilot/shared-contracts": "workspace:*",
+    "@issuepilot/tracker-gitlab": "workspace:*",
+    "@issuepilot/workflow": "workspace:*",
+    "@issuepilot/workspace": "workspace:*",
+    "commander": "^14.0.3",
+    "execa": "^9.6.1",
+    "fastify": "^5.8.5"
   }
 }

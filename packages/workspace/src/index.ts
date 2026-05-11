@@ -1,2 +1,12 @@
+export { slugify, assertWithinRoot, branchName, WorkspacePathError } from "./paths.js";
+export { ensureMirror } from "./mirror.js";
+export type { EnsureMirrorInput, EnsureMirrorResult } from "./mirror.js";
+export { ensureWorktree, WorkspaceDirtyError } from "./worktree.js";
+export type { EnsureWorktreeInput, EnsureWorktreeResult } from "./worktree.js";
+export { runHook, HookFailedError } from "./hooks.js";
+export type { RunHookInput, RunHookResult } from "./hooks.js";
+export { cleanupOnFailure, pruneWorktree } from "./cleanup.js";
+export type { CleanupOnFailureInput, PruneWorktreeInput } from "./cleanup.js";
+
 export const PACKAGE_NAME = "@issuepilot/workspace";
 export const VERSION = "0.0.0";
