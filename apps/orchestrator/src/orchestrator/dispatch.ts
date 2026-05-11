@@ -7,6 +7,7 @@ import { shouldRetry } from "./retry.js";
 export interface DispatchDeps {
   state: RuntimeState;
   maxAttempts: number;
+  retryBackoffMs: number;
 
   ensureMirror(opts: {
     remoteUrl: string;
@@ -88,6 +89,10 @@ function now(): string {
   return new Date().toISOString();
 }
 
+function addMs(date: Date, ms: number): string {
+  return new Date(date.getTime() + ms).toISOString();
+}
+
 export async function dispatch(
   input: DispatchInput,
   deps: DispatchDeps,
@@ -95,8 +100,10 @@ export async function dispatch(
   const { runId } = input;
 
   try {
+    const currentRun = deps.state.getRun(runId)!;
+    const { nextRetryAt: _nextRetryAt, ...runWithoutRetrySchedule } = currentRun;
     deps.state.setRun(runId, {
-      ...deps.state.getRun(runId)!,
+      ...runWithoutRetrySchedule,
       status: "running",
       updatedAt: now(),
     });
@@ -202,17 +209,19 @@ export async function dispatch(
     });
 
     if (decision.retry) {
+      const nextRetryAt = addMs(new Date(), deps.retryBackoffMs);
       deps.state.setRun(runId, {
         ...deps.state.getRun(runId)!,
         status: "retrying",
         attempt: attempt + 1,
+        nextRetryAt,
         updatedAt: now(),
       });
       deps.onEvent({
         type: "retry_scheduled",
         runId,
         ts: now(),
-        detail: { attempt: attempt + 1, reason: classification.reason },
+        detail: { attempt: attempt + 1, nextRetryAt, reason: classification.reason },
       });
     } else {
       const finalStatus = decision.finalStatus ?? "failed";

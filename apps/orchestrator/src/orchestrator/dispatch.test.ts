@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { dispatch } from "./dispatch.js";
 import { createRuntimeState } from "../runtime/state.js";
 import type { DispatchDeps, DispatchInput } from "./dispatch.js";
@@ -19,6 +19,7 @@ function createFakeDeps(
   return {
     state,
     maxAttempts: 2,
+    retryBackoffMs: 5_000,
     ensureMirror: vi.fn(async () => ({ mirrorPath: "/tmp/mirror" })),
     ensureWorktree: vi.fn(async () => ({
       worktreePath: "/tmp/wt",
@@ -62,6 +63,10 @@ const baseInput: DispatchInput = {
 };
 
 describe("dispatch", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("runs full happy path", async () => {
     const deps = createFakeDeps();
     await dispatch(baseInput, deps);
@@ -138,6 +143,8 @@ describe("dispatch", () => {
   });
 
   it("retries on retryable error", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-11T03:00:00.000Z"));
     const deps = createFakeDeps({
       ensureMirror: vi.fn(async () => {
         throw Object.assign(new Error("503"), {
@@ -151,9 +158,16 @@ describe("dispatch", () => {
     const run = deps.state.getRun("run-1");
     expect(run?.status).toBe("retrying");
     expect(run?.attempt).toBe(2);
+    expect(run?.nextRetryAt).toBe("2026-05-11T03:00:05.000Z");
 
-    const types = deps.events.map((e) => e.type);
-    expect(types).toContain("retry_scheduled");
+    const retryEvent = deps.events.find((e) => e.type === "retry_scheduled");
+    expect(retryEvent).toMatchObject({
+      detail: {
+        attempt: 2,
+        nextRetryAt: "2026-05-11T03:00:05.000Z",
+        reason: "503",
+      },
+    });
   });
 
   it("marks blocked on auth error", async () => {
