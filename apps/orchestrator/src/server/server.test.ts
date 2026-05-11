@@ -174,6 +174,28 @@ describe("Orchestrator HTTP API", () => {
     expect(calls).toEqual([{ runId: "r1", opts: { limit: 25, offset: 5 } }]);
   });
 
+  it("GET /api/events accepts offset zero", async () => {
+    await app.close();
+    const calls: Array<{
+      runId: string;
+      opts?: { limit?: number; offset?: number };
+    }> = [];
+    const setup = await buildTestApp(async (runId, opts) => {
+      calls.push({ runId, opts });
+      return [];
+    });
+    app = setup.app;
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/events?runId=r1&offset=0",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual([]);
+    expect(calls).toEqual([{ runId: "r1", opts: { limit: 100, offset: 0 } }]);
+  });
+
   it("GET /api/events defaults limit and redacts persisted history responses", async () => {
     await app.close();
     const calls: Array<{
