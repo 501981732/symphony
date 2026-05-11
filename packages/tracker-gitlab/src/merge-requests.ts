@@ -7,9 +7,9 @@ export interface CreateMergeRequestInput {
   title: string;
   description: string;
   /**
-   * The issue this MR resolves. The adapter passes it through verbatim — any
-   * close-link semantics belong in the orchestrator-side description template
-   * (spec §12).
+   * The issue this MR resolves. Close-link semantics belong in the
+   * orchestrator-side description template (spec §12); GitLab's create MR API
+   * does not accept an issue iid option.
    */
   issueIid: number;
 }
@@ -73,7 +73,6 @@ export async function createMergeRequest(
       input.title,
       {
         description: input.description,
-        issueIid: input.issueIid,
       },
     );
     return { id: created.id, iid: created.iid, webUrl: created.web_url };

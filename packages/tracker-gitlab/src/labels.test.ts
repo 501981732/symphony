@@ -43,6 +43,8 @@ describe("transitionLabels", () => {
     expect(edit).toHaveBeenCalledWith("group/project", 42, {
       labels: "ai-running",
     });
+    expect(show).toHaveBeenNthCalledWith(1, 42, { projectId: "group/project" });
+    expect(show).toHaveBeenNthCalledWith(2, 42, { projectId: "group/project" });
     expect(show).toHaveBeenCalledTimes(2);
   });
 

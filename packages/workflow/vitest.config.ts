@@ -5,5 +5,13 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     environment: "node",
     pool: "forks",
+    coverage: {
+      provider: "v8",
+      reporter: ["text"],
+      thresholds: {
+        statements: 85,
+        lines: 85,
+      },
+    },
   },
 });

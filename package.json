@@ -9,7 +9,8 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "test": "turbo run test",
+    "test": "turbo run test && pnpm test:smoke",
+    "coverage": "pnpm --filter @issuepilot/workflow coverage && pnpm --filter @issuepilot/tracker-gitlab coverage",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
+    "@vitest/coverage-v8": "2.1.9",
     "eslint": "^9.14.0",
     "eslint-plugin-import": "^2.31.0",
     "execa": "^9.5.1",

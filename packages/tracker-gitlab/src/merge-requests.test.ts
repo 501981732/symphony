@@ -96,7 +96,7 @@ describe("createMergeRequest", () => {
       "ai/42-add-x",
       "main",
       "feat: x",
-      { description: "body", issueIid: 42 },
+      { description: "body" },
     );
     expect(r.iid).toBe(6);
   });
