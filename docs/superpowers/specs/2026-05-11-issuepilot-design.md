@@ -123,9 +123,9 @@ packages/
 ### 4.4 推荐库
 
 - CLI：`commander` 或 `cac`
-- orchestrator HTTP API：Fastify 或 Hono
+- orchestrator HTTP API：Fastify
 - dashboard：Next.js App Router
-- UI：Ant Design 或 Tailwind/shadcn，最终按团队偏好决定
+- UI：Tailwind/shadcn
 - 日志：`pino`
 - 配置校验：`zod`
 - workflow 解析：`gray-matter` + YAML parser
@@ -926,15 +926,15 @@ P0 完成标准：
 14. failed runs 保留 workspace 和 event logs 供排障。
 ```
 
-## 21. 待确认决策
+## 21. 已确认决策
 
-进入 implementation plan 前需要确认：
+以下决策已确认，并作为 implementation plan 的输入：
 
-1. Dashboard UI kit：Ant Design 还是 Tailwind/shadcn。
-2. orchestrator HTTP server：Fastify 还是 Hono。
-3. GitLab 认证方式：personal token、project token，还是 bot user token。
-4. MR target branch 策略：总是使用 workflow `git.base_branch`，还是 fallback 到 GitLab project default branch。
-5. P0 是创建持久 workpad note，还是只创建最终 summary note。
+1. Dashboard UI kit：Tailwind/shadcn。
+2. orchestrator HTTP server：Fastify。
+3. GitLab 认证方式：优先使用 Group Access Token，通过 `tracker.token_env` 指定环境变量；本地 PoC 可临时使用 personal token 验证。
+4. MR target branch 策略：优先使用 workflow `git.base_branch`，缺省时 fallback 到 GitLab project default branch。
+5. Issue note 策略：P0 创建并维护一个持久 workpad note，而不是只写最终 summary note。
 
 ## 22. 实现备注
 
