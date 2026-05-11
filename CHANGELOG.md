@@ -6,6 +6,13 @@
 
 ### Added
 
+- 2026-05-11 — **IssuePilot P0 Phase 6.x（Observability）完成。** `@issuepilot/observability` 实现 secret 脱敏、内存事件总线、JSONL 事件存储、原子 run 记录存储、pino 日志工厂。验证：27/27 全绿；observability 包内 6 spec / 25 cases 全绿。包含 5 个子模块：
+  - `feat(observability): redact secrets in events and logs` — 基于 token 模式（glpat-/glrt-/Bearer/sk-）和字段名黑名单（password/secret/api_key/token 等）的递归脱敏。7 个测试。
+  - `feat(observability): in-memory event bus` — 泛型 pub/sub，支持过滤函数和 unsubscribe，订阅者错误隔离。5 个测试。
+  - `feat(observability): append-only event store` — JSONL 按 `<projectSlug>-<issueIid>.jsonl` 切文件，支持 limit/offset 分页。4 个测试。
+  - `feat(observability): atomic run record store` — JSON 按 `<projectSlug>-<issueIid>.json` 存储，写入先到 .tmp 再 rename 保证原子性。5 个测试。
+  - `feat(observability): pino logger with run context` — pino factory 支持 stdout + 可选文件双输出，child logger 注入 runId/issueIid。2 个测试。
+
 - 2026-05-11 — **IssuePilot P0 Phase 5（M5 Codex App-Server Runner）完成。** `@issuepilot/runner-codex-app-server` 实现 spec §10 的 JSON-RPC stdio client、线程/回合生命周期编排、事件标准化和 spec §11 的 9 个 GitLab dynamic tools。验证：`pnpm -w turbo run build test typecheck --force` 27/27 全绿；runner 包内 5 spec / 24 cases 全绿。包含 5 个 Task：
   - **Task 5.1（commit 07ab23a）** `feat(runner): newline-delimited JSON-RPC stdio client` — `spawnRpc` 封装 `execa` 实现双向 NDJSON-RPC，支持 request/response（带 pending map）、通知、malformed 行处理、进程退出清理。6 个测试。
   - **Task 5.2（commit 6568a69）** `feat(runner): drive thread/turn lifecycle with timeouts` — `driveLifecycle` 编排 initialize → thread/start → turn/start 循环，处理 completed/failed/cancelled/timeout 四种回合结局，支持 maxTurns 限制。3 个测试。
