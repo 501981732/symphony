@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared-contracts" },
+    { "path": "./packages/core" },
+    { "path": "./packages/workflow" },
+    { "path": "./packages/tracker-gitlab" },
+    { "path": "./packages/workspace" },
+    { "path": "./packages/runner-codex-app-server" },
+    { "path": "./packages/observability" },
+    { "path": "./apps/orchestrator" }
+  ]
+}

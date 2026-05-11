@@ -14,12 +14,14 @@
   "bin": {
     "issuepilot": "./dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "lint": "echo \"lint: placeholder for @issuepilot/orchestrator\"",
+    "lint": "eslint src --max-warnings 0",
     "dev": "echo \"dev: placeholder until Phase 6 wires Fastify daemon\""
   },
   "devDependencies": {
