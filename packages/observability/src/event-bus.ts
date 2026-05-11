@@ -7,7 +7,7 @@ export interface EventBus<T> {
 }
 
 export function createEventBus<T>(): EventBus<T> {
-  const subs = new Set<{ handler: EventHandler<T>; filter?: EventFilter<T> }>();
+  const subs = new Set<{ handler: EventHandler<T>; filter?: EventFilter<T> | undefined }>();
 
   return {
     publish(event: T): void {
