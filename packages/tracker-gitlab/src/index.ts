@@ -41,6 +41,22 @@ export {
   type CreateIssueNoteResult,
   type WorkpadNote,
 } from "./notes.js";
+export {
+  createMergeRequest,
+  getMergeRequest,
+  listMergeRequestNotes,
+  updateMergeRequest,
+  type CreateMergeRequestInput,
+  type CreatedMergeRequest,
+  type MergeRequestNote,
+  type MergeRequestSummary,
+  type MergeRequestUpdates,
+} from "./merge-requests.js";
+export {
+  classifyPipelineStatus,
+  getPipelineStatus,
+  type PipelineStatus,
+} from "./pipelines.js";
 export type {
   GitLabAdapter,
   GitLabErrorCategory,
