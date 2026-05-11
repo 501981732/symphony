@@ -6,4 +6,13 @@ describe("@issuepilot/runner-codex-app-server", () => {
     expect(typeof mod.VERSION).toBe("string");
     expect(mod.PACKAGE_NAME).toBe("@issuepilot/runner-codex-app-server");
   });
+
+  it("exports all runner functions", () => {
+    expect(typeof mod.spawnRpc).toBe("function");
+    expect(typeof mod.driveLifecycle).toBe("function");
+    expect(typeof mod.normalizeNotification).toBe("function");
+    expect(typeof mod.handleApprovalRequest).toBe("function");
+    expect(typeof mod.handleInputRequired).toBe("function");
+    expect(typeof mod.createGitLabTools).toBe("function");
+  });
 });

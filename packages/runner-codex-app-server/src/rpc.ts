@@ -28,13 +28,15 @@ export function spawnRpc(opts: {
   let notificationHandler: NotificationHandler = () => {};
   let malformedHandler: MalformedHandler = () => {};
 
-  const proc = execa(opts.command, opts.args ?? [], {
-    cwd: opts.cwd,
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
-    buffer: false,
-  }) as ResultPromise;
+  const execOpts = {
+    stdin: "pipe" as const,
+    stdout: "pipe" as const,
+    stderr: "pipe" as const,
+    buffer: false as const,
+    ...(opts.cwd ? { cwd: opts.cwd } : {}),
+  };
+
+  const proc = execa(opts.command, opts.args ?? [], execOpts) as ResultPromise;
 
   const exitPromise = proc.then(
     (r) => ({ code: r.exitCode as number | undefined, signal: null }),

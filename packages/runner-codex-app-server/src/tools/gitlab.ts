@@ -177,12 +177,10 @@ export function createGitLabTools(
           title?: string;
           description?: string;
         };
-        return safe(() =>
-          adapter.updateMergeRequest(a.mrIid, {
-            title: a.title,
-            description: a.description,
-          }),
-        );
+        const updates: Partial<{ title: string; description: string }> = {};
+        if (a.title !== undefined) updates.title = a.title;
+        if (a.description !== undefined) updates.description = a.description;
+        return safe(() => adapter.updateMergeRequest(a.mrIid, updates));
       },
     },
     {
