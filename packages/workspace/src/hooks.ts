@@ -27,7 +27,7 @@ export interface RunHookInput {
 
 export interface RunHookResult {
   skipped: boolean;
-  exitCode?: number;
+  exitCode?: number | undefined;
   stdout: string;
   stderr: string;
 }
