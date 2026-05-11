@@ -1,4 +1,5 @@
 import { watch, type FSWatcher } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 
 import { parseWorkflowFile, WorkflowConfigError } from "./parse.js";
@@ -48,6 +49,15 @@ export async function watchWorkflow(
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending: Promise<void> | null = null;
+  let lastMtimeMs: number | null = null;
+
+  try {
+    const s = await stat(filePath);
+    lastMtimeMs = s.mtimeMs;
+  } catch {
+    // File disappeared between parse and stat – ignore; next reload attempt
+    // will surface the error through onError.
+  }
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -97,6 +107,28 @@ export async function watchWorkflow(
     if (name === baseName) schedule();
   });
 
+  // Polling fallback: fs.watch occasionally drops events on macOS/Linux
+  // under load. A periodic stat()-based mtime check guarantees that a real
+  // change is picked up within `pollIntervalMs`, while the sha256 dedup in
+  // `dispatch()` keeps spurious wakeups from triggering empty reloads.
+  const pollIntervalMs = Math.max(debounceMs * 4, 200);
+  const pollTimer: ReturnType<typeof setInterval> = setInterval(() => {
+    if (stopped) return;
+    stat(filePath).then(
+      (s) => {
+        if (stopped) return;
+        if (lastMtimeMs === null || s.mtimeMs !== lastMtimeMs) {
+          lastMtimeMs = s.mtimeMs;
+          schedule();
+        }
+      },
+      () => {
+        // Missing file – let the next dispatch raise WorkflowConfigError.
+        if (!stopped) schedule();
+      },
+    );
+  }, pollIntervalMs);
+
   return {
     current(): WorkflowConfig {
       return activeConfig;
@@ -105,6 +137,7 @@ export async function watchWorkflow(
       if (stopped) return;
       stopped = true;
       clearTimer();
+      clearInterval(pollTimer);
       watcher.close();
       if (pending !== null) {
         await pending.catch(() => undefined);
