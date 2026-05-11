@@ -21,7 +21,14 @@
     "lint": "eslint src --max-warnings 0"
   },
   "devDependencies": {
+    "@types/node": "^22.19.18",
     "typescript": "^5.5.4",
     "vitest": "^2.1.4"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "liquidjs": "^10.25.7",
+    "yaml": "^2.8.4",
+    "zod": "^4.4.3"
   }
 }
