@@ -5,7 +5,10 @@ import YAML from "yaml";
 
 const root = resolve(__dirname, "..", "..");
 const readJson = (rel: string) =>
-  JSON.parse(readFileSync(resolve(root, rel), "utf8")) as Record<string, unknown>;
+  JSON.parse(readFileSync(resolve(root, rel), "utf8")) as Record<
+    string,
+    unknown
+  >;
 
 describe("monorepo scaffold smoke", () => {
   it("root package.json declares pnpm@10 packageManager and Node 22 engines", () => {
