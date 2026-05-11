@@ -16,7 +16,10 @@ function createFakeLoopDeps(overrides: Record<string, unknown> = {}) {
     claim: vi.fn(async () => {
       claimCallCount++;
       if (claimCallCount === 1) {
-        return [{ runId: "r1" }, { runId: "r2" }];
+        const claimed = [{ runId: "r1" }, { runId: "r2" }].filter((run) =>
+          slots.tryAcquire(run.runId),
+        );
+        return claimed;
       }
       return [];
     }),
@@ -67,10 +70,44 @@ describe("startLoop", () => {
     await loop.stop();
   });
 
+  it("reloads a positive finite poll interval and reschedules the timer", async () => {
+    vi.useFakeTimers();
+    const deps = createFakeLoopDeps({
+      pollIntervalMs: 100_000,
+      loadConfig: vi.fn(() => ({ pollIntervalMs: 250 })),
+      claim: vi.fn(async () => []),
+    });
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(deps.loadConfig).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(249);
+    expect(deps.loadConfig).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(deps.loadConfig).toHaveBeenCalledTimes(2);
+
+    await loop.stop();
+  });
+
   it("dispatches due retrying runs before claiming new candidates", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-11T03:00:00.000Z"));
-    const deps = createFakeLoopDeps();
+    const sequence: string[] = [];
+    const deps = createFakeLoopDeps({
+      claim: vi.fn(async () => {
+        sequence.push("claim");
+        const claimed = [{ runId: "r1" }, { runId: "r2" }].filter((run) =>
+          deps.slots.tryAcquire(run.runId),
+        );
+        return claimed;
+      }),
+      dispatch: vi.fn(async (runId: string) => {
+        sequence.push(`dispatch:${runId}`);
+      }),
+    });
     deps.state.setRun("retry-1", {
       runId: "retry-1",
       status: "retrying",
@@ -85,6 +122,7 @@ describe("startLoop", () => {
     expect(deps.dispatch).toHaveBeenCalledWith("r1");
     expect(deps.dispatch).toHaveBeenCalledTimes(2);
     expect(deps.claim).toHaveBeenCalled();
+    expect(sequence).toEqual(["dispatch:retry-1", "claim", "dispatch:r1"]);
 
     await loop.stop();
   });
@@ -98,6 +136,45 @@ describe("startLoop", () => {
       status: "retrying",
       attempt: 2,
       nextRetryAt: "2026-05-11T03:00:01.000Z",
+    });
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(deps.dispatch).not.toHaveBeenCalledWith("retry-1");
+    expect(deps.dispatch).toHaveBeenCalledTimes(2);
+
+    await loop.stop();
+  });
+
+  it("does not dispatch retrying runs with missing nextRetryAt", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-11T03:00:00.000Z"));
+    const deps = createFakeLoopDeps();
+    deps.state.setRun("retry-1", {
+      runId: "retry-1",
+      status: "retrying",
+      attempt: 2,
+    });
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(deps.dispatch).not.toHaveBeenCalledWith("retry-1");
+    expect(deps.dispatch).toHaveBeenCalledTimes(2);
+
+    await loop.stop();
+  });
+
+  it("does not dispatch retrying runs with invalid nextRetryAt", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-11T03:00:00.000Z"));
+    const deps = createFakeLoopDeps();
+    deps.state.setRun("retry-1", {
+      runId: "retry-1",
+      status: "retrying",
+      attempt: 2,
+      nextRetryAt: "not-a-date",
     });
     const loop = startLoop(deps);
 

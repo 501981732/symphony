@@ -8,6 +8,10 @@ export interface LoopDeps {
 
   loadConfig(): { pollIntervalMs?: number | undefined };
 
+  /**
+   * Returns newly claimed run IDs. Claim logic owns slot reservation for
+   * returned runs, so the loop can dispatch them without acquiring again.
+   */
   claim(): Promise<Array<{ runId: string }>>;
   dispatch(runId: string): Promise<void>;
   reconcileRunning(): Promise<void>;
@@ -22,11 +26,23 @@ export interface LoopHandle {
 export function startLoop(deps: LoopDeps): LoopHandle {
   let stopped = false;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let currentPollIntervalMs = deps.pollIntervalMs;
   const inflightDispatches = new Set<Promise<void>>();
 
-  const dispatchRun = (runId: string, dispatchedRunIds: Set<string>) => {
+  const scheduleTimer = () => {
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => {
+      tick().catch(deps.logError);
+    }, currentPollIntervalMs);
+  };
+
+  const dispatchRun = (
+    runId: string,
+    dispatchedRunIds: Set<string>,
+    opts: { slotReserved: boolean },
+  ) => {
     if (dispatchedRunIds.has(runId)) return;
-    if (!deps.slots.tryAcquire(runId)) return;
+    if (!opts.slotReserved && !deps.slots.tryAcquire(runId)) return;
 
     dispatchedRunIds.add(runId);
     const p = deps
@@ -47,7 +63,16 @@ export function startLoop(deps: LoopDeps): LoopHandle {
     deps.state.lastPollAt = tickStartedAt.toISOString();
 
     try {
-      deps.loadConfig();
+      const config = deps.loadConfig();
+      if (
+        typeof config.pollIntervalMs === "number" &&
+        Number.isFinite(config.pollIntervalMs) &&
+        config.pollIntervalMs > 0 &&
+        config.pollIntervalMs !== currentPollIntervalMs
+      ) {
+        currentPollIntervalMs = config.pollIntervalMs;
+        scheduleTimer();
+      }
       deps.state.lastConfigReloadAt = new Date().toISOString();
     } catch (err) {
       deps.logError(err);
@@ -68,7 +93,7 @@ export function startLoop(deps: LoopDeps): LoopHandle {
       const nextRetryAtMs = Date.parse(run.nextRetryAt);
       if (Number.isNaN(nextRetryAtMs) || nextRetryAtMs > nowMs) continue;
 
-      dispatchRun(run.runId, dispatchedRunIds);
+      dispatchRun(run.runId, dispatchedRunIds, { slotReserved: false });
     }
 
     if (deps.slots.available() === 0) return;
@@ -83,13 +108,11 @@ export function startLoop(deps: LoopDeps): LoopHandle {
 
     for (const c of candidates) {
       if (deps.slots.available() === 0 && !deps.slots.active().has(c.runId)) break;
-      dispatchRun(c.runId, dispatchedRunIds);
+      dispatchRun(c.runId, dispatchedRunIds, { slotReserved: true });
     }
   };
 
-  timer = setInterval(() => {
-    tick().catch(deps.logError);
-  }, deps.pollIntervalMs);
+  scheduleTimer();
 
   return {
     tick,
