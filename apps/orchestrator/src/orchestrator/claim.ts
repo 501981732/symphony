@@ -57,11 +57,14 @@ export async function claimCandidates(
     );
 
     try {
-      await input.gitlab.transitionLabels(issue.iid, {
+      const transitionOpts: { add: string[]; remove: string[]; requireCurrent?: string[] } = {
         add: [input.runningLabel],
         remove: input.activeLabels,
-        requireCurrent: matchedLabel ? [matchedLabel] : undefined,
-      });
+      };
+      if (matchedLabel) {
+        transitionOpts.requireCurrent = [matchedLabel];
+      }
+      await input.gitlab.transitionLabels(issue.iid, transitionOpts);
     } catch {
       continue;
     }
