@@ -213,9 +213,11 @@ packages:
   "engines": { "node": ">=22 <23" },
   "scripts": {
     "build": "turbo run build",
-    "test": "turbo run test",
+    "test": "turbo run test && pnpm test:smoke",
+    "coverage": "pnpm --filter @issuepilot/workflow coverage && pnpm --filter @issuepilot/tracker-gitlab coverage",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
+    "test:smoke": "vitest run --config vitest.config.ts",
     "dev:orchestrator": "pnpm --filter @issuepilot/orchestrator dev",
     "dev:dashboard": "pnpm --filter @issuepilot/dashboard dev"
   },
@@ -223,6 +225,7 @@ packages:
     "turbo": "^2",
     "typescript": "^5.5",
     "vitest": "^2",
+    "@vitest/coverage-v8": "^2",
     "eslint": "^9",
     "prettier": "^3"
   }
@@ -279,8 +282,9 @@ git commit -m "chore: bootstrap pnpm workspace with turborepo"
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "lint": "eslint src"
   }
 }
@@ -641,7 +645,7 @@ export class WorkflowConfigError extends Error {
 **Files：**
 - Create: `packages/workflow/src/resolve.ts`、`resolve.test.ts`
 
-**目标：** 
+**目标：**
 
 - `token_env: "GITLAB_TOKEN"` 在使用方（GitLab adapter）才解析为真实值；workflow 加载阶段只校验该 env name **存在于** `process.env`（缺失 → throw）。
 - 所有路径字段中的 `~` 与 `$HOME` 替换为 `os.homedir()`，不允许其他 shell expansion。
@@ -707,7 +711,7 @@ export async function watchWorkflow(filePath: string, opts: {
 - [ ] 缺失字段抛 `WorkflowConfigError` 且 `path` 准确。
 - [ ] Prompt 模板支持 spec §6 列出的所有变量。
 - [ ] hot reload 在变更生效；解析失败时维持 last-known-good。
-- [ ] 单测覆盖 ≥ 25 个 case；`vitest run --coverage` 在 `packages/workflow` ≥ 85%。
+- [ ] 单测覆盖 ≥ 25 个 case；`vitest run --coverage` 在 `packages/workflow` line/statement ≥ 85%。
 
 ---
 
@@ -1346,7 +1350,7 @@ issuepilot doctor     --workflow <path>
 
 **测试覆盖：** redact 至少 5 个 token 模式；event-bus 多订阅者 + unsubscribe；store 在并发写 100 条 event 时不丢、不撕裂。
 
-**commit（按子模块）：** 
+**commit（按子模块）：**
 - `feat(observability): redact secrets in events and logs`
 - `feat(observability): in-memory event bus`
 - `feat(observability): append-only event store`
@@ -1375,7 +1379,7 @@ issuepilot doctor     --workflow <path>
 - Create: `apps/dashboard/lib/api.ts`、`api.test.ts`
 - Create: `apps/dashboard/lib/use-event-stream.ts`、`use-event-stream.test.ts`
 
-**实现：** 
+**实现：**
 - `apiGet<T>(path): Promise<T>` 默认连 `process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:4738"`。
 - `useEventStream(runId?: string)`：用 `EventSource`，在 unmount 关闭；指数退避重连。
 
@@ -1406,7 +1410,7 @@ issuepilot doctor     --workflow <path>
 - Create: `apps/dashboard/app/runs/[runId]/page.tsx`
 - Create: `apps/dashboard/components/{event-timeline,tool-call-list,log-tail}.tsx`
 
-**实现：** 
+**实现：**
 - 顶部展示 issue 基本信息、当前 label、MR 链接、attempt、状态、错误原因。
 - Timeline：按 `createdAt` 升序，event type 用 Badge 区分颜色；展开节点显示 redacted `data`。
 - Tool calls 列表：过滤 `tool_call_*`。

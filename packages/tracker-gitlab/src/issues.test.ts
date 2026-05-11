@@ -28,14 +28,18 @@ const issue = (over: Partial<RawIssue>): RawIssue => ({
 
 describe("listCandidateIssues", () => {
   it("filters issues that carry any excluded label", async () => {
-    const all = vi.fn(async () => [
-      issue({ id: 1, iid: 10, labels: ["ai-ready"] }),
-      issue({ id: 2, iid: 11, labels: ["ai-ready", "ai-running"] }),
-      issue({ id: 3, iid: 12, labels: ["ai-rework"] }),
-      issue({ id: 4, iid: 13, labels: ["ai-ready", "ai-failed"] }),
-      issue({ id: 5, iid: 14, labels: ["ai-rework", "human-review"] }),
-      issue({ id: 6, iid: 15, labels: ["ai-ready"] }),
-    ]);
+    const all = vi
+      .fn()
+      .mockResolvedValueOnce([
+        issue({ id: 1, iid: 10, labels: ["ai-ready"] }),
+        issue({ id: 2, iid: 11, labels: ["ai-ready", "ai-running"] }),
+        issue({ id: 4, iid: 13, labels: ["ai-ready", "ai-failed"] }),
+        issue({ id: 6, iid: 15, labels: ["ai-ready"] }),
+      ])
+      .mockResolvedValueOnce([
+        issue({ id: 3, iid: 12, labels: ["ai-rework"] }),
+        issue({ id: 5, iid: 14, labels: ["ai-rework", "human-review"] }),
+      ]);
     const client = makeClient({
       Issues: { all, show: vi.fn(), edit: vi.fn() },
     });
@@ -43,7 +47,50 @@ describe("listCandidateIssues", () => {
       activeLabels: ["ai-ready", "ai-rework"],
       excludeLabels: ["ai-running", "ai-failed", "human-review", "ai-blocked"],
     });
-    expect(result.map((i) => i.iid)).toEqual([10, 12, 15]);
+    expect(result.map((i) => i.iid)).toEqual(
+      expect.arrayContaining([10, 12, 15]),
+    );
+    expect(result).toHaveLength(3);
+  });
+
+  it("queries each active label separately and de-duplicates overlapping issues", async () => {
+    const all = vi
+      .fn()
+      .mockResolvedValueOnce([
+        issue({ id: 1, iid: 10, labels: ["ai-ready"] }),
+        issue({ id: 2, iid: 11, labels: ["ai-ready", "ai-rework"] }),
+      ])
+      .mockResolvedValueOnce([
+        issue({ id: 2, iid: 11, labels: ["ai-ready", "ai-rework"] }),
+        issue({ id: 3, iid: 12, labels: ["ai-rework"] }),
+      ]);
+    const client = makeClient({
+      Issues: { all, show: vi.fn(), edit: vi.fn() },
+    });
+
+    const result = await listCandidateIssues(client, {
+      activeLabels: ["ai-ready", "ai-rework"],
+      excludeLabels: [],
+      perPage: 25,
+    });
+
+    expect(all).toHaveBeenNthCalledWith(1, {
+      projectId: "group/project",
+      state: "opened",
+      labels: "ai-ready",
+      perPage: 25,
+      orderBy: "updated_at",
+      sort: "asc",
+    });
+    expect(all).toHaveBeenNthCalledWith(2, {
+      projectId: "group/project",
+      state: "opened",
+      labels: "ai-rework",
+      perPage: 25,
+      orderBy: "updated_at",
+      sort: "asc",
+    });
+    expect(result.map((i) => i.iid)).toEqual([10, 11, 12]);
   });
 
   it("maps the first row into an IssueRef projection", async () => {
@@ -74,20 +121,20 @@ describe("listCandidateIssues", () => {
     });
   });
 
-  it("forwards projectId/state/labels/perPage/orderBy/sort to Issues.all", async () => {
+  it("forwards projectId/state/label/perPage/orderBy/sort to Issues.all", async () => {
     const all = vi.fn(async () => []);
     const client = makeClient({
       Issues: { all, show: vi.fn(), edit: vi.fn() },
     });
     await listCandidateIssues(client, {
-      activeLabels: ["ai-ready", "ai-rework"],
+      activeLabels: ["ai-ready"],
       excludeLabels: ["ai-running"],
       perPage: 25,
     });
     expect(all).toHaveBeenCalledWith({
       projectId: "group/project",
       state: "opened",
-      labels: "ai-ready,ai-rework",
+      labels: "ai-ready",
       perPage: 25,
       orderBy: "updated_at",
       sort: "asc",
@@ -163,7 +210,7 @@ describe("getIssue", () => {
       Issues: { all: vi.fn(), show, edit: vi.fn() },
     });
     const r = await getIssue(client, 50);
-    expect(show).toHaveBeenCalledWith("group/project", 50);
+    expect(show).toHaveBeenCalledWith(50, { projectId: "group/project" });
     expect(r).toEqual({
       id: "gid://gitlab/Issue/5",
       iid: 50,

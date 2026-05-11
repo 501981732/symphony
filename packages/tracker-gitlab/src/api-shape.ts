@@ -49,7 +49,7 @@ export interface IssuesApi {
     orderBy?: string;
     sort?: "asc" | "desc";
   }): Promise<readonly RawIssue[]>;
-  show(projectId: string | number, iid: number): Promise<RawIssue>;
+  show(iid: number, opts: { projectId: string | number }): Promise<RawIssue>;
   edit(
     projectId: string | number,
     iid: number,
@@ -90,7 +90,6 @@ export interface MergeRequestsApi {
     title: string,
     opts?: {
       description?: string;
-      issueIid?: number;
     },
   ): Promise<RawMergeRequest>;
   edit(

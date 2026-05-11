@@ -56,7 +56,7 @@ export async function transitionLabels(
   opts: TransitionLabelsOpts,
 ): Promise<TransitionLabelsResult> {
   return client.request("issues.transitionLabels", async (api) => {
-    const before = await api.Issues.show(client.projectId, iid);
+    const before = await api.Issues.show(iid, { projectId: client.projectId });
     const currentLabels = [...(before.labels ?? [])];
 
     if (opts.requireCurrent && opts.requireCurrent.length > 0) {
@@ -81,7 +81,7 @@ export async function transitionLabels(
       });
     }
 
-    const verified = await api.Issues.show(client.projectId, iid);
+    const verified = await api.Issues.show(iid, { projectId: client.projectId });
     const finalLabels = [...(verified.labels ?? [])];
     const finalSet = new Set(finalLabels);
     const stillMissing = opts.add.filter((l) => !finalSet.has(l));

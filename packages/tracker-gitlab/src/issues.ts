@@ -22,13 +22,23 @@ export async function listCandidateIssues(
 ): Promise<IssueRef[]> {
   const perPage = opts.perPage ?? 50;
   return client.request("issues.listCandidates", async (api) => {
-    const issues = await api.Issues.all({
-      projectId: client.projectId,
-      state: "opened",
-      labels: opts.activeLabels.join(","),
-      perPage,
-      orderBy: "updated_at",
-      sort: "asc",
+    const rows = await Promise.all(
+      opts.activeLabels.map((label) =>
+        api.Issues.all({
+          projectId: client.projectId,
+          state: "opened",
+          labels: label,
+          perPage,
+          orderBy: "updated_at",
+          sort: "asc",
+        }),
+      ),
+    );
+    const seen = new Set<number>();
+    const issues = rows.flat().filter((issue) => {
+      if (seen.has(issue.id)) return false;
+      seen.add(issue.id);
+      return true;
     });
     const excluded = new Set(opts.excludeLabels);
     return issues
@@ -45,7 +55,7 @@ export async function getIssue(
   iid: number,
 ): Promise<IssueRef & { description: string }> {
   return client.request("issues.get", async (api) => {
-    const raw = await api.Issues.show(client.projectId, iid);
+    const raw = await api.Issues.show(iid, { projectId: client.projectId });
     return {
       ...toIssueRef(raw),
       description: typeof raw.description === "string" ? raw.description : "",

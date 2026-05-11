@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src --max-warnings 0"
   },
