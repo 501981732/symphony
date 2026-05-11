@@ -1,4 +1,4 @@
-import type { EventBus } from "@issuepilot/observability";
+import { redact, type EventBus, type EventRecord } from "@issuepilot/observability";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import type { RuntimeState } from "../runtime/state.js";
@@ -6,10 +6,20 @@ import type { RuntimeState } from "../runtime/state.js";
 interface ServerDeps {
   state: RuntimeState;
   eventBus: EventBus<{ id: string; runId: string; type: string; [key: string]: unknown }>;
+  readEvents: (
+    runId: string,
+    opts?: { limit?: number; offset?: number },
+  ) => Promise<EventRecord[]>;
   workflowPath: string;
   gitlabProject: string;
   pollIntervalMs: number;
   concurrency: number;
+}
+
+function parseOptionalPositiveInt(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 export async function createServer(
@@ -17,6 +27,20 @@ export async function createServer(
   opts: { host?: string; port?: number } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+
+  app.addHook("onSend", async (_request, reply, payload) => {
+    const contentType = String(reply.getHeader("content-type") ?? "");
+    if (!contentType.includes("application/json")) return payload;
+
+    const text = Buffer.isBuffer(payload) ? payload.toString("utf-8") : payload;
+    if (typeof text !== "string" || text.length === 0) return payload;
+
+    try {
+      return JSON.stringify(redact(JSON.parse(text)));
+    } catch {
+      return payload;
+    }
+  });
 
   app.get("/api/state", async () => {
     return {
@@ -59,6 +83,27 @@ export async function createServer(
     },
   );
 
+  app.get<{
+    Querystring: { runId?: string; limit?: string; offset?: string };
+  }>("/api/events", async (request, reply) => {
+    const runId = request.query.runId;
+    if (!runId) {
+      return reply.code(400).send({ error: "runId is required" });
+    }
+
+    const limit = parseOptionalPositiveInt(request.query.limit) ?? 100;
+    const offset = parseOptionalPositiveInt(request.query.offset);
+    const opts =
+      offset === undefined
+        ? { limit }
+        : {
+            limit,
+            offset,
+          };
+
+    return deps.readEvents(runId, opts);
+  });
+
   app.get("/api/events/stream", (request, reply) => {
     const runIdFilter = (request.query as { runId?: string }).runId;
 
@@ -74,7 +119,7 @@ export async function createServer(
 
     const unsub = deps.eventBus.subscribe(
       (event) => {
-        reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        reply.raw.write(`data: ${JSON.stringify(redact(event))}\n\n`);
       },
       runIdFilter ? (e) => e.runId === runIdFilter : undefined,
     );
