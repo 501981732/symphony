@@ -1,169 +1,175 @@
-# IssuePilot Design Spec
+# IssuePilot 设计规格说明
 
-Date: 2026-05-11
-Status: Draft for user review
-Repository context: this repository is a fork of OpenAI Symphony and is used as the protocol/reference source for IssuePilot.
+日期：2026-05-11
+状态：待用户评审
+仓库背景：当前仓库是 OpenAI Symphony 的 fork，用作 IssuePilot 的协议和参考实现来源。
 
-## 1. Purpose
+## 1. 目标
 
-IssuePilot is an internal AI engineering orchestrator inspired by Symphony.
+IssuePilot 是一个面向公司内部研发流程的 AI 工程调度器，设计思想参考 Symphony。
 
-The product goal is to turn GitLab Issues into isolated, observable Codex implementation runs. Engineers manage Issue state and review Merge Requests instead of supervising individual agent sessions.
+它的核心目标是：把 GitLab Issue 变成隔离、可观测、可重试的 Codex 实现运行。工程师主要管理 Issue 状态和 Review Merge Request，而不是人工盯多个 agent 会话。
 
-The first version must prove one complete loop:
+第一版必须跑通一个完整闭环：
 
 ```text
-GitLab Issue with ai-ready label
-  -> IssuePilot claims it
-  -> isolated git worktree is prepared
-  -> Codex app-server runs in that worktree
-  -> code is changed and committed
-  -> branch is pushed
-  -> Merge Request is created or updated
-  -> Issue is commented
-  -> Issue moves to human-review
+GitLab Issue 带 ai-ready label
+  -> IssuePilot 自动认领
+  -> 创建独立 git worktree
+  -> 在 worktree 内启动 Codex app-server
+  -> Codex 完成代码修改并提交
+  -> 分支推送到 GitLab
+  -> 创建或更新 Merge Request
+  -> 回写 Issue 评论
+  -> Issue 进入 human-review
 ```
 
-## 2. Reference Model
+## 2. 与 Symphony 的关系
 
-This project should not directly port the Elixir implementation.
+当前 fork 不作为生产代码直接移植。
 
-Use this fork as reference for:
+IssuePilot 参考它的这些部分：
 
-- the language-agnostic service boundary in `SPEC.md`
-- workflow-file based configuration
-- isolated per-issue workspaces
-- orchestrator ownership of scheduling state
-- Codex app-server JSON-RPC lifecycle
-- dashboard/event observability concepts
+- 根目录 `SPEC.md` 中的语言无关服务边界
+- 基于 workflow 文件的项目级 agent 契约
+- 每个 Issue 一个隔离 workspace
+- orchestrator 独占调度状态
+- Codex app-server 的 JSON-RPC 生命周期
+- dashboard 和事件流的可观测性思路
 
-Do not inherit the Elixir-specific implementation as production architecture.
+不直接继承：
 
-IssuePilot will be implemented as a TypeScript product with GitLab and Codex app-server as first-class P0 integrations.
+- Elixir/OTP 技术栈
+- Linear tracker 假设
+- 原型级 dashboard 实现
+- 直接把 ticket 写操作全部交给 agent 的边界
 
-## 3. Non-Goals for P0
+IssuePilot 的产品实现采用 TypeScript，P0 直接以 GitLab 和 Codex app-server 作为一等集成。
 
-P0 must avoid broad platform scope.
+## 3. P0 非目标
 
-Out of scope:
+P0 必须保持范围克制，先证明核心闭环。
 
-- multi-tenant permissions
-- remote worker pools
-- Kubernetes sandboxing
-- visual workflow builders
-- automatic merge to default branch
+不做：
+
+- 多租户权限系统
+- 远程 worker 池
+- Kubernetes 沙箱
+- 可视化拖拽工作流
+- 自动合并主干
 - Claude Code runner
-- arbitrary GitLab REST/GraphQL tool access
-- rich operational controls in the dashboard
-- long-term analytics database
+- 任意 GitLab REST/GraphQL 工具
+- dashboard 上的复杂操作按钮
+- 长期分析数据库
 
-The system may reserve extension points for these, but P0 should not implement them.
+这些方向可以保留扩展点，但不能进入第一版实现范围。
 
-## 4. Technology Choices
+## 4. 技术选型
 
-### 4.1 Runtime and Monorepo
+### 4.1 语言和仓库形态
 
-Use:
+使用：
 
 - TypeScript
 - Node.js 22 LTS
-- pnpm workspaces
-- Turborepo where useful for local developer workflow
-- Vitest for tests
-- ESLint and Prettier for code quality
+- pnpm workspace
+- Turborepo，可用于本地开发编排
+- Vitest
+- ESLint
+- Prettier
 
-### 4.2 Applications
+### 4.2 应用划分
 
 ```text
 apps/
   orchestrator/
-    Local daemon and CLI. Owns polling, dispatch, Codex app-server sessions,
-    GitLab writes, event storage, and the orchestration API.
+    本地 daemon 和 CLI。
+    负责轮询、认领、调度、Codex app-server 会话、GitLab 写操作、
+    event store、日志和本地 API。
 
   dashboard/
-    Next.js App Router dashboard. Reads from the orchestrator API and SSE
-    stream. It is not responsible for background work.
+    Next.js App Router 控制台。
+    只读取 orchestrator API 和 SSE 事件流，不承载后台调度任务。
 ```
 
-Do not put the orchestrator inside Next.js. The orchestrator is a long-running worker process that manages child processes, stdio JSON-RPC, git worktrees, timers, retries, and filesystem state. Next.js should be used for the operator UI only.
+不要把 orchestrator 放进 Next.js。orchestrator 是长运行 worker，需要管理 child_process、stdio JSON-RPC、git worktree、计时器、重试和文件系统状态。Next.js 适合做控制台 UI，不适合作为调度器运行时。
 
-### 4.3 Packages
+### 4.3 包划分
 
 ```text
 packages/
   core/
-    Domain models, scheduler state, orchestration contracts, event types.
+    领域模型、调度状态、orchestration contracts、事件类型。
 
   workflow/
-    .agents/workflow.md parsing, validation, defaults, env resolution,
-    and prompt rendering.
+    .agents/workflow.md 解析、校验、默认值、环境变量解析和 prompt 渲染。
 
   tracker-gitlab/
-    GitLab Issue, label, note, Merge Request, and pipeline adapter.
+    GitLab Issue、label、note、Merge Request、pipeline adapter。
 
   workspace/
-    Bare mirror management, git worktree lifecycle, branch preparation,
-    path safety, and hooks.
+    bare mirror、git worktree 生命周期、分支准备、路径安全、hooks。
 
   runner-codex-app-server/
-    Codex app-server JSON-RPC client over stdio.
+    Codex app-server JSON-RPC stdio client。
 
   observability/
-    Event store, JSONL logs, run snapshots, pino logger wiring.
+    event store、JSONL logs、run snapshot、pino logger。
 
   shared-contracts/
-    Types shared by orchestrator and dashboard.
+    orchestrator 和 dashboard 共享类型。
 ```
 
-### 4.4 Libraries
+### 4.4 推荐库
 
-Recommended libraries:
+- CLI：`commander` 或 `cac`
+- orchestrator HTTP API：Fastify 或 Hono
+- dashboard：Next.js App Router
+- UI：Ant Design 或 Tailwind/shadcn，最终按团队偏好决定
+- 日志：`pino`
+- 配置校验：`zod`
+- workflow 解析：`gray-matter` + YAML parser
+- prompt 模板：`liquidjs`
+- 进程执行：`execa`
+- GitLab API：`@gitbeaker/rest`
+- 本地事件存储：JSON + JSONL
 
-- CLI: `commander` or `cac`
-- HTTP API: Fastify or Hono inside `apps/orchestrator`
-- Dashboard: Next.js App Router
-- UI: Ant Design or Tailwind/shadcn, with final choice based on team preference
-- Logging: `pino`
-- Config validation: `zod`
-- Workflow parsing: `gray-matter` plus YAML parser
-- Prompt templating: `liquidjs`
-- Process execution: `execa`
-- GitLab API: `@gitbeaker/rest`
-- Local event storage: JSON and JSONL files
+Git 操作使用真实 Git CLI，通过 `execa` 调用。不要在 P0 使用 JS git 库，因为 mirror、worktree、fetch、push、branch 的行为应该尽量贴近真实开发环境，也更容易排障。
 
-Use the Git CLI through `execa` for mirror, worktree, fetch, push, and branch operations. Avoid JS git libraries for P0 because worktree behavior should match real developer tooling.
+P0 不引入数据库。本地状态存放在 `~/.issuepilot/state`。
 
-Do not use a database in P0. Use local files under `~/.issuepilot/state`.
+## 5. 产品形态
 
-## 5. Product Shape
-
-P0 is a local daemon:
+P0 是一个本地 daemon：
 
 ```bash
 pnpm issuepilot run --workflow .agents/workflow.md --port 4738
 ```
 
-The command starts:
+这个命令启动：
 
-- the orchestrator loop
-- Codex app-server runner management
-- local JSON/JSONL event storage
-- a local API server
-- a Next.js dashboard at `http://127.0.0.1:4738`
+- orchestrator loop
+- Codex app-server runner 管理
+- 本地 JSON/JSONL 事件存储
+- 本地 API server
+- Next.js dashboard，默认地址 `http://127.0.0.1:4738`
 
-The dashboard is read-only in P0.
+P0 dashboard 只读，不提供操作按钮。
 
-## 6. Workflow Contract
+## 6. Workflow 契约
 
-Each target repository owns its agent contract:
+每个目标仓库拥有自己的 agent 契约文件：
 
 ```text
 .agents/workflow.md
 ```
 
-The file uses YAML front matter for machine-readable configuration and Markdown body for the agent prompt.
+文件结构：
 
-Example:
+- YAML front matter：机器可读运行配置
+- Markdown body：传给 agent 的任务 prompt
+
+示例：
 
 ```md
 ---
@@ -214,7 +220,7 @@ hooks:
     pnpm test
 ---
 
-You are the AI engineer for this repository.
+你是当前仓库的 AI 工程师。
 
 Issue: {{ issue.identifier }}
 Title: {{ issue.title }}
@@ -223,19 +229,19 @@ URL: {{ issue.url }}
 Description:
 {{ issue.description }}
 
-Requirements:
-1. Read the relevant code before editing.
-2. Keep work inside the provided workspace.
-3. Implement the issue.
-4. Run required validation.
-5. Commit the changes.
-6. Create or update a GitLab Merge Request.
-7. Update the Issue with implementation notes, validation, risks, and MR URL.
-8. On success, move the Issue to human-review.
-9. If blocked by missing information, permissions, or secrets, mark ai-blocked.
+要求：
+1. 先阅读相关代码，再开始编辑。
+2. 所有工作必须限制在提供的 workspace 内。
+3. 完成 Issue 要求的实现。
+4. 运行必要验证。
+5. 提交代码。
+6. 创建或更新 GitLab Merge Request。
+7. 更新 Issue，说明实现内容、验证结果、风险点和 MR 链接。
+8. 成功后把 Issue 移交到 human-review。
+9. 如果缺少信息、权限或密钥，标记 ai-blocked 并说明阻塞原因。
 ```
 
-Required template variables:
+必须支持的模板变量：
 
 ```text
 {{ issue.id }}
@@ -252,30 +258,30 @@ Required template variables:
 {{ git.branch }}
 ```
 
-Workflow loading rules:
+加载规则：
 
-- startup parse failure exits the process
-- runtime reload failure keeps the last-known-good workflow
-- runtime reload errors are surfaced in dashboard and logs
-- env-backed secrets are resolved at runtime and never written to event logs
+- 启动时解析失败，进程直接退出
+- 运行中 reload 失败，继续使用 last-known-good workflow
+- reload 错误展示在 dashboard 和日志中
+- 环境变量中的 secret 只在运行时解析，不写入事件日志和 dashboard
 
-## 7. GitLab State Model
+## 7. GitLab 状态模型
 
-P0 uses GitLab labels as the workflow state machine.
+P0 使用 GitLab label 表达工作流状态。
 
-Labels:
+Label：
 
 ```text
-ai-ready       Candidate task, available for IssuePilot.
-ai-running     Claimed and currently being executed.
-human-review   MR exists and human review is required.
-ai-rework      Human requested changes; IssuePilot may run again.
-ai-merging     Reserved for future merge automation.
-ai-failed      Execution failed and human attention is needed.
-ai-blocked     Execution cannot continue without external input.
+ai-ready       候选任务，可被 IssuePilot 拾取
+ai-running     已认领，正在执行
+human-review   MR 已创建，等待人工 review
+ai-rework      人工打回，IssuePilot 可以重新执行
+ai-merging     预留给后续自动合并流程
+ai-failed      执行失败，需要人工介入
+ai-blocked     缺少外部信息、权限或密钥，无法继续
 ```
 
-P0 transitions:
+P0 支持的状态流转：
 
 ```text
 ai-ready -> ai-running -> human-review
@@ -286,9 +292,9 @@ ai-rework -> ai-running -> ai-failed
 ai-rework -> ai-running -> ai-blocked
 ```
 
-`ai-merging` is reserved for P1/P2. P0 never automatically merges.
+`ai-merging` 只作为 P1/P2 保留状态。P0 不自动合并。
 
-Mapping to the Symphony reference:
+与当前 Symphony 参考实现的映射：
 
 ```text
 Symphony Linear state     IssuePilot GitLab label
@@ -297,50 +303,50 @@ In Progress               ai-running
 Human Review              human-review
 Rework                    ai-rework
 Merging                   ai-merging
-Done/Closed/Cancelled     GitLab issue closed or terminal team label
+Done/Closed/Cancelled     GitLab issue closed 或团队终态 label
 ```
 
-Claim behavior:
+认领流程：
 
-1. Fetch candidate open issues with `ai-ready` or `ai-rework`.
-2. Skip issues with `ai-running`, `human-review`, `ai-failed`, or `ai-blocked`.
-3. Re-read the issue just before claim.
-4. Replace active label with `ai-running`.
-5. Re-read to confirm the claim.
-6. Continue only if the issue still belongs to this run.
+1. 查询带 `ai-ready` 或 `ai-rework` 的 open issue。
+2. 跳过带 `ai-running`、`human-review`、`ai-failed`、`ai-blocked` 的 issue。
+3. 认领前重新读取 issue。
+4. 将 active label 替换为 `ai-running`。
+5. 再次读取 issue，确认认领成功。
+6. 只有确认成功的进程继续执行。
 
-This gives a pragmatic optimistic concurrency strategy for local P0.
+这是本地 P0 足够实用的乐观并发策略。
 
 ## 8. Orchestrator
 
-The orchestrator owns scheduling state. It should not contain GitLab API details, worktree implementation details, or app-server protocol internals.
+orchestrator 独占调度状态。它不直接包含 GitLab API 细节、worktree 实现细节或 app-server 协议细节。
 
-Main loop:
+主循环：
 
 ```text
-1. Reload workflow.
-2. Reconcile running issues.
-3. Fetch candidate GitLab issues.
-4. Sort by priority, updated_at, then iid.
-5. Check available concurrency slots.
-6. Claim issue.
-7. Prepare workspace and branch.
-8. Run hooks.
-9. Start Codex app-server runner.
-10. Observe events.
-11. Run post-run reconciliation.
-12. Transition labels and write final events.
-13. Schedule retry when appropriate.
+1. reload workflow。
+2. reconcile running issues。
+3. 拉取 GitLab candidate issues。
+4. 按 priority、updated_at、iid 排序。
+5. 检查并发槽位。
+6. claim issue。
+7. 准备 workspace 和 branch。
+8. 执行 hooks。
+9. 启动 Codex app-server runner。
+10. 观察事件流。
+11. 执行 post-run reconciliation。
+12. 切换 label 并写 final events。
+13. 需要时安排 retry。
 ```
 
-P0 default concurrency:
+P0 默认并发：
 
 ```yaml
 agent:
   max_concurrent_agents: 1
 ```
 
-The internal runtime state should include:
+内部运行态至少包含：
 
 ```text
 running
@@ -353,13 +359,13 @@ last_config_reload
 last_poll
 ```
 
-The orchestrator state is in-memory. Restart recovery comes from GitLab labels and preserved workspaces, not from replaying all timers.
+orchestrator 状态保存在内存中。重启恢复依赖 GitLab label 和保留的 workspace，不依赖恢复所有计时器。
 
-## 9. Workspace and Git Strategy
+## 9. Workspace 与 Git 策略
 
-P0 default strategy is bare mirror plus git worktree.
+P0 默认使用 bare mirror + git worktree。
 
-Filesystem layout:
+目录结构：
 
 ```text
 ~/.issuepilot/
@@ -375,19 +381,19 @@ Filesystem layout:
     logs/
 ```
 
-Workspace is the orchestration concept: an isolated directory assigned to one issue. The implementation uses git worktree to make that directory efficient.
+workspace 是调度层概念，表示分配给单个 Issue 的隔离工作目录。P0 用 git worktree 实现这个目录，以节省磁盘和加快创建速度。
 
-Mirror flow:
+Mirror 流程：
 
 ```text
 ensureMirror()
-  if mirror is missing:
+  如果 mirror 不存在：
     git clone --mirror <repo_url> <repo-cache-path>
-  else:
+  如果 mirror 已存在：
     git --git-dir=<repo-cache-path> fetch --prune origin
 ```
 
-Worktree flow:
+Worktree 流程：
 
 ```text
 ensureWorktree(issue)
@@ -395,23 +401,23 @@ ensureWorktree(issue)
   git --git-dir=<mirror> worktree add <workspace> -B <branch> origin/<base_branch>
 ```
 
-If the workspace already exists:
+如果 workspace 已存在：
 
-- verify it is under the configured workspace root
-- verify it belongs to the expected project and branch
-- fetch latest origin state
-- reuse it when safe
-- mark failed if the git state is not safely recoverable
+- 校验它在配置的 workspace root 下
+- 校验它属于期望的 project 和 branch
+- fetch 最新 origin 状态
+- 状态安全时复用
+- Git 状态不可安全恢复时标记失败并保留现场
 
-Safety requirements:
+安全要求：
 
-- Codex cwd must be the issue worktree, never the source repository or `~/.issuepilot`
-- path canonicalization must prevent symlink escape
-- hooks run inside the workspace only
-- branch names and paths must be sanitized
-- failed workspaces are preserved for inspection
+- Codex cwd 必须是当前 issue worktree，不能是源仓库，也不能是 `~/.issuepilot`
+- 路径必须 canonicalize，防止 symlink escape
+- hooks 只在 workspace 内执行
+- branch 名和路径必须 sanitize
+- 失败 workspace 保留供排障
 
-Branch naming:
+分支命名：
 
 ```text
 ai/<issue-iid>-<title-slug>
@@ -419,25 +425,25 @@ ai/<issue-iid>-<title-slug>
 
 ## 10. Codex App-Server Runner
 
-P0 uses Codex app-server, not Codex CLI.
+P0 使用 Codex app-server，不使用 Codex CLI 作为主 runner。
 
-Runner responsibilities:
+runner 职责：
 
 ```text
-1. Start `codex app-server` in the issue workspace.
-2. Send initialize.
-3. Send initialized.
-4. Send thread/start with cwd, sandbox, approval policy, and dynamic tools.
-5. Send turn/start with rendered prompt, title, cwd, and sandbox policy.
-6. Read newline-delimited JSON-RPC messages from stdout/stderr stream.
-7. Handle completion, failure, cancellation, timeout, and port exit.
-8. Handle approval requests.
-9. Execute dynamic tool calls.
-10. Emit normalized events for the orchestrator and dashboard.
-11. Continue turns up to max_turns while issue is still active.
+1. 在 issue workspace 内启动 `codex app-server`。
+2. 发送 initialize。
+3. 发送 initialized。
+4. 发送 thread/start，包含 cwd、sandbox、approval policy、dynamic tools。
+5. 发送 turn/start，包含渲染后的 prompt、title、cwd、sandbox policy。
+6. 从 stdout/stderr stream 读取 newline-delimited JSON-RPC 消息。
+7. 处理 completed、failed、cancelled、timeout、port exit。
+8. 处理 approval requests。
+9. 执行 dynamic tool calls。
+10. 向 orchestrator 和 dashboard 发出标准化事件。
+11. Issue 仍 active 时，在 max_turns 内继续下一 turn。
 ```
 
-Required app-server events:
+必须标准化的 app-server 事件：
 
 ```text
 session_started
@@ -458,7 +464,7 @@ port_exit
 malformed_message
 ```
 
-Approval policy:
+默认 approval 策略：
 
 ```yaml
 codex:
@@ -468,19 +474,19 @@ codex:
     type: workspaceWrite
 ```
 
-If app-server requests user input, P0 auto-responds with:
+如果 app-server 请求用户输入，P0 自动回复：
 
 ```text
 This is a non-interactive IssuePilot run. Operator input is unavailable. If blocked, record the blocker and mark the issue ai-blocked.
 ```
 
-The runner must not silently hang waiting for human input.
+runner 不能静默等待人工输入。
 
 ## 11. GitLab Dynamic Tools
 
-P0 exposes a narrow GitLab tool allowlist to Codex app-server.
+P0 向 Codex app-server 暴露窄范围 GitLab tool allowlist。
 
-Tools:
+工具：
 
 ```text
 gitlab_get_issue
@@ -494,50 +500,50 @@ gitlab_list_merge_request_notes
 gitlab_get_pipeline_status
 ```
 
-Do not expose arbitrary GitLab REST or GraphQL in P0.
+P0 不暴露任意 GitLab REST 或 GraphQL。
 
-Tool rules:
+工具规则：
 
-- all writes are recorded as events
-- token values are never exposed to the model or logs
-- tool errors return structured failure payloads
-- unsupported tools fail fast and do not stall the runner
-- tool schemas are explicit JSON schemas passed in `thread/start`
+- 所有写操作记录为事件
+- token 不暴露给模型、不写日志、不进 dashboard
+- tool error 返回结构化失败 payload
+- 不支持的工具 fast-fail，不能卡住 runner
+- tool schema 使用明确 JSON schema，在 `thread/start` 传给 app-server
 
-The GitLab tools should let the agent perform normal ticket handoff. The orchestrator still performs deterministic post-run reconciliation.
+GitLab tools 用于让 agent 正常完成 issue handoff。orchestrator 仍保留 deterministic post-run reconciliation。
 
 ## 12. Post-Run Reconciliation
 
-Codex app-server `turn/completed` is not sufficient to mark success.
+Codex app-server 的 `turn/completed` 不等于任务成功。
 
-After runner completion, the orchestrator verifies:
-
-```text
-1. Worktree has commit(s) or an intended no-code-change result.
-2. Branch exists locally.
-3. Branch is pushed to GitLab.
-4. Merge Request exists for source branch.
-5. Issue has a handoff note or updated workpad.
-6. Issue labels moved from ai-running to human-review.
-```
-
-If the agent completed code changes but missed platform actions, the orchestrator attempts to fix them:
+runner 结束后，orchestrator 必须验证：
 
 ```text
-agent committed but did not push       -> orchestrator pushes
-branch pushed but no MR exists         -> orchestrator creates MR
-MR exists but body/title is stale       -> orchestrator updates MR
-no final Issue note exists             -> orchestrator writes fallback note
-labels are stale                       -> orchestrator transitions labels
+1. worktree 有 commit，或者明确是无需代码变更的结果。
+2. 本地 branch 存在。
+3. branch 已推送到 GitLab。
+4. source branch 对应 Merge Request 存在。
+5. Issue 有 handoff note 或 workpad 更新。
+6. Issue labels 已从 ai-running 切换到 human-review。
 ```
 
-Fallback MR title:
+如果 agent 完成代码但漏掉平台动作，orchestrator 尝试兜底：
+
+```text
+agent 已 commit 但未 push        -> orchestrator push
+branch 已 push 但没有 MR         -> orchestrator create MR
+MR 存在但 title/body 过期        -> orchestrator update MR
+没有最终 Issue note             -> orchestrator 写 fallback note
+labels 未切换                    -> orchestrator 切换 labels
+```
+
+fallback MR 标题：
 
 ```text
 [AI] <issue title>
 ```
 
-Fallback MR body includes:
+fallback MR body 至少包含：
 
 ```text
 Issue link
@@ -547,44 +553,44 @@ Risks
 Generated by IssuePilot
 ```
 
-If reconciliation fails, the run becomes `ai-failed` unless the reason is a true external blocker.
+reconciliation 失败时，除非属于真正外部阻塞，否则 run 进入 `ai-failed`。
 
-## 13. Failure and Blocked Classification
+## 13. 失败与阻塞分类
 
-Blocked:
+Blocked：
 
 ```text
-GitLab token missing
+GitLab token 缺失
 GitLab 403 permission denied
-repo clone or push permission missing
-Codex auth unavailable
-required secret missing
-issue lacks required information and agent explicitly reports blocker
+repo clone 或 push 权限缺失
+Codex auth 不可用
+必要 secret 缺失
+Issue 信息不足，且 agent 明确报告 blocker
 ```
 
-Failed:
+Failed：
 
 ```text
 Codex turn failed
 Codex turn timeout
-app-server process exits unexpectedly
-hook failure that prevents execution
-tests fail after max_turns
-MR creation fails after retry
-workspace git state is not safely recoverable
+app-server process 异常退出
+阻止执行的 hook failure
+max_turns 后 tests 仍失败
+MR 创建重试后仍失败
+workspace git 状态不可安全恢复
 ```
 
-Retryable:
+Retryable：
 
 ```text
 GitLab 5xx
 GitLab rate limit
 network timeout
-transient git fetch/push failure
+临时 git fetch/push 失败
 app-server startup failure
 ```
 
-P0 retry defaults:
+P0 retry 默认值：
 
 ```yaml
 agent:
@@ -592,21 +598,21 @@ agent:
   retry_backoff_ms: 30000
 ```
 
-After retry exhaustion, write a concise Issue note and set `ai-failed`.
+重试耗尽后，写一条简洁 Issue note，并设置 `ai-failed`。
 
 ## 14. Dashboard
 
-P0 dashboard uses Next.js and talks to the orchestrator API.
+P0 dashboard 使用 Next.js，读取 orchestrator API。
 
-Default URL:
+默认地址：
 
 ```text
 http://127.0.0.1:4738
 ```
 
-P0 dashboard is read-only.
+P0 dashboard 只读。
 
-Views:
+页面：
 
 ```text
 Service header
@@ -642,26 +648,26 @@ Run detail
   turn_id
   tool calls
   approval events
-  token usage when available
+  token usage，如果可用
   failure reason
   recent logs
 ```
 
-No P0 dashboard controls:
+P0 不提供 dashboard 操作：
 
 ```text
-no start button
-no stop button
-no retry button
-no label mutation
-no workspace deletion
+不启动任务
+不停止任务
+不重试任务
+不改 label
+不删除 workspace
 ```
 
-These can be added after the run loop is proven stable.
+这些操作可以在 run loop 稳定后再加入。
 
 ## 15. Orchestrator API
 
-The orchestrator exposes local APIs for dashboard and debugging.
+orchestrator 暴露本地 API，供 dashboard 和调试使用。
 
 ```text
 GET /api/state
@@ -671,13 +677,13 @@ GET /api/events?runId=<runId>
 GET /api/events/stream
 ```
 
-`/api/events/stream` uses SSE for live updates.
+`/api/events/stream` 使用 SSE 推送实时事件。
 
-The API binds to `127.0.0.1` by default.
+API 默认绑定 `127.0.0.1`。
 
-## 16. Observability Storage
+## 16. 可观测性存储
 
-Use local file storage:
+使用本地文件：
 
 ```text
 ~/.issuepilot/state/
@@ -690,7 +696,7 @@ Use local file storage:
     issuepilot.log
 ```
 
-Event shape:
+事件结构：
 
 ```ts
 type IssuePilotEvent = {
@@ -709,46 +715,46 @@ type IssuePilotEvent = {
 };
 ```
 
-Logging requirements:
+日志要求：
 
-- every event has `runId`
-- every issue event has GitLab project and issue iid
-- every app-server event with session context has `threadId` and `turnId`
-- secrets are redacted
-- GitLab write operations are logged as structured events
+- 每个事件有 `runId`
+- 每个 issue 事件有 GitLab project 和 issue iid
+- 每个带 session context 的 app-server 事件有 `threadId` 和 `turnId`
+- secrets 必须 redacted
+- GitLab 写操作必须记录为结构化事件
 
-## 17. Security Posture
+## 17. 安全边界
 
-P0 is intended for trusted local/internal environments.
+P0 面向可信本地或内网环境。
 
-Required controls:
+必须具备：
 
-- Codex runs only in the issue worktree
-- workspace path is canonicalized and checked against configured root
-- app-server turn sandbox is workspace scoped
-- GitLab token is read from env
-- token is never rendered into prompt, event data, dashboard, or logs
-- dashboard binds to localhost by default
-- GitLab dynamic tools use a narrow allowlist
-- hooks run in workspace only
-- automatic approvals are limited by workspace sandbox
+- Codex 只在 issue worktree 内运行
+- workspace path canonicalize，并校验在 configured root 下
+- app-server turn sandbox 限定在 workspace
+- GitLab token 从环境变量读取
+- token 不进入 prompt、event data、dashboard 或 logs
+- dashboard 默认绑定 localhost
+- GitLab dynamic tools 使用窄 allowlist
+- hooks 只在 workspace 内执行
+- 自动 approval 只能在 workspace sandbox 内生效
 
-P0 does not provide strong hostile-code sandboxing. If the company requires stronger isolation, add Docker or Kubernetes worker isolation as a later phase.
+P0 不提供对恶意代码的强沙箱。如果公司要求更强隔离，后续再加入 Docker 或 Kubernetes worker。
 
-## 18. Testing Strategy
+## 18. 测试策略
 
-### 18.1 Unit Tests
+### 18.1 单元测试
 
-Workflow:
+Workflow：
 
-- front matter parsing
-- default values
+- front matter 解析
+- 默认值
 - env resolution
 - invalid YAML
 - prompt rendering
-- missing required config
+- 缺少必填配置
 
-GitLab adapter:
+GitLab adapter：
 
 - candidate issue listing
 - label claim
@@ -756,9 +762,9 @@ GitLab adapter:
 - Issue note create/update
 - MR create/update
 - pipeline status
-- 403/404/5xx classification
+- 403/404/5xx 分类
 
-Workspace:
+Workspace：
 
 - mirror initialization
 - mirror fetch
@@ -768,7 +774,7 @@ Workspace:
 - symlink/path escape prevention
 - hook success/failure
 
-Codex app-server runner:
+Codex app-server runner：
 
 - initialize/initialized
 - thread/start
@@ -784,7 +790,7 @@ Codex app-server runner:
 - timeout
 - port exit
 
-Orchestrator:
+Orchestrator：
 
 - candidate selection
 - duplicate claim prevention
@@ -794,51 +800,51 @@ Orchestrator:
 - success reconciliation
 - stale label cleanup
 
-Dashboard/API:
+Dashboard/API：
 
 - `/api/state`
 - `/api/runs`
 - `/api/runs/:runId`
 - SSE event delivery
 
-### 18.2 Integration Tests
+### 18.2 集成测试
 
-Use fake GitLab and fake Codex app-server.
+使用 fake GitLab 和 fake Codex app-server。
 
-Scenario:
-
-```text
-1. Fake GitLab exposes one open ai-ready issue.
-2. IssuePilot claims the issue.
-3. Workspace creates a worktree.
-4. Fake Codex emits tool calls and turn/completed.
-5. IssuePilot pushes/creates MR through fake GitLab.
-6. Issue ends with human-review.
-7. Event store contains a complete timeline.
-```
-
-### 18.3 Real Smoke Test
-
-Use a disposable GitLab project.
-
-Acceptance:
+场景：
 
 ```text
-1. Create a small issue, such as README wording change.
-2. Add ai-ready.
-3. Start IssuePilot locally.
-4. Verify worktree creation.
-5. Verify Codex app-server run.
-6. Verify branch push.
-7. Verify MR creation.
-8. Verify Issue note.
-9. Verify label human-review.
-10. Verify dashboard timeline.
+1. fake GitLab 暴露一个 open + ai-ready issue。
+2. IssuePilot 认领 issue。
+3. workspace 创建 worktree。
+4. fake Codex 发出 tool calls 和 turn/completed。
+5. IssuePilot 通过 fake GitLab 完成 push/MR/comment/label。
+6. Issue 最终进入 human-review。
+7. event store 包含完整 timeline。
 ```
 
-## 19. Milestones
+### 18.3 真实 Smoke Test
 
-M1: TypeScript skeleton
+使用一个一次性 GitLab 测试项目。
+
+验收：
+
+```text
+1. 创建一个小 issue，例如 README 文案修改。
+2. 添加 ai-ready。
+3. 本地启动 IssuePilot。
+4. 验证 worktree 创建。
+5. 验证 Codex app-server run。
+6. 验证 branch push。
+7. 验证 MR 创建。
+8. 验证 Issue note。
+9. 验证 label human-review。
+10. 验证 dashboard timeline。
+```
+
+## 19. 里程碑
+
+M1：TypeScript skeleton
 
 - pnpm workspace
 - orchestrator app
@@ -846,22 +852,22 @@ M1: TypeScript skeleton
 - shared packages
 - test tooling
 
-M2: Workflow loader
+M2：Workflow loader
 
-- parse `.agents/workflow.md`
-- validate config
-- render prompt
-- hot reload with last-known-good fallback
+- 解析 `.agents/workflow.md`
+- 校验 config
+- 渲染 prompt
+- hot reload + last-known-good fallback
 
-M3: GitLab adapter
+M3：GitLab adapter
 
 - issue list
 - label transitions
 - notes
-- MR creation/update
+- MR create/update
 - pipeline read
 
-M4: Workspace manager
+M4：Workspace manager
 
 - bare mirror
 - worktree creation
@@ -869,7 +875,7 @@ M4: Workspace manager
 - path safety
 - hooks
 
-M5: Codex app-server runner
+M5：Codex app-server runner
 
 - JSON-RPC lifecycle
 - approval handling
@@ -877,7 +883,7 @@ M5: Codex app-server runner
 - event emission
 - turn continuation
 
-M6: Orchestrator
+M6：Orchestrator
 
 - poll
 - claim
@@ -886,53 +892,53 @@ M6: Orchestrator
 - reconciliation
 - status snapshots
 
-M7: Dashboard
+M7：Dashboard
 
 - Next.js UI
 - orchestrator API integration
 - SSE timeline
 - run detail
 
-M8: End-to-end validation
+M8：端到端验证
 
 - fake GitLab + fake Codex test
 - real GitLab smoke test
-- documentation for local use
+- local usage docs
 
 ## 20. MVP Definition of Done
 
-P0 is done when:
+P0 完成标准：
 
 ```text
-1. A GitLab Issue with ai-ready is picked up automatically.
-2. IssuePilot changes the Issue to ai-running.
-3. A per-issue git worktree is created under ~/.issuepilot/workspaces.
-4. Codex app-server starts in that worktree.
-5. The rendered workflow prompt includes issue and workspace context.
-6. Codex can call allowlisted GitLab dynamic tools.
-7. Code changes are committed.
-8. Branch is pushed to GitLab.
-9. Merge Request is created or updated.
-10. Issue receives a handoff note.
-11. Labels move to human-review on success.
-12. Labels move to ai-failed or ai-blocked on failure/blocker.
-13. Dashboard shows run timeline, app-server session details, MR link, and logs.
-14. Failed runs preserve workspace and event logs for debugging.
+1. 带 ai-ready 的 GitLab Issue 能被自动拾取。
+2. IssuePilot 将 Issue 切到 ai-running。
+3. 每个 Issue 在 ~/.issuepilot/workspaces 下创建独立 git worktree。
+4. Codex app-server 在该 worktree 内启动。
+5. 渲染后的 workflow prompt 包含 issue 和 workspace context。
+6. Codex 可以调用 allowlisted GitLab dynamic tools。
+7. 代码变更被提交。
+8. 分支推送到 GitLab。
+9. Merge Request 被创建或更新。
+10. Issue 收到 handoff note。
+11. 成功时 labels 进入 human-review。
+12. 失败或阻塞时 labels 进入 ai-failed 或 ai-blocked。
+13. Dashboard 展示 run timeline、app-server session、MR link 和 logs。
+14. failed runs 保留 workspace 和 event logs 供排障。
 ```
 
-## 21. Open Decisions
+## 21. 待确认决策
 
-These should be confirmed before implementation planning:
+进入 implementation plan 前需要确认：
 
-1. Dashboard UI kit: Ant Design or Tailwind/shadcn.
-2. Orchestrator HTTP server: Fastify or Hono.
-3. GitLab authentication shape: personal token, project token, or bot user token.
-4. MR target branch policy: always workflow `git.base_branch`, or GitLab project default branch fallback.
-5. Whether IssuePilot should create a persistent workpad note or a final summary note only in P0.
+1. Dashboard UI kit：Ant Design 还是 Tailwind/shadcn。
+2. orchestrator HTTP server：Fastify 还是 Hono。
+3. GitLab 认证方式：personal token、project token，还是 bot user token。
+4. MR target branch 策略：总是使用 workflow `git.base_branch`，还是 fallback 到 GitLab project default branch。
+5. P0 是创建持久 workpad note，还是只创建最终 summary note。
 
-## 22. Implementation Notes
+## 22. 实现备注
 
-Suggested command shape:
+建议命令：
 
 ```bash
 issuepilot run --workflow .agents/workflow.md --port 4738
@@ -940,7 +946,7 @@ issuepilot validate --workflow .agents/workflow.md
 issuepilot doctor
 ```
 
-Suggested local development commands:
+建议本地开发命令：
 
 ```bash
 pnpm dev:orchestrator
@@ -949,4 +955,4 @@ pnpm test
 pnpm lint
 ```
 
-The implementation plan should start with contracts and fake E2E tests before integrating real GitLab and real Codex app-server.
+实现计划应该从 contracts 和 fake E2E tests 开始，再接真实 GitLab 和真实 Codex app-server。
