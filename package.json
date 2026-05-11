@@ -1,0 +1,33 @@
+{
+  "name": "issuepilot",
+  "version": "0.0.0",
+  "private": true,
+  "description": "IssuePilot P0 — GitLab issue driven Codex orchestrator.",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
+    "test:smoke": "vitest run --config vitest.config.ts",
+    "dev:orchestrator": "pnpm --filter @issuepilot/orchestrator dev",
+    "dev:dashboard": "pnpm --filter @issuepilot/dashboard dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.14.0",
+    "eslint": "^9.14.0",
+    "eslint-plugin-import": "^2.31.0",
+    "execa": "^9.5.1",
+    "prettier": "^3.3.3",
+    "turbo": "^2.5.0",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.13.0",
+    "vitest": "^2.1.4",
+    "yaml": "^2.6.0"
+  }
+}

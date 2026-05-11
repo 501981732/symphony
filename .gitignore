@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Turborepo
+.turbo/
+
+# Next.js
+.next/
+out/
+
+# Coverage & test artefacts
+coverage/
+.vitest-cache/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json.example
+
+# IssuePilot runtime state (never committed)
+.issuepilot/
+~/.issuepilot/
+
+# Logs
+*.log
+logs/
+
+# Env files
+.env
+.env.*
+!.env.example

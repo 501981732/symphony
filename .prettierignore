@@ -1,0 +1,31 @@
+node_modules/
+dist/
+build/
+.turbo/
+.next/
+out/
+coverage/
+
+# Locks and generated metadata — never format these.
+pnpm-lock.yaml
+*.tsbuildinfo
+**/next-env.d.ts
+
+# Reference Elixir prototype — keep formatter scope to TypeScript stack.
+elixir/
+
+# Out-of-scope automation / external surface — don't reformat.
+.codex/
+.github/
+.cursor/
+.qodo/
+
+# Plan + spec markdown is hand-tuned; let editors do the work.
+docs/superpowers/plans/
+docs/superpowers/specs/
+SPEC.md
+README.md
+NOTICE
+LICENSE
+CHANGELOG.md
+AGENTS.md
