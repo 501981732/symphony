@@ -842,7 +842,7 @@ Dashboard/API：
 10. 验证 dashboard timeline。
 ```
 
-## 19. 里程碑
+## 19. V1/P0 实现里程碑
 
 M1：TypeScript skeleton
 
@@ -905,7 +905,51 @@ M8：端到端验证
 - real GitLab smoke test
 - local usage docs
 
-## 20. MVP Definition of Done
+## 20. 后续版本路线图
+
+V1/P0：本地单机闭环
+
+- 本地 daemon
+- GitLab Issue label 驱动
+- Codex app-server runner
+- git worktree workspace
+- 自动创建 MR 和持久 workpad note
+- 只读 Next.js dashboard
+- fake E2E + real GitLab smoke test
+
+V2：团队可运营版本
+
+- 部署到团队共享机器或内网服务
+- 支持多项目 workflow 配置
+- 并发从 1 扩展到 2-5
+- dashboard 增加基础操作：retry、stop、archive run
+- CI 状态读取和失败自动回流到 ai-rework
+- PR/MR review feedback sweep
+- 更完整的运行报告：diff summary、测试结果、风险点、耗时
+- workspace 清理和保留策略
+
+V3：生产化执行平台
+
+- 多 worker 支持，本机、SSH worker、容器 worker 可插拔
+- Docker 或 Kubernetes sandbox
+- token、时长、并发预算控制
+- 权限模型：项目级、团队级、管理员级
+- Webhook + poll 混合调度
+- 更强的 GitLab 审计和 secret redaction
+- Postgres/SQLite 持久化 run history
+- OpenTelemetry、Loki/Grafana 或内部观测平台集成
+
+V4：智能研发工作台
+
+- 自动拆分大 Issue 为子任务
+- 跨 Issue 依赖和 blocker 分析
+- 多 agent 协作和 reviewer agent
+- 自动生成验收材料：截图、录屏、Playwright walkthrough
+- agent 成功率、返工率、CI 通过率、review 命中率评估
+- workflow/skills 推荐和持续改进机制
+- 支持更多执行器，例如 Claude Code 或内部 coding agent
+
+## 21. MVP Definition of Done
 
 P0 完成标准：
 
@@ -926,7 +970,7 @@ P0 完成标准：
 14. failed runs 保留 workspace 和 event logs 供排障。
 ```
 
-## 21. 已确认决策
+## 22. 已确认决策
 
 以下决策已确认，并作为 implementation plan 的输入：
 
@@ -936,7 +980,7 @@ P0 完成标准：
 4. MR target branch 策略：优先使用 workflow `git.base_branch`，缺省时 fallback 到 GitLab project default branch。
 5. Issue note 策略：P0 创建并维护一个持久 workpad note，而不是只写最终 summary note。
 
-## 22. 实现备注
+## 23. 实现备注
 
 建议命令：
 
