@@ -13,6 +13,23 @@ export {
   type GitlabCtor,
 } from "./client.js";
 export type {
+  GitLabApi,
+  IssueNotesApi,
+  IssuesApi,
+  MergeRequestNotesApi,
+  MergeRequestsApi,
+  PipelinesApi,
+  RawIssue,
+  RawIssueNote,
+  RawMergeRequest,
+  RawPipeline,
+} from "./api-shape.js";
+export {
+  listCandidateIssues,
+  toIssueRef,
+  type ListCandidateIssuesOpts,
+} from "./issues.js";
+export type {
   GitLabAdapter,
   GitLabErrorCategory,
   IssueRef,
