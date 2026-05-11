@@ -59,9 +59,8 @@ describe("@issuepilot/shared-contracts/run", () => {
     expectTypeOf<RunRecord>()
       .toHaveProperty("endedAt")
       .toEqualTypeOf<string | undefined>();
-    expectTypeOf<RunRecord>().toHaveProperty("lastError").toEqualTypeOf<
-      | { code: string; message: string }
-      | undefined
-    >();
+    expectTypeOf<RunRecord>()
+      .toHaveProperty("lastError")
+      .toEqualTypeOf<{ code: string; message: string } | undefined>();
   });
 });
