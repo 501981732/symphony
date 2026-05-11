@@ -15,6 +15,8 @@ import type {
   WorkspaceConfig,
 } from "./types.js";
 
+const ENV_VAR_NAME_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 /**
  * Thrown when `.agents/workflow.md` cannot be loaded or fails validation.
  *
@@ -40,7 +42,12 @@ const TrackerSchema = z.object({
   kind: z.literal("gitlab"),
   base_url: z.string().url(),
   project_id: z.string().min(1),
-  token_env: z.string().min(1),
+  token_env: z
+    .string()
+    .regex(
+      ENV_VAR_NAME_REGEX,
+      "must be a valid environment variable name",
+    ),
   active_labels: z
     .array(z.string().min(1))
     .min(1)
@@ -84,13 +91,13 @@ const CodexSchema = z
       .enum(["never", "untrusted", "on-request"])
       .default("never"),
     thread_sandbox: z
-      .enum(["workspace-write", "read-only", "danger-full-access"])
+      .enum(["workspace-write", "read-only"])
       .default("workspace-write"),
     turn_timeout_ms: z.number().int().min(1_000).default(3_600_000),
     turn_sandbox_policy: z
       .object({
         type: z
-          .enum(["workspaceWrite", "readOnly", "dangerFullAccess"])
+          .enum(["workspaceWrite", "readOnly"])
           .default("workspaceWrite"),
       })
       .prefault({}),

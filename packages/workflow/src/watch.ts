@@ -14,6 +14,8 @@ export interface WatchWorkflowOptions {
   onError: (err: WorkflowConfigError) => void;
   /** Debounce window for filesystem events. Defaults to 250 ms. */
   debounceMs?: number;
+  /** Optional loading pipeline used by higher-level facades. */
+  loadWorkflow?: (filePath: string) => Promise<WorkflowConfig>;
 }
 
 export interface WorkflowWatcher {
@@ -43,13 +45,15 @@ export async function watchWorkflow(
   options: WatchWorkflowOptions,
 ): Promise<WorkflowWatcher> {
   const debounceMs = options.debounceMs ?? 250;
-  const initial = await parseWorkflowFile(filePath);
+  const loadWorkflow = options.loadWorkflow ?? parseWorkflowFile;
+  const initial = await loadWorkflow(filePath);
 
   let activeConfig: WorkflowConfig = initial;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending: Promise<void> | null = null;
   let lastMtimeMs: number | null = null;
+  let reloadGeneration = 0;
 
   try {
     const s = await stat(filePath);
@@ -68,14 +72,15 @@ export async function watchWorkflow(
 
   const dispatch = async (): Promise<void> => {
     if (stopped) return;
+    const generation = ++reloadGeneration;
     try {
-      const next = await parseWorkflowFile(filePath);
-      if (stopped) return;
+      const next = await loadWorkflow(filePath);
+      if (stopped || generation !== reloadGeneration) return;
       if (next.source.sha256 === activeConfig.source.sha256) return;
       activeConfig = next;
       options.onReload(next);
     } catch (cause) {
-      if (stopped) return;
+      if (stopped || generation !== reloadGeneration) return;
       const err =
         cause instanceof WorkflowConfigError
           ? cause

@@ -36,13 +36,11 @@ export type CodexApprovalPolicy = "never" | "untrusted" | "on-request";
 
 export type CodexThreadSandbox =
   | "workspace-write"
-  | "read-only"
-  | "danger-full-access";
+  | "read-only";
 
 export type CodexTurnSandboxType =
   | "workspaceWrite"
-  | "readOnly"
-  | "dangerFullAccess";
+  | "readOnly";
 
 export interface CodexTurnSandboxPolicy {
   type: CodexTurnSandboxType;

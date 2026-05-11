@@ -4,9 +4,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 2026-05-11 — **IssuePilot Workflow Loader 安全边界加固。** 拒绝 workflow 配置 `danger-full-access` / `dangerFullAccess` sandbox；`tracker.token_env` 限制为合法环境变量名且缺失错误不回显疑似 secret；`renderPrompt` 在运行时构造 prompt 白名单 context，额外字段渲染为空并 warn；`createWorkflowLoader` 统一执行 parse → path expand → token env validate；hot reload 忽略较晚完成的过期 reload 结果。验证：`pnpm --filter @issuepilot/workflow test` 47/47 通过，`typecheck` / `lint` / `build` / `git diff --check` 通过。
+
 ### Added
 
-- 2026-05-11 — **IssuePilot P0 Phase 2（M2 Workflow Loader）完成。** `@issuepilot/workflow` 完整实现 `.agents/workflow.md` 的解析、`~/$HOME` 路径与 token env 解析、liquidjs prompt 渲染、fs.watch + stat 轮询的 hot reload，以及面向 orchestrator 的 `createWorkflowLoader` 门面。验证（无缓存）：`pnpm -w turbo run build test typecheck lint --force` 36/36 全绿；workflow 包内 6 spec / 40 cases 全绿，覆盖 spec §6 加载规则、§6 全部 12 个模板变量、与缺失 secret/缺失 tracker/坏 YAML/hot reload 失败保留 last-known-good 等错误路径。包含 5 个 Task：
+- 2026-05-11 — **IssuePilot P0 Phase 2（M2 Workflow Loader）完成。** `@issuepilot/workflow` 完整实现 `.agents/workflow.md` 的解析、`~/$HOME` 路径与 token env 解析、liquidjs prompt 渲染、fs.watch + stat 轮询的 hot reload，以及面向 orchestrator 的 `createWorkflowLoader` 门面。验证（无缓存）：`pnpm -w turbo run build test typecheck lint --force` 36/36 全绿；workflow 包内 6 spec / 47 cases 全绿，覆盖 spec §6 加载规则、§6 全部 12 个模板变量、与缺失 secret/缺失 tracker/坏 YAML/hot reload 失败保留 last-known-good 等错误路径。包含 5 个 Task：
   - **Task 2.1（commit 8636bb4）** `feat(workflow): parse front matter into typed config` — `parseWorkflowFile` 通过 `gray-matter` + `yaml`（显式拒绝 array/标量 front matter）+ zod schema，把 snake_case YAML 映射成 camelCase `WorkflowConfig`，可选 section 用 `prefault({})` 触发嵌套 default 与 spec §6 默认值对齐；`WorkflowConfigError(path)` 区分 `<file>` / `<front-matter>` / 字段 dot-path 三类错误。新增 4 个 fixture（valid/minimal/missing-tracker/bad-yaml）+ 6 个测试。
   - **Task 2.2（commit 1127790）** `feat(workflow): resolve tilde paths and validate token env` — `expandHomePath` 支持 `~`、`~/...` 与字面量 `$HOME`（仅在边界字符前），显式不展开 `~user/...`、`${HOME}`、`$HOMEX`、其它 env；非字符串输入抛 `WorkflowConfigError(path = "<path>")`。`expandWorkflowPaths` 克隆并展开 `workspace.root` / `repoCacheRoot`，保持纯函数。`validateWorkflowEnv` 与 `resolveTrackerSecret` 把 secret 解析集中到运行期，cfg 永不带 token。新增 15 个测试。
   - **Task 2.3（commit e4569f8）** `feat(workflow): render liquid prompt with whitelisted context` — `renderPrompt` 用 liquidjs（strictVariables=false / strictFilters=true / cache=false / root=[]），并把 `fs` 适配器全部替换成 reject/false 实现，显式禁掉 `{% include %}` / `{% render %}`；`detectMissingVariables` 用正则提取顶层 dotted 引用静态扫描，缺失项以 `{ path }` 元数据走可注入的 `PromptRenderLogger.warn`。新增 8 个测试覆盖 spec §6 12 个变量、未定义字段空串 + warn 路径、空数组不触发 warn、include/render 抛错、未知 filter 抛错。

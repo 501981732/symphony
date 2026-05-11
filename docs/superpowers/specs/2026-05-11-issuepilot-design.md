@@ -263,7 +263,11 @@ Description:
 - 启动时解析失败，进程直接退出
 - 运行中 reload 失败，继续使用 last-known-good workflow
 - reload 错误展示在 dashboard 和日志中
+- `workspace.root` 和 `workspace.repo_cache_root` 在加载阶段展开 `~` / `$HOME`
+- `tracker.token_env` 必须是合法环境变量名；对应环境变量缺失时，workflow 加载失败，但错误不能回显 secret 或疑似 secret
 - 环境变量中的 secret 只在运行时解析，不写入事件日志和 dashboard
+- prompt 渲染只允许上面列出的白名单变量；运行时 context 中的额外字段渲染为空并记录 warn
+- workflow 文件不能把 Codex sandbox 提升到 `danger-full-access` / `dangerFullAccess`
 
 ## 7. GitLab 状态模型
 

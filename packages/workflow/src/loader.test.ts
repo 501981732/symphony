@@ -4,6 +4,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import os from "node:os";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -53,16 +54,30 @@ async function waitUntil(
 }
 
 describe("createWorkflowLoader", () => {
-  it("loadOnce 解析 fixture 文件", async () => {
-    const loader = createWorkflowLoader();
+  it("loadOnce 解析 fixture 文件，并展开路径、校验 token env", async () => {
+    const loader = createWorkflowLoader({
+      env: { ISSUEPILOT_TEST_TOKEN: "secret" },
+    });
     const cfg = await loader.loadOnce(VALID_PATH);
     expect(cfg.tracker.projectId).toBe("group/project");
+    expect(cfg.workspace.root).toBe(
+      path.join(os.homedir(), ".issuepilot/workspaces"),
+    );
     expect(cfg.promptTemplate).toMatch(/You are the AI engineer/);
+  });
+
+  it("loadOnce 在 tracker.token_env 缺失时拒绝配置", async () => {
+    const loader = createWorkflowLoader({ env: {} });
+    await expect(loader.loadOnce(VALID_PATH)).rejects.toMatchObject({
+      path: "tracker.token_env",
+    });
   });
 
   it("start → 改文件 → current() 反映更新 → stop", async () => {
     const file = makeTmpFile(VALID);
-    const loader = createWorkflowLoader();
+    const loader = createWorkflowLoader({
+      env: { ISSUEPILOT_TEST_TOKEN: "secret" },
+    });
     const watcher = await loader.start(file, { debounceMs: 30 });
     watchers.push(watcher);
 
@@ -80,6 +95,34 @@ describe("createWorkflowLoader", () => {
     writeFileSync(file, VALID, "utf8");
     await sleep(120);
     expect(watcher.current().tracker.projectId).toBe("minimal/project");
+  });
+
+  it("start 运行期 token env 校验失败时保留 last-known-good", async () => {
+    const file = makeTmpFile(VALID);
+    const loader = createWorkflowLoader({
+      env: { ISSUEPILOT_TEST_TOKEN: "secret" },
+    });
+    const onReload = vi.fn();
+    const onError = vi.fn();
+    const watcher = await loader.start(file, {
+      onReload,
+      onError,
+      debounceMs: 30,
+    });
+    watchers.push(watcher);
+
+    const invalidEnv = MINIMAL.replace(
+      'token_env: "ISSUEPILOT_TEST_TOKEN"',
+      'token_env: "MISSING_TOKEN"',
+    );
+    writeFileSync(file, invalidEnv, "utf8");
+    await waitUntil(() => onError.mock.calls.length > 0);
+
+    expect(onReload).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "tracker.token_env" }),
+    );
+    expect(watcher.current().tracker.projectId).toBe("group/project");
   });
 
   it("render 用 loader 默认 logger 输出 warn", async () => {

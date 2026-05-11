@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { WorkflowConfigError } from "./parse.js";
+import { parseWorkflowFile, WorkflowConfigError } from "./parse.js";
 import type { WorkflowConfig } from "./types.js";
 import { watchWorkflow, type WorkflowWatcher } from "./watch.js";
 
@@ -171,5 +171,68 @@ describe("watchWorkflow", () => {
 
     expect(onReload).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("快速连续修改最终只保留最新 workflow", async () => {
+    const file = makeTmpFile(VALID);
+    const onReload = vi.fn<(cfg: WorkflowConfig) => void>();
+    const onError = vi.fn();
+    const watcher = await watchWorkflow(file, {
+      onReload,
+      onError,
+      debounceMs: 1,
+    });
+    watchers.push(watcher);
+
+    const first = MINIMAL.replace("minimal/project", "first/project");
+    const second = MINIMAL.replace("minimal/project", "second/project");
+
+    writeFileSync(file, first, "utf8");
+    await sleep(5);
+    writeFileSync(file, second, "utf8");
+
+    await waitUntil(
+      () => watcher.current().tracker.projectId === "second/project",
+    );
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(watcher.current().tracker.projectId).toBe("second/project");
+  });
+
+  it("忽略较晚完成的过期 reload 结果", async () => {
+    const file = makeTmpFile(VALID);
+    const onReload = vi.fn<(cfg: WorkflowConfig) => void>();
+    const onError = vi.fn();
+    const startedProjects: string[] = [];
+
+    const watcher = await watchWorkflow(file, {
+      onReload,
+      onError,
+      debounceMs: 1,
+      loadWorkflow: async (filePath) => {
+        const cfg = await parseWorkflowFile(filePath);
+        startedProjects.push(cfg.tracker.projectId);
+        if (cfg.tracker.projectId === "first/project") {
+          await sleep(80);
+        }
+        return cfg;
+      },
+    });
+    watchers.push(watcher);
+
+    const first = MINIMAL.replace("minimal/project", "first/project");
+    const second = MINIMAL.replace("minimal/project", "second/project");
+
+    writeFileSync(file, first, "utf8");
+    await waitUntil(() => startedProjects.includes("first/project"));
+
+    writeFileSync(file, second, "utf8");
+    await waitUntil(
+      () => watcher.current().tracker.projectId === "second/project",
+    );
+
+    await sleep(120);
+    expect(onError).not.toHaveBeenCalled();
+    expect(watcher.current().tracker.projectId).toBe("second/project");
   });
 });

@@ -126,4 +126,22 @@ describe("parseWorkflowFile", () => {
       path: "<file>",
     });
   });
+
+  it("拒绝 workflow 将 Codex sandbox 提升到 danger-full-access", async () => {
+    await expect(
+      parseWorkflowFile(fixture("workflow.danger-sandbox.md")),
+    ).rejects.toMatchObject({
+      name: "WorkflowConfigError",
+      path: "codex.thread_sandbox",
+    });
+  });
+
+  it("拒绝非法 tracker.token_env 名称", async () => {
+    await expect(
+      parseWorkflowFile(fixture("workflow.invalid-token-env.md")),
+    ).rejects.toMatchObject({
+      name: "WorkflowConfigError",
+      path: "tracker.token_env",
+    });
+  });
 });

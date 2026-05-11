@@ -74,7 +74,7 @@ export function validateWorkflowEnv(
   const value = env[cfg.tracker.tokenEnv];
   if (typeof value !== "string" || value.length === 0) {
     throw new WorkflowConfigError(
-      `environment variable ${cfg.tracker.tokenEnv} is not set`,
+      "environment variable configured by tracker.token_env is not set",
       "tracker.token_env",
     );
   }
@@ -97,7 +97,7 @@ export function resolveTrackerSecret(
   const value = env[cfg.tracker.tokenEnv];
   if (typeof value !== "string" || value.length === 0) {
     throw new WorkflowConfigError(
-      `environment variable ${cfg.tracker.tokenEnv} is not set`,
+      "environment variable configured by tracker.token_env is not set",
       "tracker.token_env",
     );
   }

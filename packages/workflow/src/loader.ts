@@ -4,6 +4,11 @@ import {
   type PromptRenderLogger,
   type PromptRenderOptions,
 } from "./render.js";
+import {
+  expandWorkflowPaths,
+  validateWorkflowEnv,
+  type EnvLike,
+} from "./resolve.js";
 import type { PromptContext, WorkflowConfig } from "./types.js";
 import {
   watchWorkflow,
@@ -13,7 +18,7 @@ import {
 
 export type StartWatcherOptions = Omit<
   WatchWorkflowOptions,
-  "onReload" | "onError"
+  "onReload" | "onError" | "loadWorkflow"
 > &
   Partial<Pick<WatchWorkflowOptions, "onReload" | "onError">>;
 
@@ -43,6 +48,8 @@ export interface WorkflowLoader {
 export interface CreateWorkflowLoaderOptions {
   /** Default logger applied to `render` when caller omits one. */
   logger?: PromptRenderLogger;
+  /** Environment used for tracker token validation. Defaults to process.env. */
+  env?: EnvLike;
 }
 
 /**
@@ -55,9 +62,17 @@ export function createWorkflowLoader(
   factoryOptions: CreateWorkflowLoaderOptions = {},
 ): WorkflowLoader {
   const defaultLogger = factoryOptions.logger;
+  const env = factoryOptions.env ?? process.env;
+  const loadWorkflow = async (filePath: string): Promise<WorkflowConfig> => {
+    const parsed = await parseWorkflowFile(filePath);
+    const expanded = expandWorkflowPaths(parsed);
+    validateWorkflowEnv(expanded, env);
+    return expanded;
+  };
+
   return {
     loadOnce(filePath: string): Promise<WorkflowConfig> {
-      return parseWorkflowFile(filePath);
+      return loadWorkflow(filePath);
     },
     start(
       filePath: string,
@@ -68,6 +83,7 @@ export function createWorkflowLoader(
       const resolved: WatchWorkflowOptions = {
         onReload,
         onError,
+        loadWorkflow,
         ...(options.debounceMs !== undefined
           ? { debounceMs: options.debounceMs }
           : {}),

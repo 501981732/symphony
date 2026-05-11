@@ -64,15 +64,35 @@ export async function renderPrompt(
   context: PromptContext,
   options: PromptRenderOptions = {},
 ): Promise<string> {
-  const output = await liquidEngine.parseAndRender(template, { ...context });
+  const safeContext = toPromptRenderContext(context);
+  const output = await liquidEngine.parseAndRender(template, safeContext);
 
   if (options.logger) {
-    for (const path of detectMissingVariables(template, context)) {
+    for (const path of detectMissingVariables(template, safeContext)) {
       options.logger.warn("prompt variable not found", { path });
     }
   }
 
   return output;
+}
+
+function toPromptRenderContext(context: PromptContext): PromptContext {
+  return {
+    issue: {
+      id: context.issue.id,
+      iid: context.issue.iid,
+      identifier: context.issue.identifier,
+      title: context.issue.title,
+      description: context.issue.description,
+      labels: [...context.issue.labels],
+      url: context.issue.url,
+      author: context.issue.author,
+      assignees: [...context.issue.assignees],
+    },
+    attempt: context.attempt,
+    workspace: { path: context.workspace.path },
+    git: { branch: context.git.branch },
+  };
 }
 
 /**

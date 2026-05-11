@@ -84,6 +84,34 @@ describe("renderPrompt", () => {
     expect(paths).toContain("workspace.who_knows");
   });
 
+  it("运行时额外传入的字段不会进入 prompt 渲染上下文", async () => {
+    const logger: PromptRenderLogger = { warn: vi.fn() };
+    const unsafeContext = {
+      ...ctx(),
+      extra: "top-secret",
+      issue: {
+        ...ctx().issue,
+        token: "glpat-should-not-render",
+      },
+    } as PromptContext;
+
+    const out = await renderPrompt(
+      "title={{ issue.title }} token={{ issue.token }} extra={{ extra }}",
+      unsafeContext,
+      { logger },
+    );
+
+    expect(out).toBe("title=Update README token= extra=");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "prompt variable not found",
+      expect.objectContaining({ path: "issue.token" }),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      "prompt variable not found",
+      expect.objectContaining({ path: "extra" }),
+    );
+  });
+
   it("已定义但落地为空数组的字段不会触发 warn", async () => {
     const logger: PromptRenderLogger = { warn: vi.fn() };
     const c = ctx();
