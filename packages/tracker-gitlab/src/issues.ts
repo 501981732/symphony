@@ -40,6 +40,19 @@ export async function listCandidateIssues(
   });
 }
 
+export async function getIssue(
+  client: GitLabClient<GitLabApi>,
+  iid: number,
+): Promise<IssueRef & { description: string }> {
+  return client.request("issues.get", async (api) => {
+    const raw = await api.Issues.show(client.projectId, iid);
+    return {
+      ...toIssueRef(raw),
+      description: typeof raw.description === "string" ? raw.description : "",
+    };
+  });
+}
+
 export function toIssueRef(raw: RawIssue): IssueRef {
   return {
     id: `gid://gitlab/Issue/${raw.id}`,

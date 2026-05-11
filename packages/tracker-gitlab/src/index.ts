@@ -25,10 +25,16 @@ export type {
   RawPipeline,
 } from "./api-shape.js";
 export {
+  getIssue,
   listCandidateIssues,
   toIssueRef,
   type ListCandidateIssuesOpts,
 } from "./issues.js";
+export {
+  createGitLabAdapter,
+  type CreateGitLabAdapterInput,
+  type GitLabAdapterHandle,
+} from "./adapter.js";
 export {
   transitionLabels,
   type TransitionLabelsOpts,

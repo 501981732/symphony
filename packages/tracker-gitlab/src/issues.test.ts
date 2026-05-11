@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { GitLabApi, RawIssue } from "./api-shape.js";
 import { createGitLabClient, type GitLabClient } from "./client.js";
-import { listCandidateIssues, toIssueRef } from "./issues.js";
+import { getIssue, listCandidateIssues, toIssueRef } from "./issues.js";
 
 function makeClient(api: Partial<GitLabApi>): GitLabClient<GitLabApi> {
   return createGitLabClient<GitLabApi>({
@@ -143,5 +143,45 @@ describe("toIssueRef", () => {
   it("freezes the labels array so consumers cannot mutate adapter state", () => {
     const ref = toIssueRef(issue({ id: 1, iid: 1, labels: ["a", "b"] }));
     expect(Object.isFrozen(ref.labels)).toBe(true);
+  });
+});
+
+describe("getIssue", () => {
+  it("projects the raw issue and inlines the description", async () => {
+    const show = vi.fn(async () =>
+      issue({
+        id: 5,
+        iid: 50,
+        title: "Add validation",
+        web_url: "https://gitlab.example.com/g/p/-/issues/50",
+        project_id: 7,
+        labels: ["ai-ready"],
+        description: "## Context\nplease",
+      }),
+    );
+    const client = makeClient({
+      Issues: { all: vi.fn(), show, edit: vi.fn() },
+    });
+    const r = await getIssue(client, 50);
+    expect(show).toHaveBeenCalledWith("group/project", 50);
+    expect(r).toEqual({
+      id: "gid://gitlab/Issue/5",
+      iid: 50,
+      title: "Add validation",
+      url: "https://gitlab.example.com/g/p/-/issues/50",
+      projectId: "7",
+      labels: ["ai-ready"],
+      description: "## Context\nplease",
+    });
+  });
+
+  it("defaults description to empty string when null/undefined", async () => {
+    const show = vi.fn(async () =>
+      issue({ id: 6, iid: 51, description: null }),
+    );
+    const client = makeClient({
+      Issues: { all: vi.fn(), show, edit: vi.fn() },
+    });
+    expect((await getIssue(client, 51)).description).toBe("");
   });
 });
