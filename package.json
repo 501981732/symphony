@@ -1,0 +1,25 @@
+{
+  "name": "issuepilot",
+  "version": "0.0.0",
+  "private": true,
+  "description": "IssuePilot P0 — GitLab issue driven Codex orchestrator.",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test:smoke": "vitest run --config vitest.config.ts",
+    "dev:orchestrator": "pnpm --filter @issuepilot/orchestrator dev",
+    "dev:dashboard": "pnpm --filter @issuepilot/dashboard dev"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.4",
+    "yaml": "^2.6.0"
+  }
+}
