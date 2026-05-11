@@ -99,6 +99,19 @@ describe("Orchestrator HTTP API", () => {
     expect(response.body).toContain("[REDACTED]");
   });
 
+  it("GET /api/runs rejects invalid limits", async () => {
+    for (const limit of ["10abc", "1.5", "-1", "0"]) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/runs?limit=${encodeURIComponent(limit)}`,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: "limit must be a positive integer",
+      });
+    }
+  });
+
   it("GET /api/runs/:runId returns redacted specific run", async () => {
     state.setRun("r1", {
       runId: "r1",
@@ -214,6 +227,32 @@ describe("Orchestrator HTTP API", () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+
+  it("GET /api/events rejects invalid limits", async () => {
+    for (const limit of ["10abc", "1.5", "-1", "0"]) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/events?runId=r1&limit=${encodeURIComponent(limit)}`,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: "limit must be a positive integer",
+      });
+    }
+  });
+
+  it("GET /api/events rejects invalid offsets", async () => {
+    for (const offset of ["10abc", "1.5", "-1"]) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/events?runId=r1&offset=${encodeURIComponent(offset)}`,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: "offset must be a non-negative integer",
+      });
+    }
   });
 
   it("GET /api/events/stream filters and redacts SSE payloads", async () => {

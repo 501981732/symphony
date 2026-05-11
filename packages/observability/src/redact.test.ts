@@ -29,6 +29,22 @@ describe("redact", () => {
     expect(result["normal"]).toBe("keep this");
   });
 
+  it("redacts token-like field names except token_env", () => {
+    const input = {
+      token_env: "GITLAB_TOKEN",
+      refresh_token: "plain-refresh-value",
+      id_token: "plain-id-value",
+      gitlab_token: "plain-gitlab-value",
+    };
+
+    const result = redact(input) as Record<string, unknown>;
+
+    expect(result["token_env"]).toBe("GITLAB_TOKEN");
+    expect(result["refresh_token"]).toBe("[REDACTED]");
+    expect(result["id_token"]).toBe("[REDACTED]");
+    expect(result["gitlab_token"]).toBe("[REDACTED]");
+  });
+
   it("redacts nested objects", () => {
     const input = { outer: { inner: { secret: "hidden" } } };
     const result = redact(input) as { outer: { inner: { secret: string } } };

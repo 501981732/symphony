@@ -17,9 +17,15 @@ interface ServerDeps {
 }
 
 function parseOptionalPositiveInt(value: string | undefined): number | undefined {
-  if (!value) return undefined;
-  const parsed = parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  if (value === undefined) return undefined;
+  if (!/^[1-9]\d*$/.test(value)) return undefined;
+  return Number(value);
+}
+
+function parseOptionalNonNegativeInt(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^(0|[1-9]\d*)$/.test(value)) return undefined;
+  return Number(value);
 }
 
 export async function createServer(
@@ -59,15 +65,18 @@ export async function createServer(
 
   app.get<{ Querystring: { status?: string; limit?: string } }>(
     "/api/runs",
-    async (request) => {
+    async (request, reply) => {
       const status = request.query.status;
-      const limit = request.query.limit
-        ? parseInt(request.query.limit, 10)
-        : 50;
+      const limit = parseOptionalPositiveInt(request.query.limit);
+      if (request.query.limit !== undefined && limit === undefined) {
+        return reply
+          .code(400)
+          .send({ error: "limit must be a positive integer" });
+      }
       let runs = status
         ? deps.state.listRuns(status)
         : deps.state.allRuns();
-      runs = runs.slice(0, limit);
+      runs = runs.slice(0, limit ?? 50);
       return runs;
     },
   );
@@ -91,13 +100,25 @@ export async function createServer(
       return reply.code(400).send({ error: "runId is required" });
     }
 
-    const limit = parseOptionalPositiveInt(request.query.limit) ?? 100;
-    const offset = parseOptionalPositiveInt(request.query.offset);
+    const limit = parseOptionalPositiveInt(request.query.limit);
+    if (request.query.limit !== undefined && limit === undefined) {
+      return reply
+        .code(400)
+        .send({ error: "limit must be a positive integer" });
+    }
+
+    const offset = parseOptionalNonNegativeInt(request.query.offset);
+    if (request.query.offset !== undefined && offset === undefined) {
+      return reply
+        .code(400)
+        .send({ error: "offset must be a non-negative integer" });
+    }
+
     const opts =
       offset === undefined
-        ? { limit }
+        ? { limit: limit ?? 100 }
         : {
-            limit,
+            limit: limit ?? 100,
             offset,
           };
 
