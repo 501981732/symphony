@@ -34,6 +34,13 @@ export {
   type TransitionLabelsOpts,
   type TransitionLabelsResult,
 } from "./labels.js";
+export {
+  createIssueNote,
+  findWorkpadNote,
+  updateIssueNote,
+  type CreateIssueNoteResult,
+  type WorkpadNote,
+} from "./notes.js";
 export type {
   GitLabAdapter,
   GitLabErrorCategory,
