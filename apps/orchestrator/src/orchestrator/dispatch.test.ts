@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { dispatch } from "./dispatch.js";
 import { createRuntimeState } from "../runtime/state.js";
 import type { DispatchDeps, DispatchInput } from "./dispatch.js";
@@ -51,7 +51,9 @@ const baseInput: DispatchInput = {
   worktreeRoot: "/tmp/worktrees",
   branch: "ai/1-fix",
   baseBranch: "main",
-  promptTemplate: "Fix {{issue_title}}",
+  runningLabel: "ai-running",
+  handoffLabel: "human-review",
+  promptTemplate: "Fix {{ issue.title }}",
   hooks: {
     afterCreate: "echo afterCreate",
     beforeRun: "echo beforeRun",
@@ -77,6 +79,44 @@ describe("dispatch", () => {
     const types = deps.events.map((e) => e.type);
     expect(types).toContain("dispatch_start");
     expect(types).toContain("dispatch_completed");
+  });
+
+  it("renders prompt with spec-shaped dotted context", async () => {
+    const deps = createFakeDeps();
+    await dispatch(baseInput, deps);
+
+    expect(deps.renderPrompt).toHaveBeenCalledWith({
+      template: baseInput.promptTemplate,
+      vars: expect.objectContaining({
+        issue: expect.objectContaining({
+          iid: 1,
+          identifier: "group/project#1",
+          title: "Fix bug",
+          url: "https://gitlab.example.com/issues/1",
+        }),
+        attempt: 1,
+        workspace: { path: "/tmp/wt" },
+        git: { branch: "ai/1-fix" },
+      }),
+    });
+  });
+
+  it("does not reconcile when afterRun validation hook fails", async () => {
+    const deps = createFakeDeps({
+      runHook: vi.fn(async (opts: { script?: string }) => {
+        if (opts.script === "echo afterRun") {
+          throw Object.assign(new Error("validation failed"), {
+            name: "HookFailedError",
+          });
+        }
+        return { stdout: "", stderr: "" };
+      }),
+    });
+
+    await dispatch(baseInput, deps);
+
+    expect(deps.reconcile).not.toHaveBeenCalled();
+    expect(deps.state.getRun("run-1")?.status).toBe("failed");
   });
 
   it("handles afterCreate hook failure → run_failed", async () => {

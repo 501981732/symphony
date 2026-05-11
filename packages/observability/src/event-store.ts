@@ -1,6 +1,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
+import { redact } from "./redact.js";
+
 export interface EventRecord {
   id: string;
   runId: string;
@@ -31,7 +33,7 @@ export function createEventStore(storeDir: string): EventStore {
     async append(projectSlug, issueIid, event) {
       const fp = filePath(projectSlug, issueIid);
       await fs.mkdir(path.dirname(fp), { recursive: true });
-      await fs.appendFile(fp, JSON.stringify(event) + "\n", "utf-8");
+      await fs.appendFile(fp, JSON.stringify(redact(event)) + "\n", "utf-8");
     },
 
     async read(projectSlug, issueIid, opts) {

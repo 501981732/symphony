@@ -1,4 +1,5 @@
-import type { RuntimeState, RunEntry } from "../runtime/state.js";
+import type { RuntimeState } from "../runtime/state.js";
+
 import type { Classification } from "./classify.js";
 import { classifyError } from "./classify.js";
 import { shouldRetry } from "./retry.js";
@@ -27,7 +28,7 @@ export interface DispatchDeps {
 
   renderPrompt(opts: {
     template: string;
-    vars: Record<string, string>;
+    vars: Record<string, unknown>;
   }): string;
 
   runAgent(opts: {
@@ -45,6 +46,10 @@ export interface DispatchDeps {
     agentSummary?: string | undefined;
     agentValidation?: string | undefined;
     agentRisks?: string | undefined;
+    issueUrl: string;
+    issueIdentifier: string;
+    runningLabel: string;
+    handoffLabel: string;
   }): Promise<void>;
 
   onEvent(event: { type: string; runId: string; ts: string; detail: Record<string, unknown> }): void;
@@ -54,16 +59,23 @@ export interface DispatchDeps {
 export interface DispatchInput {
   runId: string;
   issue: {
+    id?: string | undefined;
     iid: number;
     title: string;
     url: string;
     projectId: string;
+    description?: string | undefined;
+    labels?: string[] | undefined;
+    author?: string | undefined;
+    assignees?: string[] | undefined;
   };
   remoteUrl: string;
   repoCacheRoot: string;
   worktreeRoot: string;
   branch: string;
   baseBranch: string;
+  runningLabel: string;
+  handoffLabel: string;
   promptTemplate: string;
   hooks?: {
     afterCreate?: string | undefined;
@@ -124,10 +136,20 @@ export async function dispatch(
     const prompt = deps.renderPrompt({
       template: input.promptTemplate,
       vars: {
-        issue_title: input.issue.title,
-        issue_url: input.issue.url,
-        issue_iid: String(input.issue.iid),
-        branch: input.branch,
+        issue: {
+          id: input.issue.id ?? String(input.issue.iid),
+          iid: input.issue.iid,
+          identifier: `${input.issue.projectId}#${input.issue.iid}`,
+          title: input.issue.title,
+          description: input.issue.description ?? "",
+          labels: input.issue.labels ?? [],
+          url: input.issue.url,
+          author: input.issue.author ?? "",
+          assignees: input.issue.assignees ?? [],
+        },
+        attempt: deps.state.getRun(runId)?.attempt ?? 1,
+        workspace: { path: worktreePath },
+        git: { branch: input.branch },
       },
     });
 
@@ -137,14 +159,9 @@ export async function dispatch(
     });
     deps.onEvent({ type: "agent_completed", runId, ts: now(), detail: { status: outcome.status } });
 
-    let hookErr: unknown;
     if (input.hooks?.afterRun) {
-      try {
-        await deps.runHook({ cwd: worktreePath, script: input.hooks.afterRun });
-        deps.onEvent({ type: "hook_afterRun_done", runId, ts: now(), detail: {} });
-      } catch (e) {
-        hookErr = e;
-      }
+      await deps.runHook({ cwd: worktreePath, script: input.hooks.afterRun });
+      deps.onEvent({ type: "hook_afterRun_done", runId, ts: now(), detail: {} });
     }
 
     if (outcome.status !== "completed") {
@@ -161,6 +178,10 @@ export async function dispatch(
       agentSummary: outcome.summary,
       agentValidation: outcome.validation,
       agentRisks: outcome.risks,
+      issueUrl: input.issue.url,
+      issueIdentifier: `${input.issue.projectId}#${input.issue.iid}`,
+      runningLabel: input.runningLabel,
+      handoffLabel: input.handoffLabel,
     });
 
     deps.state.setRun(runId, {
@@ -170,7 +191,6 @@ export async function dispatch(
     });
     deps.onEvent({ type: "dispatch_completed", runId, ts: now(), detail: {} });
 
-    if (hookErr) throw hookErr;
   } catch (err) {
     const run = deps.state.getRun(runId);
     const attempt = run?.attempt ?? 1;

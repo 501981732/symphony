@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { execaSync } from "execa";
-import { ensureWorktree, WorkspaceDirtyError } from "./worktree.js";
+import { ensureWorktree } from "./worktree.js";
 
 function setupOriginAndMirror(tmpDir: string) {
   const originPath = path.join(tmpDir, "origin");
@@ -137,5 +137,25 @@ describe("ensureWorktree", () => {
     expect(result.workspacePath).toBe(
       path.join(workspaceRoot, "myproject", "7"),
     );
+  });
+
+  it("rejects existing worktree path symlinks that resolve outside workspace root", async () => {
+    const external = path.join(tmpDir, "external");
+    fs.mkdirSync(external);
+    const projectDir = path.join(workspaceRoot, "myproject");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.symlinkSync(external, path.join(projectDir, "42"), "dir");
+
+    await expect(
+      ensureWorktree({
+        mirrorPath,
+        projectSlug: "myproject",
+        issueIid: 42,
+        titleSlug: "fix-login",
+        baseBranch: "main",
+        branchPrefix: "ai",
+        workspaceRoot,
+      }),
+    ).rejects.toMatchObject({ name: "WorkspacePathError" });
   });
 });

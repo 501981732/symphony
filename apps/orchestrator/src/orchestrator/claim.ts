@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { RuntimeState } from "../runtime/state.js";
+
 import type { ConcurrencySlots } from "../runtime/slots.js";
+import type { RuntimeState } from "../runtime/state.js";
 
 interface IssueRef {
   id: string;

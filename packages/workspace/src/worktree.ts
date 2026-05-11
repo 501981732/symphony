@@ -1,6 +1,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+
 import { execa } from "execa";
+
 import { assertWithinRoot, branchName } from "./paths.js";
 
 export class WorkspaceDirtyError extends Error {
@@ -66,6 +68,8 @@ export async function ensureWorktree(
     String(input.issueIid),
   );
 
+  await fs.mkdir(input.workspaceRoot, { recursive: true });
+  await assertWithinRoot(workspacePath, input.workspaceRoot);
   await assertWithinRoot(
     path.join(input.workspaceRoot, input.projectSlug),
     input.workspaceRoot,

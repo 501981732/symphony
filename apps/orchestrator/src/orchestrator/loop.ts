@@ -1,5 +1,5 @@
-import type { RuntimeState } from "../runtime/state.js";
 import type { ConcurrencySlots } from "../runtime/slots.js";
+import type { RuntimeState } from "../runtime/state.js";
 
 export interface LoopDeps {
   state: RuntimeState;

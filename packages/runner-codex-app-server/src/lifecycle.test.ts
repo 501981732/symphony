@@ -5,13 +5,25 @@ import type { RpcClient } from "./rpc.js";
 function createFakeRpc(
   responses: Map<string, unknown>,
   notifications: Array<{ method: string; params: unknown }> = [],
-): RpcClient & { notifHandler: (m: string, p: unknown) => void } {
+): RpcClient & {
+  notifHandler: (m: string, p: unknown) => void;
+  requestHandler: (m: string, p: unknown) => Promise<unknown> | unknown;
+} {
   let notifHandler: (m: string, p: unknown) => void = () => {};
+  let requestHandler: (m: string, p: unknown) => Promise<unknown> | unknown =
+    () => {
+      throw new Error("No request handler registered");
+    };
 
-  const client: RpcClient & { notifHandler: (m: string, p: unknown) => void } =
-    {
+  const client: RpcClient & {
+    notifHandler: (m: string, p: unknown) => void;
+    requestHandler: (m: string, p: unknown) => Promise<unknown> | unknown;
+  } = {
       get notifHandler() {
         return notifHandler;
+      },
+      get requestHandler() {
+        return requestHandler;
       },
       request: vi.fn(async (method: string) => {
         if (responses.has(method)) {
@@ -24,6 +36,9 @@ function createFakeRpc(
         notifHandler = handler;
       }),
       onMalformed: vi.fn(),
+      onRequest: vi.fn((handler) => {
+        requestHandler = handler;
+      }),
       close: vi.fn(async () => {}),
       waitExit: vi.fn(async () => ({ code: 0, signal: null })),
     };
@@ -160,5 +175,107 @@ describe("driveLifecycle", () => {
 
     expect(result.turnsUsed).toBe(2);
     expect(result.status).toBe("completed");
+  });
+
+  it("handles app-server dynamic tool call requests", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+        ["turn/start", { turnId: "u1" }],
+      ]),
+      [
+        {
+          method: "turn/completed",
+          params: { turnId: "u1", stop: true },
+        },
+      ],
+    );
+
+    const events: string[] = [];
+    const resultPromise = driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [
+        {
+          name: "gitlab_get_issue",
+          description: "Get issue",
+          inputSchema: { type: "object" },
+          handler: vi.fn(async () => ({ ok: true })),
+        },
+      ],
+      onEvent: (type) => events.push(type),
+    });
+
+    await Promise.resolve();
+    const response = await rpc.requestHandler("item/tool/call", {
+      tool: "gitlab_get_issue",
+      arguments: {},
+      callId: "call-1",
+      threadId: "t1",
+      turnId: "u1",
+    });
+    const result = await resultPromise;
+
+    expect(response).toMatchObject({
+      success: true,
+      contentItems: [
+        { type: "inputText", text: JSON.stringify({ ok: true }) },
+      ],
+    });
+    expect(events).toContain("tool_call_started");
+    expect(events).toContain("tool_call_completed");
+    expect(result.status).toBe("completed");
+  });
+
+  it("auto-approves command and file approval requests when approvalPolicy is never", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+        ["turn/start", { turnId: "u1" }],
+      ]),
+      [
+        {
+          method: "turn/completed",
+          params: { turnId: "u1", stop: true },
+        },
+      ],
+    );
+    const events: string[] = [];
+
+    const resultPromise = driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: (type) => events.push(type),
+    });
+
+    await Promise.resolve();
+    await expect(
+      rpc.requestHandler("item/commandExecution/requestApproval", {}),
+    ).resolves.toEqual({ decision: "accept" });
+    await expect(
+      rpc.requestHandler("item/fileChange/requestApproval", {}),
+    ).resolves.toEqual({ decision: "accept" });
+    await resultPromise;
+
+    expect(events.filter((e) => e === "approval_auto_approved")).toHaveLength(2);
   });
 });

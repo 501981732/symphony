@@ -32,6 +32,8 @@ function baseInput(
     attempt: 1,
     issueUrl: "https://gitlab.example.com/issues/42",
     issueIdentifier: "#42",
+    runningLabel: "ai-running",
+    handoffLabel: "human-review",
     git: mocks.git,
     gitlab: mocks.gitlab,
     onEvent: (e) => mocks.events.push(e),
@@ -122,6 +124,19 @@ describe("reconcile", () => {
     expect(call.description).toContain("without a structured summary");
     expect(call.description).toContain("(no validation summary)");
     expect(call.description).toContain("(none reported)");
+  });
+
+  it("uses workflow-configured handoff labels", async () => {
+    const input = baseInput(mocks);
+    input.runningLabel = "custom-running";
+    input.handoffLabel = "custom-review";
+
+    await reconcile(input);
+
+    expect(mocks.gitlab.transitionLabels).toHaveBeenCalledWith(42, {
+      add: ["custom-review"],
+      remove: ["custom-running"],
+    });
   });
 
   it("emits events in correct order", async () => {

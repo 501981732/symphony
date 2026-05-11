@@ -49,4 +49,19 @@ describe("RunStore", () => {
     const files = fs.readdirSync(tmpDir);
     expect(files.every((f) => !f.endsWith(".tmp"))).toBe(true);
   });
+
+  it("redacts secrets before persisting run records", async () => {
+    const store = createRunStore(tmpDir);
+    await store.write("proj", 1, {
+      runId: "r1",
+      status: "failed",
+      error: "Authorization: Bearer secret-token",
+      token: "glpat-12345678901234567890",
+    });
+
+    const raw = fs.readFileSync(path.join(tmpDir, "proj-1.json"), "utf-8");
+    expect(raw).toContain("[REDACTED]");
+    expect(raw).not.toContain("secret-token");
+    expect(raw).not.toContain("glpat-12345678901234567890");
+  });
 });

@@ -10,6 +10,8 @@ export interface ReconcileInput {
   agentRisks?: string | undefined;
   issueUrl: string;
   issueIdentifier: string;
+  runningLabel: string;
+  handoffLabel: string;
   git: GitSlice;
   gitlab: GitLabReconcileSlice;
   onEvent: (event: ReconcileEvent) => void;
@@ -158,13 +160,13 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
 
 async function transitionToHandoff(input: ReconcileInput): Promise<void> {
   await input.gitlab.transitionLabels(input.iid, {
-    add: ["human-review"],
-    remove: ["ai-running"],
+    add: [input.handoffLabel],
+    remove: [input.runningLabel],
   });
   input.onEvent({
     type: "gitlab_labels_transitioned",
     runId: input.runId,
     ts: now(),
-    detail: { add: ["human-review"], remove: ["ai-running"] },
+    detail: { add: [input.handoffLabel], remove: [input.runningLabel] },
   });
 }

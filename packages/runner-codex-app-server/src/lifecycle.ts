@@ -4,6 +4,7 @@ export interface ToolSchema {
   name: string;
   description: string;
   inputSchema: object;
+  handler?: ((args: unknown) => Promise<unknown>) | undefined;
 }
 
 export interface DriveInput {
@@ -27,6 +28,14 @@ export interface DriveResult {
   lastTurnId?: string | undefined;
   threadId?: string | undefined;
   failureReason?: string | undefined;
+}
+
+interface DynamicToolCallParams {
+  arguments: unknown;
+  callId: string;
+  threadId: string;
+  tool: string;
+  turnId: string;
 }
 
 type TurnOutcome =
@@ -77,6 +86,64 @@ function waitForTurn(
 
 export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
   const { rpc, onEvent } = input;
+  const toolsByName = new Map(input.tools.map((tool) => [tool.name, tool]));
+
+  rpc.onRequest(async (method, params) => {
+    if (
+      method === "item/commandExecution/requestApproval" ||
+      method === "item/fileChange/requestApproval"
+    ) {
+      if (input.approvalPolicy === "never") {
+        onEvent("approval_auto_approved", params);
+        return { decision: "accept" };
+      }
+      onEvent("approval_required", params);
+      return { decision: "cancel" };
+    }
+
+    if (method === "item/tool/requestUserInput") {
+      onEvent("turn_input_required", params);
+      throw new Error("IssuePilot P0 does not support interactive user input");
+    }
+
+    if (method !== "item/tool/call") {
+      throw new Error(`Unsupported server request: ${method}`);
+    }
+
+    const call = params as DynamicToolCallParams;
+    const tool = toolsByName.get(call.tool);
+    if (!tool?.handler) {
+      onEvent("unsupported_tool_call", params);
+      return {
+        success: false,
+        contentItems: [
+          {
+            type: "inputText",
+            text: `Unsupported tool: ${call.tool}`,
+          },
+        ],
+      };
+    }
+
+    onEvent("tool_call_started", params);
+    try {
+      const result = await tool.handler(call.arguments);
+      onEvent("tool_call_completed", { ...call, result });
+      return {
+        success: true,
+        contentItems: [
+          { type: "inputText", text: JSON.stringify(result) },
+        ],
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onEvent("tool_call_failed", { ...call, error: message });
+      return {
+        success: false,
+        contentItems: [{ type: "inputText", text: message }],
+      };
+    }
+  });
 
   await rpc.request("initialize", {
     client: { name: "issuepilot", version: "0.0.0" },

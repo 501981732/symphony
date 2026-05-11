@@ -1,14 +1,18 @@
-import { execa, type ResultPromise } from "execa";
 import { createInterface } from "node:readline";
+
+import { execa, type ResultPromise } from "execa";
 
 type NotificationHandler = (method: string, params: unknown) => void;
 type MalformedHandler = (line: string) => void;
+type RequestHandler = (method: string, params: unknown) => Promise<unknown> | unknown;
+type RequestId = number | string | null;
 
 export interface RpcClient {
   request<T = unknown>(method: string, params: unknown): Promise<T>;
   notify(method: string, params: unknown): void;
   onNotification(handler: NotificationHandler): void;
   onMalformed(handler: MalformedHandler): void;
+  onRequest(handler: RequestHandler): void;
   close(): Promise<void>;
   waitExit(): Promise<{ code: number | undefined; signal: string | null }>;
 }
@@ -27,6 +31,9 @@ export function spawnRpc(opts: {
   const pending = new Map<number, PendingRequest>();
   let notificationHandler: NotificationHandler = () => {};
   let malformedHandler: MalformedHandler = () => {};
+  let requestHandler: RequestHandler = () => {
+    throw new Error("No JSON-RPC request handler registered");
+  };
 
   const execOpts = {
     stdin: "pipe" as const,
@@ -56,7 +63,7 @@ export function spawnRpc(opts: {
   if (proc.stdout) {
     const rl = createInterface({ input: proc.stdout });
     rl.on("line", (line: string) => {
-      let msg: { jsonrpc?: string; id?: number; method?: string; result?: unknown; error?: unknown; params?: unknown };
+      let msg: { jsonrpc?: string; id?: RequestId; method?: string; result?: unknown; error?: unknown; params?: unknown };
       try {
         msg = JSON.parse(line) as typeof msg;
       } catch {
@@ -64,7 +71,12 @@ export function spawnRpc(opts: {
         return;
       }
 
-      if (msg.id != null && pending.has(msg.id)) {
+      if (msg.method && msg.id !== undefined) {
+        void handleServerRequest(msg.id, msg.method, msg.params);
+      } else if (
+        typeof msg.id === "number" &&
+        pending.has(msg.id)
+      ) {
         const p = pending.get(msg.id)!;
         pending.delete(msg.id);
         if (msg.error) {
@@ -81,6 +93,24 @@ export function spawnRpc(opts: {
   function write(obj: object): void {
     if (proc.stdin && !proc.stdin.destroyed) {
       proc.stdin.write(JSON.stringify(obj) + "\n");
+    }
+  }
+
+  async function handleServerRequest(
+    id: RequestId,
+    method: string,
+    params: unknown,
+  ): Promise<void> {
+    try {
+      const result = await requestHandler(method, params);
+      write({ jsonrpc: "2.0", id, result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      write({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32603, message },
+      });
     }
   }
 
@@ -106,6 +136,10 @@ export function spawnRpc(opts: {
 
     onMalformed(handler: MalformedHandler): void {
       malformedHandler = handler;
+    },
+
+    onRequest(handler: RequestHandler): void {
+      requestHandler = handler;
     },
 
     async close(): Promise<void> {

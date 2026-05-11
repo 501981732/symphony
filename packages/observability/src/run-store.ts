@@ -1,6 +1,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
+import { redact } from "./redact.js";
+
 export interface RunStore {
   write(
     projectSlug: string,
@@ -24,7 +26,11 @@ export function createRunStore(storeDir: string): RunStore {
       await fs.mkdir(path.dirname(fp), { recursive: true });
 
       const tmpFile = fp + ".tmp";
-      await fs.writeFile(tmpFile, JSON.stringify(record, null, 2), "utf-8");
+      await fs.writeFile(
+        tmpFile,
+        JSON.stringify(redact(record), null, 2),
+        "utf-8",
+      );
       await fs.rename(tmpFile, fp);
     },
 

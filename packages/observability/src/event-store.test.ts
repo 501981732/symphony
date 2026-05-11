@@ -69,4 +69,20 @@ describe("EventStore", () => {
     });
     expect(fs.existsSync(path.join(tmpDir, "myproj-42.jsonl"))).toBe(true);
   });
+
+  it("redacts secrets before persisting events", async () => {
+    const store = createEventStore(tmpDir);
+    await store.append("proj", 1, {
+      id: "e1",
+      runId: "r1",
+      type: "tool_output",
+      message: "Bearer secret-token",
+      token: "glpat-12345678901234567890",
+    });
+
+    const raw = fs.readFileSync(path.join(tmpDir, "proj-1.jsonl"), "utf-8");
+    expect(raw).toContain("[REDACTED]");
+    expect(raw).not.toContain("secret-token");
+    expect(raw).not.toContain("glpat-12345678901234567890");
+  });
 });

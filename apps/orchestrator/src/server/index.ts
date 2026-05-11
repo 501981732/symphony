@@ -1,6 +1,7 @@
-import Fastify, { type FastifyInstance } from "fastify";
-import type { RuntimeState } from "../runtime/state.js";
 import type { EventBus } from "@issuepilot/observability";
+import Fastify, { type FastifyInstance } from "fastify";
+
+import type { RuntimeState } from "../runtime/state.js";
 
 interface ServerDeps {
   state: RuntimeState;

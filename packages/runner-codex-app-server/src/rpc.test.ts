@@ -85,6 +85,81 @@ describe("spawnRpc", () => {
     expect(received.params).toEqual({ type: "hello" });
   });
 
+  it("responds to server-initiated requests", async () => {
+    const script = `
+      process.stdin.setEncoding("utf-8");
+      let buf = "";
+      setTimeout(() => {
+        const req = JSON.stringify({ jsonrpc: "2.0", id: "srv-1", method: "server/ask", params: { value: 2 } });
+        process.stdout.write(req + "\\n");
+      }, 10);
+      process.stdin.on("data", (chunk) => {
+        buf += chunk;
+        let nl;
+        while ((nl = buf.indexOf("\\n")) !== -1) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          const msg = JSON.parse(line);
+          if (msg.id === "srv-1") {
+            const note = JSON.stringify({ jsonrpc: "2.0", method: "server/response-seen", params: msg.result });
+            process.stdout.write(note + "\\n");
+          }
+        }
+      });
+    `;
+
+    const rpc = spawnRpc({ command: "node", args: ["-e", script] });
+    cleanup = async () => rpc.close();
+    rpc.onRequest((_method, params) => ({
+      doubled: (params as { value: number }).value * 2,
+    }));
+
+    const received = await new Promise<{ method: string; params: unknown }>(
+      (resolve) => {
+        rpc.onNotification((method, params) => resolve({ method, params }));
+      },
+    );
+
+    expect(received.method).toBe("server/response-seen");
+    expect(received.params).toEqual({ doubled: 4 });
+  });
+
+  it("returns JSON-RPC errors for unhandled server-initiated requests", async () => {
+    const script = `
+      process.stdin.setEncoding("utf-8");
+      let buf = "";
+      setTimeout(() => {
+        const req = JSON.stringify({ jsonrpc: "2.0", id: "srv-1", method: "server/ask", params: {} });
+        process.stdout.write(req + "\\n");
+      }, 10);
+      process.stdin.on("data", (chunk) => {
+        buf += chunk;
+        let nl;
+        while ((nl = buf.indexOf("\\n")) !== -1) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          const msg = JSON.parse(line);
+          if (msg.id === "srv-1") {
+            const note = JSON.stringify({ jsonrpc: "2.0", method: "server/error-seen", params: msg.error });
+            process.stdout.write(note + "\\n");
+          }
+        }
+      });
+    `;
+
+    const rpc = spawnRpc({ command: "node", args: ["-e", script] });
+    cleanup = async () => rpc.close();
+
+    const received = await new Promise<{ method: string; params: unknown }>(
+      (resolve) => {
+        rpc.onNotification((method, params) => resolve({ method, params }));
+      },
+    );
+
+    expect(received.method).toBe("server/error-seen");
+    expect(received.params).toMatchObject({ code: -32603 });
+  });
+
   it("calls onMalformed for non-JSON lines", async () => {
     const script = `
       process.stdout.write("not json\\n");
