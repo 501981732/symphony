@@ -6,6 +6,16 @@
 
 ### Added
 
+- 2026-05-11 — **IssuePilot P0 Phase 6（Orchestrator）完成。** `@issuepilot/orchestrator` 实现完整编排引擎，包含 8 个子模块、11 spec / 57 cases 全绿：
+  - `feat(orchestrator): runtime state and concurrency slots` — 内存 RunEntry 管理 + 按状态查询/汇总、N 槽位并发控制。10 个测试。
+  - `feat(orchestrator): claim candidates with optimistic labels` — 从 GitLab 拉候选 Issue、乐观 label 转换、冲突跳过、slot 感知。4 个测试。
+  - `feat(orchestrator): classify errors and schedule retries` — 按 spec §13 把任意异常三分为 blocked/failed/retryable，retry 策略判断。14 个测试。
+  - `feat(orchestrator): deterministic post-run reconciliation` — push / 创建或更新 MR / workpad note / label 转换 handoff，7 种缺失组合覆盖。7 个测试。
+  - `feat(orchestrator): dispatch run through workspace and runner` — 串联 mirror → worktree → hooks → prompt → agent → reconcile 全流程，错误分类 + 重试决策。6 个测试。
+  - `feat(orchestrator): main loop with reload and reconcile-on-start` — setInterval 驱动 tick、重启兜底 reconcile、inflight drain。5 个测试。
+  - `feat(orchestrator): fastify HTTP API and SSE stream` — `/api/state`、`/api/runs`、`/api/runs/:runId`、`/api/events/stream` SSE 端点。5 个测试。
+  - `feat(orchestrator): cli entry with run/validate/doctor` — commander CLI，run/validate/doctor 三命令冒烟验证。5 个测试。
+
 - 2026-05-11 — **IssuePilot P0 Phase 6.x（Observability）完成。** `@issuepilot/observability` 实现 secret 脱敏、内存事件总线、JSONL 事件存储、原子 run 记录存储、pino 日志工厂。验证：27/27 全绿；observability 包内 6 spec / 25 cases 全绿。包含 5 个子模块：
   - `feat(observability): redact secrets in events and logs` — 基于 token 模式（glpat-/glrt-/Bearer/sk-）和字段名黑名单（password/secret/api_key/token 等）的递归脱敏。7 个测试。
   - `feat(observability): in-memory event bus` — 泛型 pub/sub，支持过滤函数和 unsubscribe，订阅者错误隔离。5 个测试。
