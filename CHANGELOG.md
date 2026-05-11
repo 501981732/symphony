@@ -6,6 +6,13 @@
 
 ### Added
 
+- 2026-05-11 — **IssuePilot P0 Phase 5（M5 Codex App-Server Runner）完成。** `@issuepilot/runner-codex-app-server` 实现 spec §10 的 JSON-RPC stdio client、线程/回合生命周期编排、事件标准化和 spec §11 的 9 个 GitLab dynamic tools。验证：`pnpm -w turbo run build test typecheck --force` 27/27 全绿；runner 包内 5 spec / 24 cases 全绿。包含 5 个 Task：
+  - **Task 5.1（commit 07ab23a）** `feat(runner): newline-delimited JSON-RPC stdio client` — `spawnRpc` 封装 `execa` 实现双向 NDJSON-RPC，支持 request/response（带 pending map）、通知、malformed 行处理、进程退出清理。6 个测试。
+  - **Task 5.2（commit 6568a69）** `feat(runner): drive thread/turn lifecycle with timeouts` — `driveLifecycle` 编排 initialize → thread/start → turn/start 循环，处理 completed/failed/cancelled/timeout 四种回合结局，支持 maxTurns 限制。3 个测试。
+  - **Task 5.3（commit 46a455f）** `feat(runner): normalize app-server notifications into events` — 把 turn/notification、tool/*、approval/request、turn/input_required 映射成标准 IssuePilotEvent；policy=never 自动 approve；input 请求自动回复 non-interactive 消息。8 个测试。
+  - **Task 5.4（commit 2e8ac42）** `feat(runner): expose allowlisted GitLab dynamic tools` — `createGitLabTools` 生成 9 个 ToolDefinition，每个 handler 用 `safe()` 包装，成功返回 `{ok:true,data}`，失败返回 `{ok:false,error}`。5 个测试。
+  - **Task 5.5（commit d36884d）** `feat(runner): expose codex runner facade` — 汇总导出所有 runner 功能到 index.ts。
+
 - 2026-05-11 — **IssuePilot P0 Phase 4（M4 Workspace Manager）完成。** `@issuepilot/workspace` 实现 spec §9 的 bare mirror + git worktree 模型和 hooks 执行。验证：`pnpm -w turbo run build test typecheck --force` 27/27 全绿；workspace 包内 6 spec / 37 cases 全绿，覆盖路径安全、mirror 克隆/fetch、worktree 创建/复用/脏检测、hook 执行/超时/跳过、失败标记保留。包含 6 个 Task：
   - **Task 4.1（commit 2585c4e）** `feat(workspace): path safety and branch sanitizer` — `slugify` 仅保留 `[a-z0-9-]`，collapses 连字符，空返 `untitled`，支持 maxLen；`assertWithinRoot` 用 `fs.realpath` canonicalize 后校验子路径在根路径下，防 symlink escape 和 `..` traversal；`branchName` 生成 `prefix/iid-titleSlug`，校验 ≤200 字符且不含 `..`/`:`/`~`/`^`/`\\`。新增 15 个测试。
   - **Task 4.2（commit 0f3c7bb）** `feat(workspace): ensure bare mirror via execa` — `ensureMirror` 首次调用 `git clone --mirror`，后续调用 `git fetch --prune origin`，支持 `~` 路径展开。新增 4 个测试覆盖 first clone、fetch reuse、新 commit pickup、无效 URL 报错。
