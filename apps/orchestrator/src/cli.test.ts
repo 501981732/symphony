@@ -9,6 +9,7 @@ describe("CLI", () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cli-test-"));
+    process.exitCode = 0;
   });
 
   afterEach(() => {
@@ -19,10 +20,9 @@ describe("CLI", () => {
     const cli = buildCli();
     const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await cli.parseAsync(
-      ["validate", "--workflow", "/nonexistent/wf.md"],
-      { from: "user" },
-    );
+    await cli.parseAsync(["validate", "--workflow", "/nonexistent/wf.md"], {
+      from: "user",
+    });
 
     expect(process.exitCode).toBe(1);
     expect(mockError).toHaveBeenCalledWith(
@@ -37,7 +37,54 @@ describe("CLI", () => {
     fs.writeFileSync(wfPath, "---\ntitle: test\n---\n");
 
     const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    const cli = buildCli();
+    const cli = buildCli({
+      validateWorkflow: async () => ({
+        tracker: {
+          kind: "gitlab",
+          baseUrl: "https://gitlab.example.com",
+          projectId: "group/project",
+          tokenEnv: "GITLAB_TOKEN",
+          activeLabels: ["ai-ready"],
+          runningLabel: "ai-running",
+          handoffLabel: "human-review",
+          failedLabel: "ai-failed",
+          blockedLabel: "ai-blocked",
+          reworkLabel: "ai-rework",
+          mergingLabel: "ai-merging",
+        },
+        workspace: {
+          root: "/tmp/issuepilot",
+          strategy: "worktree",
+          repoCacheRoot: "/tmp/issuepilot/cache",
+        },
+        git: {
+          repoUrl: "git@example.com:group/project.git",
+          baseBranch: "main",
+          branchPrefix: "issuepilot",
+        },
+        agent: {
+          runner: "codex-app-server",
+          maxConcurrentAgents: 1,
+          maxTurns: 3,
+          maxAttempts: 2,
+          retryBackoffMs: 1000,
+        },
+        codex: {
+          command: "codex app-server",
+          approvalPolicy: "never",
+          threadSandbox: "workspace-write",
+          turnTimeoutMs: 60_000,
+          turnSandboxPolicy: { type: "workspaceWrite" },
+        },
+        hooks: {},
+        promptTemplate: "Fix {{ issue.title }}",
+        source: {
+          path: wfPath,
+          sha256: "sha",
+          loadedAt: new Date(0).toISOString(),
+        },
+      }),
+    });
 
     await cli.parseAsync(["validate", "--workflow", wfPath], {
       from: "user",
@@ -51,7 +98,10 @@ describe("CLI", () => {
 
   it("doctor runs checks", async () => {
     const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    const cli = buildCli();
+    const cli = buildCli({
+      checkCodexAppServer: async () => "0.0.0",
+      execaCommand: async () => ({ stdout: "git version 2.0.0" }) as never,
+    });
 
     await cli.parseAsync(["doctor"], { from: "user" });
 
@@ -66,10 +116,9 @@ describe("CLI", () => {
     const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
     const cli = buildCli();
 
-    await cli.parseAsync(
-      ["run", "--workflow", "/nonexistent/wf.md"],
-      { from: "user" },
-    );
+    await cli.parseAsync(["run", "--workflow", "/nonexistent/wf.md"], {
+      from: "user",
+    });
 
     expect(process.exitCode).toBe(1);
     mockError.mockRestore();
@@ -81,12 +130,24 @@ describe("CLI", () => {
     fs.writeFileSync(wfPath, "---\ntitle: test\n---\n");
 
     const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    const cli = buildCli();
+    const startDaemon = vi.fn(async () => ({
+      host: "127.0.0.1",
+      port: 4738,
+      url: "http://127.0.0.1:4738",
+      state: {} as never,
+      stop: async () => undefined,
+      wait: async () => undefined,
+    }));
+    const cli = buildCli({ startDaemon });
 
     await cli.parseAsync(["run", "--workflow", wfPath], { from: "user" });
 
+    expect(startDaemon).toHaveBeenCalledWith({
+      workflowPath: wfPath,
+      port: 4738,
+    });
     expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("daemon starting"),
+      expect.stringContaining("daemon ready"),
     );
     mockLog.mockRestore();
   });

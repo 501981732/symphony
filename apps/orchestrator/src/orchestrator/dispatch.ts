@@ -23,19 +23,21 @@ export interface DispatchDeps {
 
   runHook(opts: {
     cwd: string;
+    name: "after_create" | "before_run" | "after_run";
     script?: string | undefined;
     env?: Record<string, string> | undefined;
-  }): Promise<{ exitCode?: number | undefined; stdout: string; stderr: string }>;
+  }): Promise<{
+    exitCode?: number | undefined;
+    stdout: string;
+    stderr: string;
+  }>;
 
   renderPrompt(opts: {
     template: string;
     vars: Record<string, unknown>;
-  }): string;
+  }): string | Promise<string>;
 
-  runAgent(opts: {
-    cwd: string;
-    prompt: string;
-  }): Promise<{
+  runAgent(opts: { cwd: string; prompt: string }): Promise<{
     status: string;
     summary?: string | undefined;
     validation?: string | undefined;
@@ -60,8 +62,17 @@ export interface DispatchDeps {
     handoffLabel: string;
   }): Promise<void>;
 
-  onEvent(event: { type: string; runId: string; ts: string; detail: Record<string, unknown> }): void;
-  onFailure(runId: string, classification: Classification, attempt: number): Promise<void>;
+  onEvent(event: {
+    type: string;
+    runId: string;
+    ts: string;
+    detail: Record<string, unknown>;
+  }): void;
+  onFailure(
+    runId: string,
+    classification: Classification,
+    attempt: number,
+  ): Promise<void>;
 }
 
 export interface DispatchInput {
@@ -85,11 +96,13 @@ export interface DispatchInput {
   runningLabel: string;
   handoffLabel: string;
   promptTemplate: string;
-  hooks?: {
-    afterCreate?: string | undefined;
-    beforeRun?: string | undefined;
-    afterRun?: string | undefined;
-  } | undefined;
+  hooks?:
+    | {
+        afterCreate?: string | undefined;
+        beforeRun?: string | undefined;
+        afterRun?: string | undefined;
+      }
+    | undefined;
 }
 
 function now(): string {
@@ -108,20 +121,31 @@ export async function dispatch(
 
   try {
     const currentRun = deps.state.getRun(runId)!;
-    const { nextRetryAt: _nextRetryAt, ...runWithoutRetrySchedule } = currentRun;
+    const { nextRetryAt: _nextRetryAt, ...runWithoutRetrySchedule } =
+      currentRun;
     deps.state.setRun(runId, {
       ...runWithoutRetrySchedule,
       status: "running",
       updatedAt: now(),
     });
 
-    deps.onEvent({ type: "dispatch_start", runId, ts: now(), detail: { iid: input.issue.iid } });
+    deps.onEvent({
+      type: "dispatch_start",
+      runId,
+      ts: now(),
+      detail: { iid: input.issue.iid },
+    });
 
     const { mirrorPath } = await deps.ensureMirror({
       remoteUrl: input.remoteUrl,
       repoCacheRoot: input.repoCacheRoot,
     });
-    deps.onEvent({ type: "mirror_ready", runId, ts: now(), detail: { mirrorPath } });
+    deps.onEvent({
+      type: "mirror_ready",
+      runId,
+      ts: now(),
+      detail: { mirrorPath },
+    });
 
     const { worktreePath, created } = await deps.ensureWorktree({
       mirrorPath,
@@ -129,7 +153,12 @@ export async function dispatch(
       baseBranch: input.baseBranch,
       worktreeRoot: input.worktreeRoot,
     });
-    deps.onEvent({ type: "worktree_ready", runId, ts: now(), detail: { worktreePath, created } });
+    deps.onEvent({
+      type: "worktree_ready",
+      runId,
+      ts: now(),
+      detail: { worktreePath, created },
+    });
 
     deps.state.setRun(runId, {
       ...deps.state.getRun(runId)!,
@@ -138,16 +167,34 @@ export async function dispatch(
     });
 
     if (created && input.hooks?.afterCreate) {
-      await deps.runHook({ cwd: worktreePath, script: input.hooks.afterCreate });
-      deps.onEvent({ type: "hook_afterCreate_done", runId, ts: now(), detail: {} });
+      await deps.runHook({
+        cwd: worktreePath,
+        name: "after_create",
+        script: input.hooks.afterCreate,
+      });
+      deps.onEvent({
+        type: "hook_afterCreate_done",
+        runId,
+        ts: now(),
+        detail: {},
+      });
     }
 
     if (input.hooks?.beforeRun) {
-      await deps.runHook({ cwd: worktreePath, script: input.hooks.beforeRun });
-      deps.onEvent({ type: "hook_beforeRun_done", runId, ts: now(), detail: {} });
+      await deps.runHook({
+        cwd: worktreePath,
+        name: "before_run",
+        script: input.hooks.beforeRun,
+      });
+      deps.onEvent({
+        type: "hook_beforeRun_done",
+        runId,
+        ts: now(),
+        detail: {},
+      });
     }
 
-    const prompt = deps.renderPrompt({
+    const prompt = await deps.renderPrompt({
       template: input.promptTemplate,
       vars: {
         issue: {
@@ -171,11 +218,25 @@ export async function dispatch(
       cwd: worktreePath,
       prompt,
     });
-    deps.onEvent({ type: "agent_completed", runId, ts: now(), detail: { status: outcome.status } });
+    deps.onEvent({
+      type: "agent_completed",
+      runId,
+      ts: now(),
+      detail: { status: outcome.status },
+    });
 
     if (input.hooks?.afterRun) {
-      await deps.runHook({ cwd: worktreePath, script: input.hooks.afterRun });
-      deps.onEvent({ type: "hook_afterRun_done", runId, ts: now(), detail: {} });
+      await deps.runHook({
+        cwd: worktreePath,
+        name: "after_run",
+        script: input.hooks.afterRun,
+      });
+      deps.onEvent({
+        type: "hook_afterRun_done",
+        runId,
+        ts: now(),
+        detail: {},
+      });
     }
 
     if (outcome.status !== "completed") {
@@ -205,7 +266,6 @@ export async function dispatch(
       updatedAt: now(),
     });
     deps.onEvent({ type: "dispatch_completed", runId, ts: now(), detail: {} });
-
   } catch (err) {
     const run = deps.state.getRun(runId);
     const attempt = run?.attempt ?? 1;
@@ -229,7 +289,11 @@ export async function dispatch(
         type: "retry_scheduled",
         runId,
         ts: now(),
-        detail: { attempt: attempt + 1, nextRetryAt, reason: classification.reason },
+        detail: {
+          attempt: attempt + 1,
+          nextRetryAt,
+          reason: classification.reason,
+        },
       });
     } else {
       const finalStatus = decision.finalStatus ?? "failed";
@@ -243,7 +307,11 @@ export async function dispatch(
         type: "dispatch_failed",
         runId,
         ts: now(),
-        detail: { kind: classification.kind, code: classification.code, reason: classification.reason },
+        detail: {
+          kind: classification.kind,
+          code: classification.code,
+          reason: classification.reason,
+        },
       });
     }
   }

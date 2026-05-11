@@ -5,8 +5,33 @@ import * as path from "node:path";
 import { Command } from "commander";
 import { execaCommand } from "execa";
 
+import {
+  checkCodexAppServer,
+  startDaemon,
+  validateWorkflow,
+  type DaemonHandle,
+} from "./daemon.js";
 
-export function buildCli(): Command {
+export interface CliDeps {
+  startDaemon?: typeof startDaemon | undefined;
+  validateWorkflow?: typeof validateWorkflow | undefined;
+  checkCodexAppServer?: typeof checkCodexAppServer | undefined;
+  execaCommand?: typeof execaCommand | undefined;
+}
+
+function parsePort(value: string): number | null {
+  if (!/^[1-9]\d*$/.test(value)) return null;
+  const port = Number(value);
+  if (port > 65_535) return null;
+  return port;
+}
+
+export function buildCli(deps: CliDeps = {}): Command {
+  const daemonStarter = deps.startDaemon ?? startDaemon;
+  const workflowValidator = deps.validateWorkflow ?? validateWorkflow;
+  const codexCheck = deps.checkCodexAppServer ?? checkCodexAppServer;
+  const runExecaCommand = deps.execaCommand ?? execaCommand;
+
   const program = new Command("issuepilot")
     .description("IssuePilot — AI-driven GitLab issue orchestrator")
     .version("0.0.0");
@@ -18,14 +43,28 @@ export function buildCli(): Command {
     .option("--port <number>", "HTTP API port", "4738")
     .action(async (opts) => {
       const workflowPath = path.resolve(opts.workflow);
+      const port = parsePort(opts.port);
+      if (port === null) {
+        console.error(`Error: invalid port: ${opts.port}`);
+        process.exitCode = 1;
+        return;
+      }
       if (!fs.existsSync(workflowPath)) {
         console.error(`Error: workflow file not found: ${workflowPath}`);
         process.exitCode = 1;
         return;
       }
-      console.log(
-        `IssuePilot daemon starting — workflow=${workflowPath} port=${opts.port}`,
-      );
+      let handle: DaemonHandle;
+      try {
+        handle = await daemonStarter({ workflowPath, port });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Error: failed to start daemon: ${message}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`IssuePilot daemon ready: ${handle.url}`);
+      await handle.wait();
     });
 
   program
@@ -39,8 +78,16 @@ export function buildCli(): Command {
         process.exitCode = 1;
         return;
       }
-      console.log(`Workflow file found: ${workflowPath}`);
-      console.log("Validation passed.");
+      try {
+        const workflow = await workflowValidator(workflowPath);
+        console.log(`Workflow loaded: ${workflow.source.path}`);
+        console.log(`GitLab project: ${workflow.tracker.projectId}`);
+        console.log("Validation passed.");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Validation failed: ${message}`);
+        process.exitCode = 1;
+      }
     });
 
   program
@@ -58,10 +105,21 @@ export function buildCli(): Command {
       });
 
       try {
-        const { stdout } = await execaCommand("git --version");
+        const { stdout } = await runExecaCommand("git --version");
         checks.push({ name: "git", ok: true, detail: stdout.trim() });
       } catch {
         checks.push({ name: "git", ok: false, detail: "not found" });
+      }
+
+      try {
+        const detail = await codexCheck();
+        checks.push({ name: "codex app-server", ok: true, detail });
+      } catch {
+        checks.push({
+          name: "codex app-server",
+          ok: false,
+          detail: "not found",
+        });
       }
 
       const stateDir = path.join(os.homedir(), ".issuepilot", "state");

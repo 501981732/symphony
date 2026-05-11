@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "issuepilot": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -19,7 +22,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src --max-warnings 0",
-    "dev": "echo \"dev: placeholder until Phase 6 wires Fastify daemon\""
+    "dev": "pnpm build && node dist/bin.js"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",
