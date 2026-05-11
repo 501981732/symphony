@@ -29,6 +29,11 @@ export {
   toIssueRef,
   type ListCandidateIssuesOpts,
 } from "./issues.js";
+export {
+  transitionLabels,
+  type TransitionLabelsOpts,
+  type TransitionLabelsResult,
+} from "./labels.js";
 export type {
   GitLabAdapter,
   GitLabErrorCategory,
