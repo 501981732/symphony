@@ -64,14 +64,61 @@ describe("reconcile", () => {
     expect(types).toContain("gitlab_labels_transitioned");
   });
 
-  it("skips push/MR when no new commits", async () => {
+  it("fails without side effects when no new commits and no explicit no-code-change reason", async () => {
     mocks.git.hasNewCommits.mockResolvedValue(false);
-    await reconcile(baseInput(mocks));
+
+    await expect(reconcile(baseInput(mocks))).rejects.toThrow(
+      "Reconcile found no new commits",
+    );
 
     expect(mocks.git.push).not.toHaveBeenCalled();
+    expect(mocks.gitlab.findMergeRequest).not.toHaveBeenCalled();
     expect(mocks.gitlab.createMergeRequest).not.toHaveBeenCalled();
+    expect(mocks.gitlab.updateMergeRequest).not.toHaveBeenCalled();
+    expect(mocks.gitlab.findWorkpadNote).not.toHaveBeenCalled();
+    expect(mocks.gitlab.createNote).not.toHaveBeenCalled();
+    expect(mocks.gitlab.updateNote).not.toHaveBeenCalled();
+    expect(mocks.gitlab.transitionLabels).not.toHaveBeenCalled();
     expect(mocks.events.find((e) => e.type === "reconcile_no_commits")).toBeDefined();
-    expect(mocks.gitlab.transitionLabels).toHaveBeenCalled();
+  });
+
+  it("writes fallback note and transitions labels when no new commits have explicit no-code-change reason", async () => {
+    mocks.git.hasNewCommits.mockResolvedValue(false);
+    const input = baseInput(mocks);
+    input.agentSummary = "Reviewed issue and confirmed config already matches request.";
+    input.agentValidation = "Ran inspection; no files required updates.";
+    input.agentRisks = "No runtime risk.";
+    input.noCodeChangeReason = "Existing implementation already satisfies the issue.";
+
+    await reconcile(input);
+
+    expect(mocks.git.push).not.toHaveBeenCalled();
+    expect(mocks.gitlab.findMergeRequest).not.toHaveBeenCalled();
+    expect(mocks.gitlab.createMergeRequest).not.toHaveBeenCalled();
+    expect(mocks.gitlab.updateMergeRequest).not.toHaveBeenCalled();
+    expect(mocks.gitlab.createNote).toHaveBeenCalledWith(
+      42,
+      expect.stringContaining("No code changes: Existing implementation already satisfies the issue."),
+    );
+    expect(mocks.gitlab.createNote).toHaveBeenCalledWith(
+      42,
+      expect.stringContaining("Branch: `ai/42-fix-bug`"),
+    );
+    expect(mocks.gitlab.createNote).toHaveBeenCalledWith(
+      42,
+      expect.stringContaining("Validation: Ran inspection; no files required updates."),
+    );
+    expect(mocks.gitlab.transitionLabels).toHaveBeenCalledWith(42, {
+      add: ["human-review"],
+      remove: ["ai-running"],
+    });
+
+    const types = mocks.events.map((e) => e.type);
+    expect(types).toEqual([
+      "reconcile_no_commits",
+      "gitlab_workpad_note_created",
+      "gitlab_labels_transitioned",
+    ]);
   });
 
   it("updates existing MR instead of creating", async () => {

@@ -8,6 +8,7 @@ export interface ReconcileInput {
   agentSummary?: string | undefined;
   agentValidation?: string | undefined;
   agentRisks?: string | undefined;
+  noCodeChangeReason?: string | undefined;
   issueUrl: string;
   issueIdentifier: string;
   runningLabel: string;
@@ -82,6 +83,9 @@ function buildWorkpadNote(input: ReconcileInput): string {
     `- Summary: ${input.agentSummary || "(no summary)"}`,
     `- Validation: ${input.agentValidation || "(none)"}`,
     `- Risks: ${input.agentRisks || "(none)"}`,
+    ...(input.noCodeChangeReason
+      ? [`- No code changes: ${input.noCodeChangeReason}`]
+      : []),
   ].join("\n");
 }
 
@@ -96,12 +100,48 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
   );
 
   if (!hasCommits) {
+    const noCodeChangeReason = input.noCodeChangeReason?.trim();
     input.onEvent({
       type: "reconcile_no_commits",
       runId: input.runId,
       ts: now(),
       detail: { branch: input.branch },
     });
+
+    if (!noCodeChangeReason) {
+      throw new Error(
+        `Reconcile found no new commits on branch ${input.branch} and no explicit no-code-change reason.`,
+      );
+    }
+
+    const marker = `<!-- issuepilot:run:${input.runId} -->`;
+    const existingNote = await input.gitlab.findWorkpadNote(
+      input.iid,
+      marker,
+    );
+    const noteBody = buildWorkpadNote({
+      ...input,
+      noCodeChangeReason,
+    });
+
+    if (!existingNote) {
+      const note = await input.gitlab.createNote(input.iid, noteBody);
+      input.onEvent({
+        type: "gitlab_workpad_note_created",
+        runId: input.runId,
+        ts: now(),
+        detail: { noteId: note.id, branch: input.branch },
+      });
+    } else {
+      await input.gitlab.updateNote(input.iid, existingNote.id, noteBody);
+      input.onEvent({
+        type: "gitlab_workpad_note_updated",
+        runId: input.runId,
+        ts: now(),
+        detail: { noteId: existingNote.id, branch: input.branch },
+      });
+    }
+
     await transitionToHandoff(input);
     return;
   }

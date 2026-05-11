@@ -35,7 +35,13 @@ export interface DispatchDeps {
   runAgent(opts: {
     cwd: string;
     prompt: string;
-  }): Promise<{ status: string; summary?: string | undefined; validation?: string | undefined; risks?: string | undefined }>;
+  }): Promise<{
+    status: string;
+    summary?: string | undefined;
+    validation?: string | undefined;
+    risks?: string | undefined;
+    noCodeChangeReason?: string | undefined;
+  }>;
 
   reconcile(opts: {
     runId: string;
@@ -47,6 +53,7 @@ export interface DispatchDeps {
     agentSummary?: string | undefined;
     agentValidation?: string | undefined;
     agentRisks?: string | undefined;
+    noCodeChangeReason?: string | undefined;
     issueUrl: string;
     issueIdentifier: string;
     runningLabel: string;
@@ -185,6 +192,7 @@ export async function dispatch(
       agentSummary: outcome.summary,
       agentValidation: outcome.validation,
       agentRisks: outcome.risks,
+      noCodeChangeReason: outcome.noCodeChangeReason,
       issueUrl: input.issue.url,
       issueIdentifier: `${input.issue.projectId}#${input.issue.iid}`,
       runningLabel: input.runningLabel,

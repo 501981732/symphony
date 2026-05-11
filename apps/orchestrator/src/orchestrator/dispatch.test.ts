@@ -86,6 +86,25 @@ describe("dispatch", () => {
     expect(types).toContain("dispatch_completed");
   });
 
+  it("passes no-code-change reason from agent outcome to reconcile", async () => {
+    const deps = createFakeDeps({
+      runAgent: vi.fn(async () => ({
+        status: "completed",
+        summary: "No edits needed",
+        noCodeChangeReason: "The requested behavior already exists.",
+      })),
+    });
+
+    await dispatch(baseInput, deps);
+
+    expect(deps.reconcile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSummary: "No edits needed",
+        noCodeChangeReason: "The requested behavior already exists.",
+      }),
+    );
+  });
+
   it("renders prompt with spec-shaped dotted context", async () => {
     const deps = createFakeDeps();
     await dispatch(baseInput, deps);
