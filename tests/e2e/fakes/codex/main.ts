@@ -17,7 +17,10 @@ const DEBUG_LOG = process.env["IPILOT_FAKE_DEBUG_LOG"];
 function debug(direction: "<-" | "->" | "::", payload: string): void {
   if (!DEBUG_LOG) return;
   try {
-    appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${direction} ${payload}\n`);
+    appendFileSync(
+      DEBUG_LOG,
+      `${new Date().toISOString()} ${direction} ${payload}\n`,
+    );
   } catch {
     // ignore — debug logging is best-effort
   }

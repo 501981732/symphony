@@ -109,9 +109,7 @@ describe("happy path E2E", () => {
     // Step 5: at least one workpad / progress note was written on the issue.
     const notes = ws.gitlabState.notes.get(ISSUE_IID) ?? [];
     expect(notes.length).toBeGreaterThanOrEqual(1);
-    expect(
-      notes.some((n) => n.body.includes("IssuePilot")),
-    ).toBe(true);
+    expect(notes.some((n) => n.body.includes("IssuePilot"))).toBe(true);
 
     // Step 6: orchestrator HTTP API exposes the run record as completed-ish
     //         (status is "running" until reconcile flips to "completed" at the
@@ -132,7 +130,9 @@ describe("happy path E2E", () => {
     // Step 7: event store contains the spec §10 happy-path event types.
     const stateRes = await fetch(`${daemon.url}/api/state`);
     expect(stateRes.ok).toBe(true);
-    const stateBody = (await stateRes.json()) as { service: { status: string } };
+    const stateBody = (await stateRes.json()) as {
+      service: { status: string };
+    };
     expect(stateBody.service.status === "ready").toBe(true);
 
     const eventsRes = await fetch(

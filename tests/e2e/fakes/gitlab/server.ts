@@ -171,7 +171,8 @@ export async function startGitLabFakeServer(
   app.addHook("onRequest", async (req, reply) => {
     if (req.url.startsWith("/_health")) return;
     const header = req.headers["authorization"];
-    const presented = typeof header === "string" ? header.replace(/^Bearer\s+/i, "") : "";
+    const presented =
+      typeof header === "string" ? header.replace(/^Bearer\s+/i, "") : "";
     const privateToken = req.headers["private-token"];
     const candidate =
       presented || (typeof privateToken === "string" ? privateToken : "");
@@ -284,7 +285,8 @@ export async function startGitLabFakeServer(
       const list = state.notes.get(iid);
       if (!list) return reply.code(404).send({ message: "Not Found" });
       const body = (req.body?.body ?? "").toString();
-      if (!body.trim()) return reply.code(400).send({ message: "body required" });
+      if (!body.trim())
+        return reply.code(400).send({ message: "body required" });
       const now = nowIso();
       const note: RawIssueNoteRow = {
         id: state.nextId(),
@@ -345,7 +347,9 @@ export async function startGitLabFakeServer(
       const target = req.body.target_branch ?? "main";
       const title = req.body.title ?? "";
       if (!source || !title) {
-        return reply.code(400).send({ message: "source_branch and title required" });
+        return reply
+          .code(400)
+          .send({ message: "source_branch and title required" });
       }
       const existing = state.mergeRequests.get(source);
       if (existing && existing.state === "opened") {
@@ -393,8 +397,10 @@ export async function startGitLabFakeServer(
       const mr = findMrByIid(state, iid);
       if (!mr) return reply.code(404).send({ message: "Not Found" });
       if (req.body.title !== undefined) mr.title = req.body.title;
-      if (req.body.description !== undefined) mr.description = req.body.description;
-      if (req.body.target_branch !== undefined) mr.target_branch = req.body.target_branch;
+      if (req.body.description !== undefined)
+        mr.description = req.body.description;
+      if (req.body.target_branch !== undefined)
+        mr.target_branch = req.body.target_branch;
       mr.updated_at = nowIso();
       return reply.send(mr);
     },
@@ -474,4 +480,9 @@ function findMrByIid(
   return undefined;
 }
 
-export type { RawIssueRow, RawIssueNoteRow, RawMergeRequestRow, RawPipelineRow };
+export type {
+  RawIssueRow,
+  RawIssueNoteRow,
+  RawMergeRequestRow,
+  RawPipelineRow,
+};

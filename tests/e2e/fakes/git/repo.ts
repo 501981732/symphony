@@ -36,17 +36,35 @@ export async function createFakeBareRepo(options?: {
   mkdirSync(seedDir, { recursive: true });
 
   await execa("git", ["init", "--bare", bareDir]);
-  await execa("git", ["-C", bareDir, "symbolic-ref", "HEAD", `refs/heads/${baseBranch}`]);
+  await execa("git", [
+    "-C",
+    bareDir,
+    "symbolic-ref",
+    "HEAD",
+    `refs/heads/${baseBranch}`,
+  ]);
 
   await execa("git", ["init", seedDir]);
   // Configure local identity inside the seed worktree so commits succeed
   // even on machines without a global git identity (CI sandboxes).
-  await execa("git", ["-C", seedDir, "config", "user.email", "ci@issuepilot.local"]);
+  await execa("git", [
+    "-C",
+    seedDir,
+    "config",
+    "user.email",
+    "ci@issuepilot.local",
+  ]);
   await execa("git", ["-C", seedDir, "config", "user.name", "issuepilot-ci"]);
   await execa("git", ["-C", seedDir, "checkout", "-b", baseBranch]);
   writeFileSync(join(seedDir, initialFile.name), initialFile.contents);
   await execa("git", ["-C", seedDir, "add", "."]);
-  await execa("git", ["-C", seedDir, "commit", "-m", "chore: seed initial commit"]);
+  await execa("git", [
+    "-C",
+    seedDir,
+    "commit",
+    "-m",
+    "chore: seed initial commit",
+  ]);
   await execa("git", ["-C", seedDir, "remote", "add", "origin", bareDir]);
   await execa("git", ["-C", seedDir, "push", "origin", baseBranch]);
 

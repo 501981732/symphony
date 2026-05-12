@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,7 +42,9 @@ describe("fake codex CLI (main.ts)", () => {
     ws = writeScript([
       {
         expect: "initialize",
-        respond: { result: { serverInfo: { name: "fake-codex", version: "0.0.0" } } },
+        respond: {
+          result: { serverInfo: { name: "fake-codex", version: "0.0.0" } },
+        },
       },
       { expect: "initialized" },
     ]);

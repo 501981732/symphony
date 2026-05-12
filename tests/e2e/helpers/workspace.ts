@@ -72,7 +72,10 @@ export async function createE2EWorkspace(
   });
 
   const codexScriptPath = join(tmpRoot, "codex-script.json");
-  const fixtureScript = readFileSync(join(FIXTURES, opts.codexScriptFixture), "utf8");
+  const fixtureScript = readFileSync(
+    join(FIXTURES, opts.codexScriptFixture),
+    "utf8",
+  );
   writeFileSync(codexScriptPath, fixtureScript);
 
   const workflowPath = join(tmpRoot, "workflow.fake.md");

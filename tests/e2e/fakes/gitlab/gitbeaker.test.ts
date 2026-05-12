@@ -9,10 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Gitlab } from "@gitbeaker/rest";
 
 import { createGitLabState, seedGitLabState } from "./data.js";
-import {
-  startGitLabFakeServer,
-  type GitLabFakeServer,
-} from "./server.js";
+import { startGitLabFakeServer, type GitLabFakeServer } from "./server.js";
 
 const PROJECT_ID = "demo/repo";
 const TOKEN = "glpat-test-token";

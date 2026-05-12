@@ -1445,9 +1445,11 @@ issuepilot doctor     --workflow <path>
 
 ---
 
-## Phase 8：端到端验证（M8）
+## Phase 8：端到端验证（M8） ✅ 已完成（2026-05-12）
 
 **目标：** 提供 fake GitLab + fake Codex app-server 的全闭环 E2E，并产出真实 GitLab 项目的人工 smoke 指南。
+
+**状态：** 全部 5 个 Task 完成并提交，CHANGELOG 已记录。`pnpm -w turbo run build test typecheck lint` + `tests/e2e` 7 文件 28 测试全绿；`pnpm smoke` 本地真实启动 daemon → ready → SIGINT 关停一次通过；真实 GitLab smoke 指南落地 `docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`。
 
 ### Task 8.1：fake GitLab server
 
