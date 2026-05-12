@@ -1,5 +1,7 @@
 # IssuePilot
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 IssuePilot is an open-source local orchestrator for GitLab issue driven AI
 engineering work.
 
