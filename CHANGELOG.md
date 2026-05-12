@@ -6,6 +6,12 @@
 
 ### Added
 
+- 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.2（API 客户端 + SSE hook）完成。** `apps/dashboard/lib/` 落地 typed REST client 与 `useEventStream` React hook，覆盖 spec §15 的 5 个 orchestrator endpoint。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（25/25 单测，5 个 spec 文件）。
+  - `lib/api.ts`：`apiGet<T>` 用 fetch + `cache: "no-store"` + `accept: application/json`；`resolveApiBase()` 优先读 `NEXT_PUBLIC_API_BASE`、默认 `http://127.0.0.1:4738`、自动 strip trailing slash；`ApiError(status, body)` 保留状态码与响应体便于下层 fallback；`getState/listRuns/getRun/listEvents/eventStreamUrl` 5 个 typed helper 直接返回 `@issuepilot/shared-contracts` 中的 `OrchestratorStateSnapshot / RunRecord / IssuePilotEvent`，`listRuns` 支持 `RunStatus | readonly RunStatus[]` 状态查询。
+  - `lib/use-event-stream.ts`：`"use client"` React hook，封装 EventSource 连接 + 指数退避重连（1s → 2s → … 上限 30s）+ unmount 自动 close + runId 过滤参数；新增 `bufferSize`（默认 200 FIFO 防内存膨胀）、`onEvent` 回调（用 ref 缓存，回调变更不重连）、`enabled` 开关；malformed JSON 静默丢弃但保持 stream 打开。`__setEventSourceFactory` test seam 用 `__` 前缀显式标记。
+  - 测试：`api.test.ts` 10 个 case 覆盖 base URL fallback / status query encode / runId URL-encode / 错误传播；`use-event-stream.test.tsx` 6 个 case 覆盖连接 / buffer cap / onEvent 回调 / 指数退避重连 / unmount cleanup / malformed payload 容错。
+  - 依赖：新增 `@issuepilot/shared-contracts@workspace:*`、devDeps `@testing-library/react ^16`、`@testing-library/dom`、`jsdom`。
+
 - 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.1（Dashboard 脚手架）完成。** `@issuepilot/dashboard` 接入 Tailwind 3.x + shadcn 风格 primitives，为后续概览页/详情页打下基础。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（9/9 单测通过，Next.js 14 build 成功）。`pnpm -w turbo run test typecheck lint --force` 33/33 任务全绿不破坏其他包。
   - `lib/cn.ts` + `lib/cn.test.ts`：`clsx + tailwind-merge` 组合，conflict-resolution 友好的 className 工具，4 个测试覆盖 join / 条件 / 冲突覆盖 / 对象语法。
   - `components/ui/{button,card,table,badge}.tsx`：手写 shadcn 风格 primitives，Button 支持 variant/size 表驱动，Badge 支持 6 种 tone，Card 拆 `Card/CardHeader/CardTitle/CardContent`，Table 拆 `Table/TableHeader/TableBody/TableRow/TableHead/TableCell` 并外层加 overflow-x-auto；4 个 smoke 测试验证 forwardRef 组件可渲染。
