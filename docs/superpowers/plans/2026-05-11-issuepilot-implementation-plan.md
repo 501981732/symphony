@@ -6,9 +6,9 @@
 
 **Goal：** 交付 IssuePilot P0：本地 daemon 把带 `ai-ready` label 的 GitLab Issue 自动拾取，在隔离 worktree 内驱动 Codex app-server 完成实现，推送分支、创建 MR、写回 Issue note，并通过只读 Next.js dashboard 展示运行时间线。
 
-**Architecture：** pnpm 工作区 + Turborepo。两个 app（`orchestrator` 本地 daemon、`dashboard` 只读 UI）依赖六个领域包（`core`、`workflow`、`tracker-gitlab`、`workspace`、`runner-codex-app-server`、`observability`、`shared-contracts`）。所有 git 操作通过 `execa` 调用真实 git CLI；Codex 通过 stdio JSON-RPC 与 `codex app-server` 交互；状态落盘为 `~/.issuepilot/state/**` 下的 JSON/JSONL。
+**Architecture：** pnpm 工作区 + Turborepo。两个 app（`orchestrator` 本地 daemon、`dashboard` 只读 UI）依赖七个领域包（`core`、`workflow`、`tracker-gitlab`、`workspace`、`runner-codex-app-server`、`observability`、`shared-contracts`）。所有 git 操作通过 `execa` 调用真实 git CLI；Codex 通过 stdio JSON-RPC 与 `codex app-server` 交互；状态落盘为 `~/.issuepilot/state/**` 下的 JSON/JSONL。
 
-**Tech Stack：** TypeScript / Node.js 22 LTS、pnpm workspace、Turborepo、Vitest、ESLint、Prettier、Fastify、Next.js App Router、Tailwind/shadcn、`pino`、`zod`、`gray-matter`、`yaml`、`liquidjs`、`execa`、`@gitbeaker/rest`、`commander`、SSE。
+**Tech Stack：** TypeScript / Node.js 22 LTS、pnpm workspace、Turborepo、Vitest、ESLint、Prettier、Fastify、Next.js App Router、Tailwind/shadcn、`pino`、`zod`、`gray-matter`、`yaml`、`liquidjs`、`execa`、`p-timeout`、`@gitbeaker/rest`、`commander`、SSE。
 
 ---
 
@@ -227,9 +227,13 @@ packages:
     "vitest": "^2",
     "@vitest/coverage-v8": "^2",
     "eslint": "^9",
-    "prettier": "^3"
+    "prettier": "^3",
+    "execa": "^9"
   }
 }
+```
+
+> **注意：** 根 `package.json` 必须声明 `execa` 作为 devDependency，因为根级集成 smoke test（`tests/integration/scaffold.smoke.test.ts`）直接使用 `execaSync`。各子包如需 execa 也应在自己的 `package.json` 中声明。
 ```
 
 `turbo.json`：
@@ -574,6 +578,9 @@ import matter from "gray-matter";
 import YAML from "yaml";
 import { z } from "zod";
 
+// 注意：对于有完整字段默认值的子对象，使用 zod 的 .prefault({}) 或让每个字段自己带 .default()，
+// 不要使用 .default({} as any) — 那会绕过字段级校验，运行时出错难以定位。
+// 下面的写法每个字段都有明确 default，所以 .default({}) 可以安全地推断出完整默认对象。
 const WorkflowSchema = z.object({
   tracker: z.object({
     kind: z.literal("gitlab"),
@@ -592,7 +599,7 @@ const WorkflowSchema = z.object({
     root: z.string().default("~/.issuepilot/workspaces"),
     strategy: z.literal("worktree").default("worktree"),
     repo_cache_root: z.string().default("~/.issuepilot/repos"),
-  }).default({} as any),
+  }).default({}),   // 安全：所有字段有 default，{} 会触发各字段默认值
   git: z.object({
     repo_url: z.string().min(1),
     base_branch: z.string().default("main"),
@@ -604,23 +611,24 @@ const WorkflowSchema = z.object({
     max_turns: z.number().int().min(1).default(10),
     max_attempts: z.number().int().min(1).default(2),
     retry_backoff_ms: z.number().int().min(0).default(30_000),
-  }).default({} as any),
+  }).default({}),   // 安全：同上
   codex: z.object({
     command: z.string().default("codex app-server"),
     approval_policy: z.enum(["never","untrusted","on-request"]).default("never"),
-    thread_sandbox: z.enum(["workspace-write","read-only","danger-full-access"])
+    thread_sandbox: z.enum(["workspace-write","read-only"])  // 不允许 danger-full-access
       .default("workspace-write"),
     turn_timeout_ms: z.number().int().min(1_000).default(3_600_000),
     turn_sandbox_policy: z.object({
-      type: z.enum(["workspaceWrite","readOnly","dangerFullAccess"])
+      type: z.enum(["workspaceWrite","readOnly"])  // 不允许 dangerFullAccess
         .default("workspaceWrite"),
     }).default({ type: "workspaceWrite" }),
-  }).default({} as any),
+  }).default({}),   // 安全：同上
   hooks: z.object({
     after_create: z.string().optional(),
     before_run: z.string().optional(),
     after_run: z.string().optional(),
   }).default({}),
+  poll_interval_ms: z.number().int().min(1_000).default(10_000),
 });
 
 export class WorkflowConfigError extends Error {
@@ -816,7 +824,10 @@ async listCandidateIssues({ activeLabels, excludeLabels, perPage = 50 }) {
 }
 ```
 
-排序：`priority desc` → `updated_at asc` → `iid asc`（在调用方 orchestrator 里再次稳定排序）。
+排序职责分层：
+- **adapter 层**（`listCandidateIssues`）：仅通过 GitLab API 参数 `orderBy: "updated_at", sort: "asc"` 做初步排序，减少网络传输乱序，不做多字段排序。
+- **orchestrator 层**（`claim.ts`）：在拿到候选列表后，按 `priority desc → updated_at asc → iid asc` 做最终稳定排序，保证 claim 顺序确定性。
+- 不要在 adapter 里做多字段排序，因为 GitLab API 只支持单字段 orderBy。
 
 **测试：** mock 返回 6 条带不同 label，断言被排除项被过滤、字段映射准确。
 
@@ -1083,7 +1094,7 @@ export interface CodexRunner {
 3. `request("thread/start", { name, cwd, sandbox: { type: codex.threadSandbox }, approvalPolicy: codex.approvalPolicy, tools: tools.map(toSchema) })` → 取 `threadId`。
 4. 循环 `maxTurns` 次：
    - `request("turn/start", { threadId, prompt, title, cwd, sandboxPolicy: codex.turnSandboxPolicy })` → 取 `turnId`。
-   - 阻塞直到收到该 `turnId` 对应的 `turn/completed | turn/failed | turn/cancelled | turn/timeout` 通知（用 `pTimeout` 包裹 `codex.turnTimeoutMs`）。
+   - 阻塞直到收到该 `turnId` 对应的 `turn/completed | turn/failed | turn/cancelled | turn/timeout` 通知（用 `p-timeout` 包裹 `codex.turnTimeoutMs`；需在 `packages/runner-codex-app-server/package.json` 中声明 `"p-timeout": "^6"` 依赖）。
    - 如果 agent 通过工具调用更新了状态且 `turn/completed` 中标明 stop，则跳出循环。
 5. 任何阶段抛错或子进程退出 → 收集 `RunnerOutcome` 并触发 `port_exit` 事件。
 
@@ -1275,7 +1286,9 @@ export async function startLoop(deps): Promise<{ stop: () => Promise<void> }> {
     const candidates = await claim(cfg, deps, slots);
     for (const r of candidates) dispatch(r, cfg, deps).finally(() => slots.release(r.runId));
   };
-  const timer = setInterval(() => tick().catch(logError), cfg.poll_interval_ms ?? 10_000);
+  // cfg.pollIntervalMs 来自 WorkflowConfig（camelCase），对应 workflow.md front matter 的
+  // poll_interval_ms 字段（已在 Phase 2 WorkflowFrontMatterSchema 中定义并映射）
+  const timer = setInterval(() => tick().catch(logError), cfg.pollIntervalMs ?? 10_000);
   return { stop: async () => { clearInterval(timer); await state.drain(); } };
 }
 ```
@@ -1337,9 +1350,11 @@ issuepilot doctor     --workflow <path>
 
 ---
 
-## Phase 6.x：Observability 包（与 Phase 6 并行交付）
+## Phase 5.x：Observability 包（Phase 5 开始前必须先交付基础模块）
 
-> Phase 6 的 retry/reconcile/SSE 都依赖 `@issuepilot/observability`。建议在 Phase 6 内或 6 开始前把这个包闭环。
+> **依赖顺序修正**：Phase 5 的事件标准化（Task 5.3）已经需要调用 `observability/redact` 对事件 data 做 secret 清洗。因此 `@issuepilot/observability` 的 `redact.ts`、`event-bus.ts` 必须在 Phase 5 开始前完成；`event-store.ts`、`run-store.ts`、`logger.ts` 可以与 Phase 6 并行交付。
+>
+> **执行顺序建议**：Phase 4 结束后，先完成本节 `redact` + `event-bus` 两个子模块（约半天），再进入 Phase 5。其余子模块（store、logger）在 Phase 6 开始前补齐即可。
 
 **Files：**
 - `packages/observability/src/redact.ts`、`redact.test.ts`：基于 secret 字段名列表 + 已知 token 模式（GitLab PAT/Group token）做替换。
@@ -1452,13 +1467,22 @@ issuepilot doctor     --workflow <path>
 **实现：** 一个独立 Node 程序读取 stdin newline JSON、写 stdout。根据 `IPILOT_FAKE_SCRIPT` env 指向的 JSON 脚本依次发出事件、消费请求。脚本 schema：
 
 ```jsonc
+// 四种指令类型说明：
+// - "expect"：fake server 期望收到来自 runner 的某个 JSON-RPC method（request 或 notification），
+//             可搭配 "respond" 字段，在收到该 method 后立即回 JSON-RPC response（result/error）。
+// - "respond"：与 "expect" 配对，定义 fake server 回给 runner 的 JSON-RPC response body。
+// - "notify"：fake server 主动向 runner 发出一条 JSON-RPC notification（无 id），
+//             用于模拟 turn/completed、turn/notification 等事件推送。
+// - "tool_call"：fake server 向 runner 发出一条 JSON-RPC server-request（有 id），
+//               模拟 item/tool/call 请求；fake server 随后期望收到 runner 回的 result，
+//               不需要额外的 "expect" 步骤。args 字段对应 DynamicToolCallParams.arguments。
 [
-  { "expect": "initialize" },
-  { "respond": { "result": { "serverInfo": {...} } } },
+  { "expect": "initialize", "respond": { "result": { "serverInfo": { "name": "fake-codex", "version": "0.0.0" } } } },
+  { "expect": "initialized" },
   { "expect": "thread/start", "respond": { "result": { "threadId": "t1" } } },
   { "expect": "turn/start",   "respond": { "result": { "turnId": "u1" } } },
-  { "notify": "turn/notification", "params": {...} },
-  { "tool_call": { "name": "gitlab_create_issue_note", "args": {...} } },
+  { "notify": "turn/notification", "params": { "turnId": "u1", "message": "working..." } },
+  { "tool_call": { "callId": "c1", "tool": "gitlab_create_issue_note", "threadId": "t1", "turnId": "u1", "arguments": { "iid": 42, "body": "IssuePilot started." } } },
   { "notify": "turn/completed", "params": { "turnId": "u1", "stop": true } }
 ]
 ```

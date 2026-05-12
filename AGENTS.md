@@ -11,7 +11,7 @@
 ## 事实来源
 
 - 在规划或实现 IssuePilot 相关工作前，先阅读 `docs/superpowers/specs/2026-05-11-issuepilot-design.md`。
-- `SPEC.md` 和 `elixir/` 是 Symphony 的协议和参考实现材料，不是内部生产架构的直接复制对象。
+- `SPEC.md` 和 `elixir/` 是 Symphony 的协议和参考实现材料，不是内部生产架构的直接复制对象。可作为参考spec和实现。
 - 如果修改产品行为、架构、workflow labels、runner 行为或路线图范围，必须在同一变更中更新 IssuePilot 设计 spec。
 
 ## 项目方向
