@@ -8,13 +8,16 @@ import { eventStreamUrl } from "./api";
  * Anything the dashboard treats as an SSE payload. We keep this generic
  * (not pinned to `IssuePilotEvent`) so unit tests can publish minimal stubs
  * and consumers can opt-in to stricter typing via the generic parameter.
+ *
+ * No index signature: tightening would force every consumer (including the
+ * strongly-typed `IssuePilotEvent`) to add `[key: string]: unknown`, which
+ * defeats the point of declaring the contract.
  */
 export interface AppEventLike {
   id: string;
   runId: string;
   type: string;
   message?: string;
-  [key: string]: unknown;
 }
 
 export type StreamStatus =

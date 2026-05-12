@@ -6,6 +6,12 @@
 
 ### Added
 
+- 2026-05-12 — **IssuePilot P0 Phase 7（M7 Dashboard）完成。** `@issuepilot/dashboard` 完整落地 spec §14 的两组只读视图（Overview `/` + Run detail `/runs/[runId]`），通过 SSE 实时刷新；dashboard 44 单测、`pnpm -w turbo run test typecheck lint --force` 33/33 任务全绿，`/` 与 `/runs/[runId]` 路由都通过 Next.js 14 dynamic build。涵盖 4 个 Task：
+  - **Task 7.1** `feat(dashboard): nextjs app with tailwind and shadcn primitives` — Tailwind 3.x + 手写 shadcn 风格 `Button/Card/Table/Badge` primitives + `cn` 工具（clsx + tailwind-merge）。
+  - **Task 7.2** `feat(dashboard): typed api client and event stream hook` — `lib/api.ts` 5 个 typed REST helper + `ApiError` + base URL fallback；`lib/use-event-stream.ts` SSE hook 含指数退避、buffer cap、malformed payload 容错、test seam。
+  - **Task 7.3** `feat(dashboard): overview page with service header and runs table` — Server Component 并行拉 state + runs，client side OverviewPage 节流 1s re-fetch；ServiceHeader 7 字段、SummaryCards 6 张 RunStatus 卡、RunsTable 11 列含 sortable header（iid/status/updatedAt + aria-sort + ▲▼）。
+  - **Task 7.4** `feat(dashboard): run detail page with live timeline` — `app/runs/[runId]/page.tsx` 路由 Server Component 并行调 `getRun + listEvents`，404 走 `notFound()`；`RunDetailPage` 客户端组件用 `useEventStream({ runId })` 实时追加事件（按 `event.id` 去重）；`EventTimeline` 33 种 EventType 一一映射 BadgeTone，事件按 createdAt 升序，可展开 redacted data；`ToolCallList` 过滤 `tool_call_*`；`LogTail` 黑底终端样式，未拿到 logsTail 时给出 `~/.issuepilot/state/logs/issuepilot.log` 路径提示。新增 10 个详情组件单测。
+
 - 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.3（概览页）完成。** `apps/dashboard/app/page.tsx` + `components/overview/*` 落地 spec §14 三段视图（Service header / Summary cards / Runs table），首页改 `dynamic = "force-dynamic"` 走 Next.js Server Component 拉初始数据。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（34/34 单测），`pnpm -w turbo run test typecheck lint --force` 33/33 全绿。
   - `components/overview/service-header.tsx`：渲染 `status / gitlabProject / concurrency / pollIntervalMs / workflowPath / lastConfigReloadAt / lastPollAt` 7 个字段，status 用 Badge tone 区分（ready=success，degraded=warning），时间戳本地化 + invalid date fallback；2 个测试。
   - `components/overview/summary-cards.tsx`：用 `RUN_STATUS_VALUES`（shared-contracts 常量）渲染 6 张卡片，running/retrying/failed/blocked 高亮配色；1 个测试。
