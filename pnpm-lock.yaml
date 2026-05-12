@@ -250,6 +250,45 @@ importers:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@25.6.2)(jsdom@29.1.1)
 
+  tests/e2e:
+    devDependencies:
+      '@issuepilot/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+      '@issuepilot/orchestrator':
+        specifier: workspace:*
+        version: link:../../apps/orchestrator
+      '@issuepilot/runner-codex-app-server':
+        specifier: workspace:*
+        version: link:../../packages/runner-codex-app-server
+      '@issuepilot/shared-contracts':
+        specifier: workspace:*
+        version: link:../../packages/shared-contracts
+      '@issuepilot/tracker-gitlab':
+        specifier: workspace:*
+        version: link:../../packages/tracker-gitlab
+      '@issuepilot/workflow':
+        specifier: workspace:*
+        version: link:../../packages/workflow
+      '@issuepilot/workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
+      '@types/node':
+        specifier: ^25.6.2
+        version: 25.6.2
+      execa:
+        specifier: ^9.6.1
+        version: 9.6.1
+      fastify:
+        specifier: ^5.8.5
+        version: 5.8.5
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(@types/node@25.6.2)(jsdom@29.1.1)
+
 packages:
 
   '@adobe/css-tools@4.4.4':
