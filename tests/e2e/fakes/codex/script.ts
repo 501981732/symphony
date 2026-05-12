@@ -40,7 +40,28 @@ export interface ScriptToolCallStep {
   };
 }
 
-export type ScriptStep = ScriptExpectStep | ScriptNotifyStep | ScriptToolCallStep;
+/**
+ * Generic server-request: send any JSON-RPC method as a server-request (has
+ * an `id`) and wait for the runner's response. Use this for approval
+ * requests, user input requests, or any non-tool-call server-side request.
+ */
+export interface ScriptRequestStep {
+  request: {
+    method: string;
+    params?: unknown;
+  };
+  /** Optional callback to inspect the response while the script runs. */
+  expectResponse?: {
+    /** Either "result" or "error" — used purely for documentation. */
+    kind: "result" | "error";
+  };
+}
+
+export type ScriptStep =
+  | ScriptExpectStep
+  | ScriptNotifyStep
+  | ScriptToolCallStep
+  | ScriptRequestStep;
 
 export interface ScriptIO {
   /** Read the next newline-delimited JSON message. Resolve null on EOF. */
@@ -66,6 +87,9 @@ function isNotify(step: ScriptStep): step is ScriptNotifyStep {
 }
 function isToolCall(step: ScriptStep): step is ScriptToolCallStep {
   return Object.prototype.hasOwnProperty.call(step, "tool_call");
+}
+function isRequest(step: ScriptStep): step is ScriptRequestStep {
+  return Object.prototype.hasOwnProperty.call(step, "request");
 }
 
 /**
@@ -215,6 +239,37 @@ export async function runScript(
           queued.push(outcome.value);
         }
         // routed — loop condition will exit naturally on next iteration.
+      }
+      await responsePromise;
+    } else if (isRequest(step)) {
+      serverRequestId += 1;
+      const id = serverRequestId;
+      const payload: Record<string, unknown> = {
+        jsonrpc: "2.0",
+        id,
+        method: step.request.method,
+      };
+      if (step.request.params !== undefined) {
+        payload["params"] = step.request.params;
+      }
+      const responsePromise = new Promise<JsonRpcMessage>((resolve, reject) => {
+        pendingToolCalls.set(id, { resolve, reject });
+      });
+      io.writeLine(JSON.stringify(payload));
+      while (pendingToolCalls.has(id)) {
+        const outcome = await readOne();
+        if (outcome.kind === "eof") {
+          if (pendingToolCalls.has(id)) {
+            pendingToolCalls.delete(id);
+            throw new Error(
+              `request ${step.request.method} did not receive a response before EOF`,
+            );
+          }
+          break;
+        }
+        if (outcome.kind === "message") {
+          queued.push(outcome.value);
+        }
       }
       await responsePromise;
     } else {
