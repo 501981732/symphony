@@ -1,14 +1,55 @@
-import { PACKAGE_NAME, VERSION } from "../lib/version";
+import type {
+  OrchestratorStateSnapshot,
+  RunRecord,
+} from "@issuepilot/shared-contracts";
 
-export default function HomePage() {
-  return (
-    <main style={{ fontFamily: "system-ui", padding: "2rem" }}>
-      <h1>IssuePilot Dashboard</h1>
-      <p>
-        {PACKAGE_NAME} placeholder — Phase 1 skeleton. Real Service header,
-        Summary cards, Runs table and SSE timeline land in Phase 7.
-      </p>
-      <p>version: {VERSION}</p>
-    </main>
-  );
+import { OverviewPage } from "../components/overview/overview-page";
+import { getState, listRuns } from "../lib/api";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+async function fetchOverview(): Promise<{
+  snapshot: OrchestratorStateSnapshot;
+  runs: RunRecord[];
+}> {
+  const [snapshot, runs] = await Promise.all([getState(), listRuns()]);
+  return { snapshot, runs };
+}
+
+async function refreshAction(): Promise<{
+  snapshot: OrchestratorStateSnapshot;
+  runs: RunRecord[];
+}> {
+  "use server";
+  return fetchOverview();
+}
+
+export default async function HomePage() {
+  try {
+    const { snapshot, runs } = await fetchOverview();
+    return (
+      <OverviewPage
+        initialSnapshot={snapshot}
+        initialRuns={runs}
+        refetch={refreshAction}
+      />
+    );
+  } catch (err) {
+    return (
+      <main className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-12">
+        <h1 className="text-xl font-semibold text-slate-900">
+          IssuePilot orchestrator unreachable
+        </h1>
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {(err as Error).message}
+        </p>
+        <p className="text-sm text-slate-500">
+          Start the orchestrator with{" "}
+          <code className="font-mono">pnpm dev:orchestrator</code> and reload
+          this page.
+        </p>
+      </main>
+    );
+  }
 }

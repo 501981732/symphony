@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import {
   createEventBus,
   createEventStore,
+  redact,
   type EventBus,
 } from "@issuepilot/observability";
 import {
@@ -149,6 +151,16 @@ async function createFailureNote(
   );
 }
 
+async function readLogTail(logFile: string, limit = 200): Promise<string[]> {
+  try {
+    const content = await fs.readFile(logFile, "utf-8");
+    const lines = content.split(/\r?\n/).filter(Boolean);
+    return lines.slice(-limit).map((line) => String(redact(line)));
+  } catch {
+    return [];
+  }
+}
+
 export async function startDaemon(
   options: StartDaemonOptions,
   deps: StartDaemonDeps = {},
@@ -208,6 +220,7 @@ export async function startDaemon(
       eventBus,
       workflowPath,
       gitlabProject: workflow.tracker.projectId,
+      handoffLabel: workflow.tracker.handoffLabel,
       pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
       concurrency: workflow.agent.maxConcurrentAgents,
       readEvents: async (runId, readOpts) => {
@@ -215,6 +228,16 @@ export async function startDaemon(
         if (!key) return [];
         return eventStore.read(key.projectSlug, key.issueIid, readOpts);
       },
+      readLogsTail: async (_runId, readOpts) =>
+        readLogTail(
+          path.join(
+            workflow.workspace.root,
+            ".issuepilot",
+            "logs",
+            "issuepilot.log",
+          ),
+          readOpts?.limit,
+        ),
     },
     { host, port },
   );

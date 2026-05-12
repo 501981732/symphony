@@ -42,6 +42,14 @@ export interface RunRecord {
   updatedAt: string;
   /** ISO-8601 timestamp set when the run leaves the active state machine. */
   endedAt?: string;
+  /** Count of Codex turn events known to the dashboard snapshot. */
+  turnCount?: number;
+  /** Most recent event summary known to the dashboard snapshot. */
+  lastEvent?: {
+    type: string;
+    message: string;
+    createdAt?: string;
+  };
   lastError?: {
     code: string;
     message: string;

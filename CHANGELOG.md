@@ -4,6 +4,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-12 — **IssuePilot P0 Phase 7（M7 Dashboard）完成。** `@issuepilot/dashboard` 完整落地 spec §14 的两组只读视图（Overview `/` + Run detail `/runs/[runId]`），通过 SSE 实时刷新；dashboard 45 单测与 targeted typecheck/lint/build 通过，`/` 与 `/runs/[runId]` 路由都通过 Next.js 14 dynamic build。涵盖 4 个 Task：
+  - **Task 7.1** `feat(dashboard): nextjs app with tailwind and shadcn primitives` — Tailwind 3.x + 手写 shadcn 风格 `Button/Card/Table/Badge` primitives + `cn` 工具（clsx + tailwind-merge）。
+  - **Task 7.2** `feat(dashboard): typed api client and event stream hook` — `lib/api.ts` 5 个 typed REST helper + `ApiError` + base URL fallback；`lib/use-event-stream.ts` SSE hook 含指数退避、buffer cap、malformed payload 容错、test seam。
+  - **Task 7.3** `feat(dashboard): overview page with service header and runs table` — Server Component 并行拉 state + runs，client side OverviewPage 节流 1s re-fetch；ServiceHeader 7 字段、SummaryCards 5 张 spec §14 计数卡（running/retrying/human-review/failed/blocked）、RunsTable 11 列含 issue/status sortable header、turn count 与 last event。
+  - **Task 7.4** `feat(dashboard): run detail page with live timeline` — `app/runs/[runId]/page.tsx` 路由 Server Component 调 `getRunDetail` 获取 `run/events/logsTail`，404 走 `notFound()`；`RunDetailPage` 客户端组件用 `useEventStream({ runId })` 实时追加事件（按 `event.id` 去重）；`EventTimeline` 33 种 EventType 一一映射 BadgeTone，事件按 createdAt 升序，可展开 redacted data；`ToolCallList` 过滤 `tool_call_*`；`LogTail` 黑底终端样式，未拿到 logsTail 时给出 `~/.issuepilot/state/logs/issuepilot.log` 路径提示。新增 10 个详情组件单测。
+
+- 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.3（概览页）完成。** `apps/dashboard/app/page.tsx` + `components/overview/*` 落地 spec §14 三段视图（Service header / Summary cards / Runs table），首页改 `dynamic = "force-dynamic"` 走 Next.js Server Component 拉初始数据。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（34/34 单测），`pnpm -w turbo run test typecheck lint --force` 33/33 全绿。
+  - `components/overview/service-header.tsx`：渲染 `status / gitlabProject / concurrency / pollIntervalMs / workflowPath / lastConfigReloadAt / lastPollAt` 7 个字段，status 用 Badge tone 区分（ready=success，degraded=warning），时间戳本地化 + invalid date fallback；2 个测试。
+  - `components/overview/summary-cards.tsx`：用 `DASHBOARD_SUMMARY_VALUES`（shared-contracts 常量）渲染 5 张 spec §14 卡片，running/retrying/human-review/failed/blocked 高亮配色；1 个测试。
+  - `components/overview/runs-table.tsx`：`"use client"` 表格组件，11 列覆盖 plan 7.3 全部要求（iid / title / labels / status / turn count / last event / elapsed / branch / MR / workspace / actions detail link），sortable header 支持 `iid / status` + `aria-sort` attribute + ▲▼ 视觉指示，默认 updatedAt desc；empty state 友好提示加 `ai-ready` label；外链全部 `rel="noreferrer noopener"`；5 个测试覆盖渲染 / empty / metadata fallback / detail link / 排序切换。
+  - `components/overview/overview-page.tsx`：`"use client"` page wrapper，用 `useEventStream({ bufferSize: 50, onEvent })` 监听 `run_/claim_/retry_/reconciliation_` 前缀的生命周期事件，触发节流 1s 的 `refetch`（双护栏 `pendingRef + inflightRef` 防风暴 + 防重叠请求）；2 个测试。
+  - `app/page.tsx`：Server Component 调 `fetchOverview()` 并行 GET state + runs，`refetch` 走 `"use server"` Server Action（避免 client → 4738 跨源），错误兜底页提示 `pnpm dev:orchestrator`。
+  - 测试工具：vitest config 启用 esbuild automatic JSX runtime + `vitest.setup.ts` 引入 `@testing-library/jest-dom/vitest` matchers 并在 `afterEach` 调 `cleanup()` 防止 DOM 累积；devDeps 新增 `@testing-library/jest-dom`。
+
+- 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.2（API 客户端 + SSE hook）完成。** `apps/dashboard/lib/` 落地 typed REST client 与 `useEventStream` React hook，覆盖 spec §15 的 5 个 orchestrator endpoint。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（25/25 单测，5 个 spec 文件）。
+  - `lib/api.ts`：`apiGet<T>` 用 fetch + `cache: "no-store"` + `accept: application/json`；`resolveApiBase()` 优先读 `NEXT_PUBLIC_API_BASE`、默认 `http://127.0.0.1:4738`、自动 strip trailing slash；`ApiError(status, body)` 保留状态码与响应体便于下层 fallback；`getState/listRuns/getRunDetail/listEvents/eventStreamUrl` 5 个 typed helper 直接返回 `@issuepilot/shared-contracts` 中的 `OrchestratorStateSnapshot / RunRecord（含 turnCount/lastEvent dashboard metadata） / RunDetailResponse / IssuePilotEvent`，`listRuns` 支持 `RunStatus | readonly RunStatus[]` 状态查询。
+  - `lib/use-event-stream.ts`：`"use client"` React hook，封装 EventSource 连接 + 指数退避重连（1s → 2s → … 上限 30s）+ unmount 自动 close + runId 过滤参数；新增 `bufferSize`（默认 200 FIFO 防内存膨胀）、`onEvent` 回调（用 ref 缓存，回调变更不重连）、`enabled` 开关；malformed JSON 静默丢弃但保持 stream 打开。`__setEventSourceFactory` test seam 用 `__` 前缀显式标记。
+  - 测试：`api.test.ts` 10 个 case 覆盖 base URL fallback / status query encode / runId URL-encode / 错误传播；`use-event-stream.test.tsx` 6 个 case 覆盖连接 / buffer cap / onEvent 回调 / 指数退避重连 / unmount cleanup / malformed payload 容错。
+  - 依赖：新增 `@issuepilot/shared-contracts@workspace:*`、devDeps `@testing-library/react ^16`、`@testing-library/dom`、`jsdom`。
+
+- 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.1（Dashboard 脚手架）完成。** `@issuepilot/dashboard` 接入 Tailwind 3.x + shadcn 风格 primitives，为后续概览页/详情页打下基础。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（9/9 单测通过，Next.js 14 build 成功）。`pnpm -w turbo run test typecheck lint --force` 33/33 任务全绿不破坏其他包。
+  - `lib/cn.ts` + `lib/cn.test.ts`：`clsx + tailwind-merge` 组合，conflict-resolution 友好的 className 工具，4 个测试覆盖 join / 条件 / 冲突覆盖 / 对象语法。
+  - `components/ui/{button,card,table,badge}.tsx`：手写 shadcn 风格 primitives，Button 支持 variant/size 表驱动，Badge 支持 6 种 tone，Card 拆 `Card/CardHeader/CardTitle/CardContent`，Table 拆 `Table/TableHeader/TableBody/TableRow/TableHead/TableCell` 并外层加 overflow-x-auto；4 个 smoke 测试验证 forwardRef 组件可渲染。
+  - `app/globals.css` + `tailwind.config.ts` + `postcss.config.mjs`：tailwind 3.x 三件套，content 覆盖 `app/components/lib`；扩展 `font-sans` / `font-mono` 字体栈。
+  - `app/layout.tsx` 引入 globals.css 并加 `min-h-screen font-sans antialiased`；`app/page.tsx` 用新 primitives 展示 Phase 7 skeleton 状态。
+  - 依赖：新增 `clsx ^2`、`tailwind-merge ^3`、devDeps 新增 `tailwindcss ^3.4`、`postcss ^8.4`、`autoprefixer ^10.4`；未引入 `@radix-ui/*` 与 shadcn-cli（P0 dashboard 只读不需要 popover/dialog，保持依赖轻量）。
+  - dashboard 内部 import 改成无 `.js` 后缀（适配 Next.js webpack + bundler resolution）；vitest config 扩展 `.tsx` 文件并新增 `components/**/*.test.tsx` 入口。
+
 ### Fixed
 
 - 2026-05-12 — **docs: IssuePilot design spec 与 implementation plan 全面修正（共 13 处问题）**

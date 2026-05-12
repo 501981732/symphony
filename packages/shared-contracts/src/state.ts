@@ -1,4 +1,14 @@
-import { type RunStatus } from "./run.js";
+export const DASHBOARD_SUMMARY_VALUES = [
+  "running",
+  "retrying",
+  "human-review",
+  "failed",
+  "blocked",
+] as const;
+
+export type DashboardSummaryKey = (typeof DASHBOARD_SUMMARY_VALUES)[number];
+
+export type DashboardSummary = Record<DashboardSummaryKey, number>;
 
 /**
  * Daemon-level health flag exposed in `GET /api/state`.
@@ -35,6 +45,6 @@ export interface OrchestratorStateSnapshot {
     /** ISO-8601 of the most recent poll attempt, or null pre-start. */
     lastPollAt: string | null;
   };
-  /** Per-status counters across the currently tracked run set. */
-  summary: Record<RunStatus, number>;
+  /** Spec §14 counters shown in the dashboard overview. */
+  summary: DashboardSummary;
 }
