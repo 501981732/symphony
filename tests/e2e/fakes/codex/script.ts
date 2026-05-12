@@ -90,34 +90,54 @@ export async function runScript(
   // Buffer of messages that arrived while we were waiting on something else.
   const queued: JsonRpcMessage[] = [];
 
-  async function nextMessage(): Promise<JsonRpcMessage | null> {
+  /**
+   * Read the next message from the runner. tool-call responses get routed to
+   * their waiter and we report that fact by returning a `routed` sentinel so
+   * the caller can decide whether to keep waiting (e.g. for an `expect`) or
+   * stop (e.g. when the tool_call step already has its response).
+   */
+  type ReadOutcome =
+    | { kind: "message"; value: JsonRpcMessage }
+    | { kind: "routed" }
+    | { kind: "eof" };
+
+  async function readOne(): Promise<ReadOutcome> {
     if (queued.length > 0) {
-      return queued.shift() as JsonRpcMessage;
+      return { kind: "message", value: queued.shift() as JsonRpcMessage };
     }
-    while (true) {
-      const line = await io.readLine();
-      if (line === null) return null;
-      const trimmed = line.trim();
-      if (trimmed.length === 0) continue;
-      let parsed: JsonRpcMessage;
-      try {
-        parsed = JSON.parse(trimmed) as JsonRpcMessage;
-      } catch (err) {
-        throw new Error(`malformed JSON from runner: ${(err as Error).message}`);
-      }
-      // Route tool-call responses to their waiter without blocking the script.
-      if (
-        typeof parsed.id === "number" &&
-        parsed.method === undefined &&
-        pendingToolCalls.has(parsed.id)
-      ) {
-        const waiter = pendingToolCalls.get(parsed.id);
-        if (!waiter) continue;
+    const line = await io.readLine();
+    if (line === null) return { kind: "eof" };
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      return readOne();
+    }
+    let parsed: JsonRpcMessage;
+    try {
+      parsed = JSON.parse(trimmed) as JsonRpcMessage;
+    } catch (err) {
+      throw new Error(`malformed JSON from runner: ${(err as Error).message}`);
+    }
+    if (
+      typeof parsed.id === "number" &&
+      parsed.method === undefined &&
+      pendingToolCalls.has(parsed.id)
+    ) {
+      const waiter = pendingToolCalls.get(parsed.id);
+      if (waiter) {
         pendingToolCalls.delete(parsed.id);
         waiter.resolve(parsed);
-        continue;
       }
-      return parsed;
+      return { kind: "routed" };
+    }
+    return { kind: "message", value: parsed };
+  }
+
+  async function nextMessage(): Promise<JsonRpcMessage | null> {
+    while (true) {
+      const outcome = await readOne();
+      if (outcome.kind === "message") return outcome.value;
+      if (outcome.kind === "eof") return null;
+      // routed — keep reading until we get a regular message.
     }
   }
 
@@ -177,12 +197,12 @@ export async function runScript(
         pendingToolCalls.set(id, { resolve, reject });
       });
       io.writeLine(JSON.stringify(payload));
-      // Pump messages until the matching response arrives. Any non-matching
-      // messages get queued so the next `expect` can consume them.
+      // Pump messages until the matching response arrives. Routed messages
+      // (the response we want) end the loop; regular messages get queued so
+      // the next `expect` can consume them.
       while (pendingToolCalls.has(id)) {
-        const next = await nextMessage();
-        if (next === null) {
-          // EOF — bail only if we never received the response.
+        const outcome = await readOne();
+        if (outcome.kind === "eof") {
           if (pendingToolCalls.has(id)) {
             pendingToolCalls.delete(id);
             throw new Error(
@@ -191,7 +211,10 @@ export async function runScript(
           }
           break;
         }
-        queued.push(next);
+        if (outcome.kind === "message") {
+          queued.push(outcome.value);
+        }
+        // routed — loop condition will exit naturally on next iteration.
       }
       await responsePromise;
     } else {

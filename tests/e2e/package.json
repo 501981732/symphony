@@ -17,6 +17,7 @@
     "@issuepilot/tracker-gitlab": "workspace:*",
     "@issuepilot/workflow": "workspace:*",
     "@issuepilot/workspace": "workspace:*",
+    "@gitbeaker/rest": "^43.8.0",
     "@types/node": "^25.6.2",
     "execa": "^9.6.1",
     "fastify": "^5.8.5",

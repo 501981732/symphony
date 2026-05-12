@@ -252,6 +252,9 @@ importers:
 
   tests/e2e:
     devDependencies:
+      '@gitbeaker/rest':
+        specifier: ^43.8.0
+        version: 43.8.0
       '@issuepilot/observability':
         specifier: workspace:*
         version: link:../../packages/observability

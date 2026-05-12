@@ -1,0 +1,36 @@
+[
+  {
+    "expect": "initialize",
+    "respond": {
+      "result": {
+        "serverInfo": { "name": "fake-codex", "version": "0.0.0" }
+      }
+    }
+  },
+  { "expect": "initialized" },
+  {
+    "expect": "thread/start",
+    "respond": { "result": { "threadId": "t1" } }
+  },
+  {
+    "expect": "turn/start",
+    "respond": { "result": { "turnId": "u1" } }
+  },
+  {
+    "notify": "turn/notification",
+    "params": { "turnId": "u1", "message": "starting work on issue" }
+  },
+  {
+    "tool_call": {
+      "callId": "c1",
+      "tool": "gitlab_create_issue_note",
+      "threadId": "t1",
+      "turnId": "u1",
+      "arguments": { "iid": 7, "body": "IssuePilot working on this issue." }
+    }
+  },
+  {
+    "notify": "turn/completed",
+    "params": { "turnId": "u1", "stop": true }
+  }
+]

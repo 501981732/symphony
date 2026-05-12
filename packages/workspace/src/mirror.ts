@@ -44,6 +44,26 @@ export async function ensureMirror(
 
   if (!exists) {
     await execa("git", ["clone", "--mirror", input.repoUrl, mirrorPath]);
+    // `git clone --mirror` sets `remote.origin.mirror=true`, which would
+    // refuse any `git push origin <refspec>` we issue later (git emits
+    // "--mirror cannot be used with refspecs"). We still want the mirror to
+    // hold every remote ref locally, but we also want refspec-aware pushes
+    // from worktrees, so we drop the flag and install an explicit catch-all
+    // fetch refspec to preserve mirror-like behaviour on subsequent fetches.
+    await execa("git", [
+      "--git-dir",
+      mirrorPath,
+      "config",
+      "--unset-all",
+      "remote.origin.mirror",
+    ]).catch(() => undefined);
+    await execa("git", [
+      "--git-dir",
+      mirrorPath,
+      "config",
+      "remote.origin.fetch",
+      "+refs/heads/*:refs/heads/*",
+    ]);
   } else {
     await execa("git", ["--git-dir", mirrorPath, "fetch", "--prune", "origin"]);
   }

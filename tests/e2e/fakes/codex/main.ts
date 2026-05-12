@@ -8,10 +8,20 @@
  * full runner lifecycle can be exercised in tests.
  */
 
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
 
 import { runScript, type ScriptIO, type ScriptStep } from "./script.js";
+
+const DEBUG_LOG = process.env["IPILOT_FAKE_DEBUG_LOG"];
+function debug(direction: "<-" | "->" | "::", payload: string): void {
+  if (!DEBUG_LOG) return;
+  try {
+    appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${direction} ${payload}\n`);
+  } catch {
+    // ignore — debug logging is best-effort
+  }
+}
 
 function resolveScriptPath(): string {
   const fromEnv = process.env["IPILOT_FAKE_SCRIPT"];
@@ -41,6 +51,7 @@ function createStdioIO(rl: Interface): {
   let ended = false;
 
   rl.on("line", (line: string) => {
+    debug("<-", line);
     if (resolveNext) {
       const r = resolveNext;
       resolveNext = null;
@@ -67,6 +78,7 @@ function createStdioIO(rl: Interface): {
       });
     },
     writeLine(line: string) {
+      debug("->", line);
       process.stdout.write(line + "\n");
     },
   };
@@ -85,16 +97,18 @@ function createStdioIO(rl: Interface): {
 
 async function main(): Promise<void> {
   const scriptPath = resolveScriptPath();
+  debug("::", `script=${scriptPath} pid=${process.pid}`);
   const steps = loadScript(scriptPath);
   const rl = createInterface({ input: process.stdin });
   const { io, close } = createStdioIO(rl);
 
   try {
     await runScript(steps, io);
+    debug("::", "runScript completed");
   } catch (err) {
-    process.stderr.write(
-      `fake-codex error: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
+    const msg = err instanceof Error ? err.message : String(err);
+    debug("::", `error: ${msg}`);
+    process.stderr.write(`fake-codex error: ${msg}\n`);
     process.exitCode = 1;
   } finally {
     close();
