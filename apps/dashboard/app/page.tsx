@@ -1,33 +1,55 @@
-import { Badge } from "../components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../components/ui/card";
+import type {
+  OrchestratorStateSnapshot,
+  RunRecord,
+} from "@issuepilot/shared-contracts";
 
-export default function HomePage() {
-  return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          IssuePilot Dashboard
+import { OverviewPage } from "../components/overview/overview-page";
+import { getState, listRuns } from "../lib/api";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+async function fetchOverview(): Promise<{
+  snapshot: OrchestratorStateSnapshot;
+  runs: RunRecord[];
+}> {
+  const [snapshot, runs] = await Promise.all([getState(), listRuns()]);
+  return { snapshot, runs };
+}
+
+async function refreshAction(): Promise<{
+  snapshot: OrchestratorStateSnapshot;
+  runs: RunRecord[];
+}> {
+  "use server";
+  return fetchOverview();
+}
+
+export default async function HomePage() {
+  try {
+    const { snapshot, runs } = await fetchOverview();
+    return (
+      <OverviewPage
+        initialSnapshot={snapshot}
+        initialRuns={runs}
+        refetch={refreshAction}
+      />
+    );
+  } catch (err) {
+    return (
+      <main className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-12">
+        <h1 className="text-xl font-semibold text-slate-900">
+          IssuePilot orchestrator unreachable
         </h1>
-        <p className="text-sm text-slate-500">
-          Phase 7 skeleton — Service header, summary cards, runs table and
-          live SSE timeline come online in the next tasks.
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {(err as Error).message}
         </p>
-      </header>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Phase 7 status</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-          <Badge tone="info">Task 7.1</Badge>
-          <span>Tailwind + shadcn-style primitives ready.</span>
-        </CardContent>
-      </Card>
-    </main>
-  );
+        <p className="text-sm text-slate-500">
+          Start the orchestrator with{" "}
+          <code className="font-mono">pnpm dev:orchestrator</code> and reload
+          this page.
+        </p>
+      </main>
+    );
+  }
 }

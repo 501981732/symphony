@@ -6,6 +6,14 @@
 
 ### Added
 
+- 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.3（概览页）完成。** `apps/dashboard/app/page.tsx` + `components/overview/*` 落地 spec §14 三段视图（Service header / Summary cards / Runs table），首页改 `dynamic = "force-dynamic"` 走 Next.js Server Component 拉初始数据。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（34/34 单测），`pnpm -w turbo run test typecheck lint --force` 33/33 全绿。
+  - `components/overview/service-header.tsx`：渲染 `status / gitlabProject / concurrency / pollIntervalMs / workflowPath / lastConfigReloadAt / lastPollAt` 7 个字段，status 用 Badge tone 区分（ready=success，degraded=warning），时间戳本地化 + invalid date fallback；2 个测试。
+  - `components/overview/summary-cards.tsx`：用 `RUN_STATUS_VALUES`（shared-contracts 常量）渲染 6 张卡片，running/retrying/failed/blocked 高亮配色；1 个测试。
+  - `components/overview/runs-table.tsx`：`"use client"` 表格组件，11 列覆盖 plan 7.3 全部要求（iid / title / labels / status / attempt / elapsed / updated / branch / MR / workspace / actions detail link），sortable header 支持 `iid / status / updatedAt` 三键 + `aria-sort` attribute + ▲▼ 视觉指示，默认 updatedAt desc；empty state 友好提示加 `ai-ready` label；外链全部 `rel="noreferrer noopener"`；4 个测试覆盖渲染 / empty / detail link / 排序切换。
+  - `components/overview/overview-page.tsx`：`"use client"` page wrapper，用 `useEventStream({ bufferSize: 50, onEvent })` 监听 `run_/claim_/retry_/reconciliation_` 前缀的生命周期事件，触发节流 1s 的 `refetch`（双护栏 `pendingRef + inflightRef` 防风暴 + 防重叠请求）；2 个测试。
+  - `app/page.tsx`：Server Component 调 `fetchOverview()` 并行 GET state + runs，`refetch` 走 `"use server"` Server Action（避免 client → 4738 跨源），错误兜底页提示 `pnpm dev:orchestrator`。
+  - 测试工具：vitest config 启用 esbuild automatic JSX runtime + `vitest.setup.ts` 引入 `@testing-library/jest-dom/vitest` matchers 并在 `afterEach` 调 `cleanup()` 防止 DOM 累积；devDeps 新增 `@testing-library/jest-dom`。
+
 - 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.2（API 客户端 + SSE hook）完成。** `apps/dashboard/lib/` 落地 typed REST client 与 `useEventStream` React hook，覆盖 spec §15 的 5 个 orchestrator endpoint。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（25/25 单测，5 个 spec 文件）。
   - `lib/api.ts`：`apiGet<T>` 用 fetch + `cache: "no-store"` + `accept: application/json`；`resolveApiBase()` 优先读 `NEXT_PUBLIC_API_BASE`、默认 `http://127.0.0.1:4738`、自动 strip trailing slash；`ApiError(status, body)` 保留状态码与响应体便于下层 fallback；`getState/listRuns/getRun/listEvents/eventStreamUrl` 5 个 typed helper 直接返回 `@issuepilot/shared-contracts` 中的 `OrchestratorStateSnapshot / RunRecord / IssuePilotEvent`，`listRuns` 支持 `RunStatus | readonly RunStatus[]` 状态查询。
   - `lib/use-event-stream.ts`：`"use client"` React hook，封装 EventSource 连接 + 指数退避重连（1s → 2s → … 上限 30s）+ unmount 自动 close + runId 过滤参数；新增 `bufferSize`（默认 200 FIFO 防内存膨胀）、`onEvent` 回调（用 ref 缓存，回调变更不重连）、`enabled` 开关；malformed JSON 静默丢弃但保持 stream 打开。`__setEventSourceFactory` test seam 用 `__` 前缀显式标记。
