@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-12 — **IssuePilot P0 Phase 7 Task 7.1（Dashboard 脚手架）完成。** `@issuepilot/dashboard` 接入 Tailwind 3.x + shadcn 风格 primitives，为后续概览页/详情页打下基础。验证：`pnpm --filter @issuepilot/dashboard test typecheck lint build` 全绿（9/9 单测通过，Next.js 14 build 成功）。`pnpm -w turbo run test typecheck lint --force` 33/33 任务全绿不破坏其他包。
+  - `lib/cn.ts` + `lib/cn.test.ts`：`clsx + tailwind-merge` 组合，conflict-resolution 友好的 className 工具，4 个测试覆盖 join / 条件 / 冲突覆盖 / 对象语法。
+  - `components/ui/{button,card,table,badge}.tsx`：手写 shadcn 风格 primitives，Button 支持 variant/size 表驱动，Badge 支持 6 种 tone，Card 拆 `Card/CardHeader/CardTitle/CardContent`，Table 拆 `Table/TableHeader/TableBody/TableRow/TableHead/TableCell` 并外层加 overflow-x-auto；4 个 smoke 测试验证 forwardRef 组件可渲染。
+  - `app/globals.css` + `tailwind.config.ts` + `postcss.config.mjs`：tailwind 3.x 三件套，content 覆盖 `app/components/lib`；扩展 `font-sans` / `font-mono` 字体栈。
+  - `app/layout.tsx` 引入 globals.css 并加 `min-h-screen font-sans antialiased`；`app/page.tsx` 用新 primitives 展示 Phase 7 skeleton 状态。
+  - 依赖：新增 `clsx ^2`、`tailwind-merge ^3`、devDeps 新增 `tailwindcss ^3.4`、`postcss ^8.4`、`autoprefixer ^10.4`；未引入 `@radix-ui/*` 与 shadcn-cli（P0 dashboard 只读不需要 popover/dialog，保持依赖轻量）。
+  - dashboard 内部 import 改成无 `.js` 后缀（适配 Next.js webpack + bundler resolution）；vitest config 扩展 `.tsx` 文件并新增 `components/**/*.test.tsx` 入口。
+
 ### Fixed
 
 - 2026-05-12 — **docs: IssuePilot design spec 与 implementation plan 全面修正（共 13 处问题）**
