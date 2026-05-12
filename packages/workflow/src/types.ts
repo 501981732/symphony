@@ -73,6 +73,8 @@ export interface WorkflowConfig {
   agent: AgentConfig;
   codex: CodexConfig;
   hooks: HooksConfig;
+  /** Orchestrator main-loop poll interval in milliseconds. Defaults to 10 000. */
+  pollIntervalMs: number;
   promptTemplate: string;
   source: WorkflowSource;
 }

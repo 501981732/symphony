@@ -211,6 +211,8 @@ codex:
   turn_sandbox_policy:
     type: workspaceWrite
 
+poll_interval_ms: 10000
+
 hooks:
   after_create: |
     pnpm install
@@ -267,7 +269,8 @@ Description:
 - `tracker.token_env` 必须是合法环境变量名；对应环境变量缺失时，workflow 加载失败，但错误不能回显 secret 或疑似 secret
 - 环境变量中的 secret 只在运行时解析，不写入事件日志和 dashboard
 - prompt 渲染只允许上面列出的白名单变量；运行时 context 中的额外字段渲染为空并记录 warn
-- workflow 文件不能把 Codex sandbox 提升到 `danger-full-access` / `dangerFullAccess`
+- workflow 文件不能把 Codex sandbox 提升到 `danger-full-access`（`thread_sandbox` 层）或 `dangerFullAccess`（`turn_sandbox_policy.type` 层）；两个字段使用不同格式是因为它们对应 Codex app-server 的不同 RPC 参数，前者作用于 thread 级别使用 kebab-case，后者作用于 turn 级别使用 camelCase
+- `poll_interval_ms`：orchestrator 主循环拉取 GitLab 候选 issue 的间隔，单位毫秒，默认 `10000`（10 秒）
 
 ## 7. GitLab 状态模型
 
@@ -279,8 +282,10 @@ Label：
 ai-ready       候选任务，可被 IssuePilot 拾取
 ai-running     已认领，正在执行
 human-review   MR 已创建，等待人工 review
-ai-rework      人工打回，IssuePilot 可以重新执行
-ai-merging     预留给后续自动合并流程
+ai-rework      人工主动打回（从 human-review 阶段重新打开），
+               IssuePilot 可以再次认领并执行；
+               语义上是独立的"重做"触发器，不是 ai-ready 的别名
+ai-merging     预留给后续自动合并流程（P1/P2，P0 不使用）
 ai-failed      执行失败，需要人工介入
 ai-blocked     缺少外部信息、权限或密钥，无法继续
 ```
@@ -433,12 +438,14 @@ P0 使用 Codex app-server，不使用 Codex CLI 作为主 runner。
 
 runner 职责：
 
+> 字段格式说明：`thread/start` 的 sandbox 参数传 `{ type: <thread_sandbox> }`（kebab-case 值，如 `"workspace-write"`）；`turn/start` 的 sandboxPolicy 参数传 `turn_sandbox_policy` 对象（camelCase 值，如 `{ type: "workspaceWrite" }`）。两者对应 Codex app-server 不同层级的 RPC 字段，不可互换。
+
 ```text
 1. 在 issue workspace 内启动 `codex app-server`。
 2. 发送 initialize。
 3. 发送 initialized。
-4. 发送 thread/start，包含 cwd、sandbox、approval policy、dynamic tools。
-5. 发送 turn/start，包含渲染后的 prompt、title、cwd、sandbox policy。
+4. 发送 thread/start，包含 cwd、sandbox（使用 thread_sandbox kebab-case 值）、approval policy、dynamic tools。
+5. 发送 turn/start，包含渲染后的 prompt、title、cwd、sandboxPolicy（使用 turn_sandbox_policy camelCase 对象）。
 6. 从 stdout/stderr stream 读取 newline-delimited JSON-RPC 消息。
 7. 处理 completed、failed、cancelled、timeout、port exit。
 8. 处理 approval requests。
@@ -534,10 +541,11 @@ runner 结束后，orchestrator 必须验证：
 如果 agent 完成代码但漏掉平台动作，orchestrator 尝试兜底：
 
 ```text
-agent 已 commit 但未 push        -> orchestrator push
+agent 已 commit 但未 push        -> orchestrator push（force-with-lease，防止覆盖远端他人推送）
+push 冲突（non-fast-forward）    -> 记录 reconcile_push_conflict 事件 + 分类为 failed，不强制覆盖
 branch 已 push 但没有 MR         -> orchestrator create MR
 MR 存在但 title/body 过期        -> orchestrator update MR
-没有最终 Issue note             -> orchestrator 写 fallback note
+没有最终 Issue note             -> orchestrator 写 fallback note（参见 workpad note 策略，下文）
 labels 未切换                    -> orchestrator 切换 labels
 ```
 
@@ -703,6 +711,11 @@ API 默认绑定 `127.0.0.1`。
 事件结构：
 
 ```ts
+/**
+ * EventType 是所有合法事件类型的字面量联合，
+ * 定义在 @issuepilot/shared-contracts/src/events.ts。
+ * 不使用 string，可在编译期检查拼写并让 dashboard 安全枚举事件类型。
+ */
 type IssuePilotEvent = {
   id: string;
   runId: string;
@@ -711,9 +724,12 @@ type IssuePilotEvent = {
     iid: number;
     title: string;
     url: string;
+    projectId: string;
   };
-  type: string;
+  type: EventType;   // 不能是宽泛的 string，必须使用 shared-contracts 定义的 EventType
   message: string;
+  threadId?: string;
+  turnId?: string;
   data?: unknown;
   createdAt: string;
 };
@@ -982,7 +998,9 @@ P0 完成标准：
 2. orchestrator HTTP server：Fastify。
 3. GitLab 认证方式：优先使用 Group Access Token，通过 `tracker.token_env` 指定环境变量；本地 PoC 可临时使用 personal token 验证。
 4. MR target branch 策略：优先使用 workflow `git.base_branch`，缺省时 fallback 到 GitLab project default branch。
-5. Issue note 策略：P0 创建并维护一个持久 workpad note，而不是只写最终 summary note。
+5. Issue note 策略：P0 维护两类 note，语义不同：
+   - **workpad note**（持久进度记录）：每次 run 开始时创建，持续追加/更新进度，标记 `<!-- issuepilot:run=<runId> -->`。agent 可以通过 `gitlab_update_issue_note` 工具主动更新它。
+   - **fallback note**（兜底摘要）：仅当 agent 运行结束后 orchestrator post-run reconciliation 发现 Issue 没有任何 handoff note 时，由 orchestrator 写入一条包含 §12 列出 5 个字段的静态摘要。它不替换 workpad note，两者可以共存。
 
 ## 23. 实现备注
 

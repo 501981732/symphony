@@ -119,6 +119,7 @@ const WorkflowFrontMatterSchema = z.object({
   agent: AgentSchema,
   codex: CodexSchema,
   hooks: HooksSchema,
+  poll_interval_ms: z.number().int().min(1_000).default(10_000),
 });
 
 type WorkflowFrontMatter = z.infer<typeof WorkflowFrontMatterSchema>;
@@ -200,6 +201,7 @@ export async function parseWorkflowFile(
     agent,
     codex,
     hooks,
+    pollIntervalMs: fm.poll_interval_ms,
     promptTemplate,
     source: {
       path: filePath,

@@ -4,6 +4,31 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 2026-05-12 — **docs: IssuePilot design spec 与 implementation plan 全面修正（共 13 处问题）**
+  - **Design Spec (`2026-05-11-issuepilot-design.md`)**：
+    - §6 补充 `poll_interval_ms` 字段到 workflow YAML 示例，默认 `10000`；在加载规则中说明 `thread_sandbox`（kebab-case）与 `turn_sandbox_policy.type`（camelCase）分属不同 RPC 层级，格式差异是设计意图，`danger-full-access`/`dangerFullAccess` 均不允许
+    - §7 `ai-rework` label 补充语义说明：这是人工主动打回（从 human-review 阶段触发）的独立状态，不是 `ai-ready` 的别名
+    - §10 runner 职责说明补充 sandbox 字段格式对照注释（`thread/start` 用 kebab-case，`turn/start` 用 camelCase）
+    - §12 reconciliation 兜底 push 策略补充分支冲突处理：使用 `git push --force-with-lease`；non-fast-forward 冲突分类为 `failed`，不强制覆盖
+    - §16 `IssuePilotEvent.type` 从宽泛 `string` 改为 `EventType` 字面量联合类型，并补充 `threadId`/`turnId`/`projectId` 字段
+    - §22 区分 workpad note（持久进度记录，agent 可主动更新）与 fallback note（orchestrator 兜底摘要），两者语义不同可共存
+  - **Implementation Plan (`2026-05-11-issuepilot-implementation-plan.md`)**：
+    - Architecture 描述包数量从"六个"修正为"七个"
+    - Tech Stack 列表补充 `p-timeout`
+    - Task 1.1 根 `package.json` devDependencies 补充 `execa`（根集成 smoke test 直接用 `execaSync`）
+    - Task 2.1 `WorkflowSchema` 中的 `.default({} as any)` 改为 `.default({})`，并移除对 `danger-full-access`/`dangerFullAccess` 的允许；schema 新增 `poll_interval_ms` 字段
+    - Task 3.2 排序职责澄清：adapter 只做单字段 API 排序，orchestrator 做多字段稳定排序
+    - Task 5.2 补充 `p-timeout` 依赖声明说明
+    - Task 6.6 `cfg.poll_interval_ms` 改为 `cfg.pollIntervalMs`（与 WorkflowConfig camelCase 对齐）
+    - Phase 6.x Observability 改为 Phase 5.x，明确 `redact.ts` + `event-bus.ts` 必须在 Phase 5 前完成
+    - Task 8.2 fake Codex 脚本 schema 补充四种指令类型（`expect`/`respond`/`notify`/`tool_call`）的完整语义说明和示例
+  - **代码同步**：
+    - `packages/workflow/src/types.ts`：`WorkflowConfig` 新增 `pollIntervalMs: number` 字段
+    - `packages/workflow/src/parse.ts`：`WorkflowFrontMatterSchema` 新增 `poll_interval_ms` 字段（zod，默认 `10_000`），`parseWorkflowFile` 输出映射到 `pollIntervalMs`
+    - 全量 `turbo typecheck` 通过，无 lint 错误
+
 ### Added
 
 - 2026-05-11 — **IssuePilot P0 Phase 6（Orchestrator）完成。** `@issuepilot/orchestrator` 实现完整编排引擎，包含 8 个子模块、11 spec / 57 cases 全绿：
