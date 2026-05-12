@@ -47,12 +47,12 @@ Implemented in this repository:
   logger.
 - Orchestrator modules for claim, dispatch, retry, reconcile, runtime state,
   HTTP API, SSE, and CLI scaffolding.
-- Dashboard skeleton.
+- Read-only dashboard with overview and run detail views, SSE refresh, timeline,
+  tool calls, and log tail rendering.
 
 Still stabilizing:
 
 - The end-to-end daemon bootstrap.
-- The full read-only dashboard.
 - Real GitLab plus real Codex smoke documentation.
 - Public packaging and versioned releases.
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
-  getRun,
+  getRunDetail,
   getState,
   listEvents,
   listRuns,
@@ -21,14 +21,12 @@ afterEach(() => {
 });
 
 function mockFetch(body: unknown, init: { status?: number } = {}) {
-  return vi
-    .spyOn(globalThis, "fetch")
-    .mockResolvedValue(
-      new Response(JSON.stringify(body), {
-        status: init.status ?? 200,
-        headers: { "content-type": "application/json" },
-      }),
-    );
+  return vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify(body), {
+      status: init.status ?? 200,
+      headers: { "content-type": "application/json" },
+    }),
+  );
 }
 
 describe("resolveApiBase", () => {
@@ -105,19 +103,24 @@ describe("listRuns", () => {
   });
 });
 
-describe("getRun", () => {
+describe("getRunDetail", () => {
   it("hits /api/runs/:runId", async () => {
-    const fetchMock = mockFetch({ runId: "r1", status: "running" });
-    const run = await getRun("r1");
-    expect(run.runId).toBe("r1");
+    const fetchMock = mockFetch({
+      run: { runId: "r1", status: "running" },
+      events: [],
+      logsTail: ["log line"],
+    });
+    const detail = await getRunDetail("r1");
+    expect(detail.run.runId).toBe("r1");
+    expect(detail.logsTail).toEqual(["log line"]);
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       `${FAKE_BASE}/api/runs/r1`,
     );
   });
 
   it("URL-encodes runId", async () => {
-    const fetchMock = mockFetch({});
-    await getRun("r 1/2");
+    const fetchMock = mockFetch({ run: {}, events: [], logsTail: [] });
+    await getRunDetail("r 1/2");
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       `${FAKE_BASE}/api/runs/r%201%2F2`,
     );

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { RunDetailPage } from "../../../components/detail/run-detail-page";
-import { ApiError, getRun, listEvents } from "../../../lib/api";
+import { ApiError, getRunDetail } from "../../../lib/api";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,12 +13,9 @@ interface PageProps {
 export default async function RunDetail({ params }: PageProps) {
   const { runId } = params;
   try {
-    const [run, events] = await Promise.all([
-      getRun(runId),
-      listEvents({ runId, limit: 200 }),
-    ]);
+    const { run, events, logsTail } = await getRunDetail(runId);
     return (
-      <RunDetailPage run={run} initialEvents={events} logsTail={[]} />
+      <RunDetailPage run={run} initialEvents={events} logsTail={logsTail} />
     );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {

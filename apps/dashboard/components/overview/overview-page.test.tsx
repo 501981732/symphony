@@ -44,10 +44,9 @@ const baseSnapshot: OrchestratorStateSnapshot = {
     lastPollAt: null,
   },
   summary: {
-    claimed: 0,
     running: 0,
     retrying: 0,
-    completed: 0,
+    "human-review": 0,
     failed: 0,
     blocked: 0,
   },
@@ -83,9 +82,7 @@ describe("OverviewPage", () => {
   it("renders service header, summary cards and runs table", () => {
     renderPage();
     expect(screen.getByText("IssuePilot Dashboard")).toBeInTheDocument();
-    expect(
-      screen.getByText("ready", { selector: "span" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("ready", { selector: "span" })).toBeInTheDocument();
     expect(screen.getByText(/no active runs/i)).toBeInTheDocument();
   });
 

@@ -52,7 +52,7 @@ describe("@issuepilot/shared-contracts/run", () => {
       .toEqualTypeOf<string>();
   });
 
-  it("RunRecord.mergeRequestUrl / endedAt / lastError are optional", () => {
+  it("RunRecord.mergeRequestUrl / endedAt / lastError / dashboard metadata are optional", () => {
     expectTypeOf<RunRecord>()
       .toHaveProperty("mergeRequestUrl")
       .toEqualTypeOf<string | undefined>();
@@ -62,5 +62,16 @@ describe("@issuepilot/shared-contracts/run", () => {
     expectTypeOf<RunRecord>()
       .toHaveProperty("lastError")
       .toEqualTypeOf<{ code: string; message: string } | undefined>();
+    expectTypeOf<RunRecord>()
+      .toHaveProperty("turnCount")
+      .toEqualTypeOf<number | undefined>();
+    expectTypeOf<RunRecord>().toHaveProperty("lastEvent").toEqualTypeOf<
+      | {
+          type: string;
+          message: string;
+          createdAt?: string;
+        }
+      | undefined
+    >();
   });
 });

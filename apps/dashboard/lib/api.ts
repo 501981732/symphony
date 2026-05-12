@@ -1,6 +1,7 @@
 import type {
   IssuePilotEvent,
   OrchestratorStateSnapshot,
+  RunDetailResponse,
   RunRecord,
   RunStatus,
 } from "@issuepilot/shared-contracts";
@@ -95,11 +96,11 @@ export function listRuns(
   return apiGet<RunRecord[]>(`/api/runs${query ? `?${query}` : ""}`, opts);
 }
 
-export function getRun(
+export function getRunDetail(
   runId: string,
   opts: ApiGetOptions = {},
-): Promise<RunRecord> {
-  return apiGet<RunRecord>(
+): Promise<RunDetailResponse> {
+  return apiGet<RunDetailResponse>(
     `/api/runs/${encodeURIComponent(runId)}`,
     opts,
   );

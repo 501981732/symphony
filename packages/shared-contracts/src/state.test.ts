@@ -1,8 +1,10 @@
 import { describe, it, expect, expectTypeOf } from "vitest";
 
 import {
+  DASHBOARD_SUMMARY_VALUES,
   SERVICE_STATUS_VALUES,
   isServiceStatus,
+  type DashboardSummary,
   type OrchestratorStateSnapshot,
   type ServiceStatus,
 } from "./state.js";
@@ -25,6 +27,19 @@ describe("@issuepilot/shared-contracts/state", () => {
     >();
   });
 
+  it("DASHBOARD_SUMMARY_VALUES follows spec section 14", () => {
+    expect(DASHBOARD_SUMMARY_VALUES).toEqual([
+      "running",
+      "retrying",
+      "human-review",
+      "failed",
+      "blocked",
+    ]);
+    expectTypeOf<DashboardSummary>()
+      .toHaveProperty("human-review")
+      .toEqualTypeOf<number>();
+  });
+
   it("OrchestratorStateSnapshot describes service header + summary counters", () => {
     expectTypeOf<OrchestratorStateSnapshot>()
       .toHaveProperty("service")
@@ -42,5 +57,8 @@ describe("@issuepilot/shared-contracts/state", () => {
       .toHaveProperty("service")
       .toHaveProperty("lastPollAt")
       .toEqualTypeOf<string | null>();
+    expectTypeOf<OrchestratorStateSnapshot>()
+      .toHaveProperty("summary")
+      .toEqualTypeOf<DashboardSummary>();
   });
 });

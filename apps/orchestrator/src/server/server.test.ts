@@ -1,6 +1,5 @@
 import { createEventBus } from "@issuepilot/observability";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { once } from "node:events";
 
 import { createRuntimeState } from "../runtime/state.js";
 import { createServer } from "./index.js";
@@ -21,6 +20,10 @@ async function buildTestApp(
   overrides: {
     workflowPath?: string;
     gitlabProject?: string;
+    readLogsTail?: (
+      runId: string,
+      opts?: { limit?: number },
+    ) => Promise<string[]>;
   } = {},
 ) {
   const state = createRuntimeState();
@@ -30,6 +33,7 @@ async function buildTestApp(
       state,
       eventBus,
       readEvents,
+      readLogsTail: overrides.readLogsTail,
       workflowPath: overrides.workflowPath ?? ".agents/workflow.md",
       gitlabProject: overrides.gitlabProject ?? "group/project",
       pollIntervalMs: 10000,
@@ -58,11 +62,23 @@ describe("Orchestrator HTTP API", () => {
   });
 
   it("GET /api/state returns service snapshot", async () => {
+    state.setRun("r-human-review", {
+      runId: "r-human-review",
+      status: "completed",
+      attempt: 1,
+      issue: { labels: ["human-review"] },
+    });
     const response = await app.inject({ method: "GET", url: "/api/state" });
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
     expect(body.service.status).toBe("ready");
-    expect(body.summary).toBeDefined();
+    expect(body.summary).toMatchObject({
+      running: 0,
+      retrying: 0,
+      "human-review": 1,
+      failed: 0,
+      blocked: 0,
+    });
   });
 
   it("GET /api/state redacts response fields", async () => {
@@ -85,6 +101,25 @@ describe("Orchestrator HTTP API", () => {
   });
 
   it("GET /api/runs returns redacted runs after adding", async () => {
+    await app.close();
+    const setup = await buildTestApp(async () => [
+      {
+        id: "e1",
+        runId: "r1",
+        type: "turn_started",
+        message: "turn started",
+        createdAt: "2026-05-12T05:00:00.000Z",
+      },
+      {
+        id: "e2",
+        runId: "r1",
+        type: "turn_completed",
+        message: "turn completed",
+        createdAt: "2026-05-12T05:01:00.000Z",
+      },
+    ]);
+    app = setup.app;
+    state = setup.state;
     state.setRun("r1", {
       runId: "r1",
       status: "running",
@@ -95,6 +130,12 @@ describe("Orchestrator HTTP API", () => {
     const body = JSON.parse(response.body);
     expect(body).toHaveLength(1);
     expect(body[0].runId).toBe("r1");
+    expect(body[0].turnCount).toBe(2);
+    expect(body[0].lastEvent).toEqual({
+      type: "turn_completed",
+      message: "turn completed",
+      createdAt: "2026-05-12T05:01:00.000Z",
+    });
     expect(response.body).not.toContain("secret-token");
     expect(response.body).toContain("[REDACTED]");
   });
@@ -113,6 +154,20 @@ describe("Orchestrator HTTP API", () => {
   });
 
   it("GET /api/runs/:runId returns redacted specific run", async () => {
+    await app.close();
+    const setup = await buildTestApp(
+      async () => [
+        {
+          id: "e1",
+          runId: "r1",
+          type: "run_started",
+          message: "started",
+        },
+      ],
+      { readLogsTail: async () => ["line 1"] },
+    );
+    app = setup.app;
+    state = setup.state;
     state.setRun("r1", {
       runId: "r1",
       status: "running",
@@ -125,7 +180,11 @@ describe("Orchestrator HTTP API", () => {
       url: "/api/runs/r1",
     });
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body).runId).toBe("r1");
+    expect(JSON.parse(response.body)).toMatchObject({
+      run: { runId: "r1" },
+      events: [{ id: "e1", runId: "r1", type: "run_started" }],
+      logsTail: ["line 1"],
+    });
     expect(response.body).not.toContain("glpat-12345678901234567890");
     expect(response.body).toContain("[REDACTED]");
   });
@@ -288,35 +347,29 @@ describe("Orchestrator HTTP API", () => {
       `http://127.0.0.1:${address.port}/api/events/stream?runId=r1`,
       { signal: controller.signal },
     );
-
-    await once(app.server, "connection");
-
-    await new Promise<void>((resolve) => {
-      setTimeout(() => {
-        eventBus.publish({
-          id: "e-other",
-          runId: "r2",
-          type: "tool_output",
-          message: "ignore Bearer other-secret",
-        });
-        eventBus.publish({
-          id: "e1",
-          runId: "r1",
-          type: "tool_output",
-          message: "called with Bearer secret-token",
-          token: "glpat-12345678901234567890",
-        });
-        resolve();
-      }, 10);
-    });
-
     const response = await responsePromise;
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
     const reader = response.body?.getReader();
     if (!reader) throw new Error("missing response body reader");
+
+    eventBus.publish({
+      id: "e-other",
+      runId: "r2",
+      type: "tool_output",
+      message: "ignore Bearer other-secret",
+    });
+    eventBus.publish({
+      id: "e1",
+      runId: "r1",
+      type: "tool_output",
+      message: "called with Bearer secret-token",
+      token: "glpat-12345678901234567890",
+    });
+
     const decoder = new TextDecoder();
     let body = "";
     const deadline = Date.now() + 1_000;
-    while (!body.includes("\"id\":\"e1\"") && Date.now() < deadline) {
+    while (!body.includes('"id":"e1"') && Date.now() < deadline) {
       const chunk = await reader.read();
       if (chunk.done) break;
       body += decoder.decode(chunk.value, { stream: true });
@@ -325,7 +378,7 @@ describe("Orchestrator HTTP API", () => {
     controller.abort();
 
     expect(body).toContain("data:");
-    expect(body).toContain("\"id\":\"e1\"");
+    expect(body).toContain('"id":"e1"');
     expect(body).not.toContain("e-other");
     expect(body).not.toContain("secret-token");
     expect(body).not.toContain("glpat-12345678901234567890");

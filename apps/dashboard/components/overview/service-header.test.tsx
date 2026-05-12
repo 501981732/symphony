@@ -17,10 +17,9 @@ const snapshot: OrchestratorStateSnapshot = {
     lastPollAt: "2026-05-12T05:00:30.000Z",
   },
   summary: {
-    claimed: 0,
     running: 1,
     retrying: 0,
-    completed: 3,
+    "human-review": 3,
     failed: 0,
     blocked: 0,
   },
@@ -32,7 +31,9 @@ describe("ServiceHeader", () => {
 
     expect(screen.getByText(/ready/i)).toBeInTheDocument();
     expect(screen.getByText(snapshot.service.workflowPath)).toBeInTheDocument();
-    expect(screen.getByText(snapshot.service.gitlabProject)).toBeInTheDocument();
+    expect(
+      screen.getByText(snapshot.service.gitlabProject),
+    ).toBeInTheDocument();
     expect(screen.getByText("10000 ms")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
   });

@@ -1,31 +1,128 @@
-import { redact, type EventBus, type EventRecord } from "@issuepilot/observability";
+import {
+  redact,
+  type EventBus,
+  type EventRecord,
+} from "@issuepilot/observability";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import type { RuntimeState } from "../runtime/state.js";
 
 interface ServerDeps {
   state: RuntimeState;
-  eventBus: EventBus<{ id: string; runId: string; type: string; [key: string]: unknown }>;
+  eventBus: EventBus<{
+    id: string;
+    runId: string;
+    type: string;
+    [key: string]: unknown;
+  }>;
   readEvents: (
     runId: string,
     opts?: { limit?: number; offset?: number },
   ) => Promise<EventRecord[]>;
+  readLogsTail?: (
+    runId: string,
+    opts?: { limit?: number },
+  ) => Promise<string[]>;
   workflowPath: string;
   gitlabProject: string;
+  handoffLabel?: string;
   pollIntervalMs: number;
   concurrency: number;
 }
 
-function parseOptionalPositiveInt(value: string | undefined): number | undefined {
+function parseOptionalPositiveInt(
+  value: string | undefined,
+): number | undefined {
   if (value === undefined) return undefined;
   if (!/^[1-9]\d*$/.test(value)) return undefined;
   return Number(value);
 }
 
-function parseOptionalNonNegativeInt(value: string | undefined): number | undefined {
+function parseOptionalNonNegativeInt(
+  value: string | undefined,
+): number | undefined {
   if (value === undefined) return undefined;
   if (!/^(0|[1-9]\d*)$/.test(value)) return undefined;
   return Number(value);
+}
+
+function eventCreatedAt(event: EventRecord): string | undefined {
+  const value = event["createdAt"] ?? event["ts"];
+  return typeof value === "string" ? value : undefined;
+}
+
+function compareEventTime(a: EventRecord, b: EventRecord): number {
+  const aTime = Date.parse(eventCreatedAt(a) ?? "");
+  const bTime = Date.parse(eventCreatedAt(b) ?? "");
+  if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+  if (Number.isNaN(aTime)) return -1;
+  if (Number.isNaN(bTime)) return 1;
+  return aTime - bTime;
+}
+
+function summarizeLastEvent(
+  events: EventRecord[],
+): { type: string; message: string; createdAt?: string } | undefined {
+  const last = [...events].sort(compareEventTime).at(-1);
+  if (!last) return undefined;
+  const createdAt = eventCreatedAt(last);
+  return {
+    type: last.type,
+    message: last.message,
+    ...(createdAt ? { createdAt } : {}),
+  };
+}
+
+function countTurnEvents(events: EventRecord[]): number {
+  return events.filter(
+    (event) =>
+      event.type.startsWith("turn_") || event.type.startsWith("codex_turn_"),
+  ).length;
+}
+
+function enrichRunForDashboard<T extends Record<string, unknown>>(
+  run: T,
+  events: EventRecord[],
+): T & {
+  turnCount: number;
+  lastEvent?: { type: string; message: string; createdAt?: string };
+} {
+  const lastEvent = summarizeLastEvent(events);
+  return {
+    ...run,
+    turnCount: countTurnEvents(events),
+    ...(lastEvent ? { lastEvent } : {}),
+  };
+}
+
+function buildDashboardSummary(
+  runs: Array<Record<string, unknown>>,
+  handoffLabel: string,
+): Record<string, number> {
+  const summary = {
+    running: 0,
+    retrying: 0,
+    "human-review": 0,
+    failed: 0,
+    blocked: 0,
+  };
+
+  for (const run of runs) {
+    if (run["status"] === "running") summary.running += 1;
+    if (run["status"] === "retrying") summary.retrying += 1;
+    if (run["status"] === "failed") summary.failed += 1;
+    if (run["status"] === "blocked") summary.blocked += 1;
+    const issue = run["issue"];
+    const labels =
+      typeof issue === "object" && issue !== null && "labels" in issue
+        ? (issue.labels as unknown)
+        : undefined;
+    if (Array.isArray(labels) && labels.includes(handoffLabel)) {
+      summary["human-review"] += 1;
+    }
+  }
+
+  return summary;
 }
 
 export async function createServer(
@@ -59,7 +156,10 @@ export async function createServer(
         lastConfigReloadAt: deps.state.lastConfigReloadAt,
         lastPollAt: deps.state.lastPollAt,
       },
-      summary: deps.state.summary(),
+      summary: buildDashboardSummary(
+        deps.state.allRuns(),
+        deps.handoffLabel ?? "human-review",
+      ),
     };
   });
 
@@ -73,22 +173,29 @@ export async function createServer(
           .code(400)
           .send({ error: "limit must be a positive integer" });
       }
-      let runs = status
-        ? deps.state.listRuns(status)
-        : deps.state.allRuns();
+      let runs = status ? deps.state.listRuns(status) : deps.state.allRuns();
       runs = runs.slice(0, limit ?? 50);
-      return runs;
+      return Promise.all(
+        runs.map(async (run) =>
+          enrichRunForDashboard(run, await deps.readEvents(run.runId)),
+        ),
+      );
     },
   );
 
   app.get<{ Params: { runId: string } }>(
     "/api/runs/:runId",
     async (request, reply) => {
-      const run = deps.state.getRun(request.params.runId);
+      const { runId } = request.params;
+      const run = deps.state.getRun(runId);
       if (!run) {
         return reply.code(404).send({ error: "Run not found" });
       }
-      return run;
+      const [events, logsTail] = await Promise.all([
+        deps.readEvents(runId, { limit: 200 }),
+        deps.readLogsTail?.(runId, { limit: 200 }) ?? Promise.resolve([]),
+      ]);
+      return { run: enrichRunForDashboard(run, events), events, logsTail };
     },
   );
 
@@ -128,10 +235,12 @@ export async function createServer(
   app.get("/api/events/stream", (request, reply) => {
     const runIdFilter = (request.query as { runId?: string }).runId;
 
+    reply.hijack();
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      "Access-Control-Allow-Origin": "*",
     });
 
     const keepalive = setInterval(() => {
@@ -149,6 +258,7 @@ export async function createServer(
       clearInterval(keepalive);
       unsub();
     });
+    reply.raw.write(": connected\n\n");
   });
 
   const host = opts.host ?? "127.0.0.1";

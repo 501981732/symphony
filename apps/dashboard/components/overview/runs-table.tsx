@@ -3,7 +3,6 @@
 import type { RunRecord, RunStatus } from "@issuepilot/shared-contracts";
 import { useMemo, useState } from "react";
 
-
 import { Badge, type BadgeTone } from "../ui/badge";
 import {
   Table,
@@ -113,9 +112,9 @@ export function RunsTable({ runs }: RunsTableProps) {
           <TableHead>Title</TableHead>
           <TableHead>Labels</TableHead>
           {sortableHead("status", "Status")}
-          <TableHead>Attempt</TableHead>
+          <TableHead>Turns</TableHead>
+          <TableHead>Last event</TableHead>
           <TableHead>Elapsed</TableHead>
-          {sortableHead("updatedAt", "Updated")}
           <TableHead>Branch</TableHead>
           <TableHead>MR</TableHead>
           <TableHead>Workspace</TableHead>
@@ -135,7 +134,10 @@ export function RunsTable({ runs }: RunsTableProps) {
                 #{run.issue.iid}
               </a>
             </TableCell>
-            <TableCell className="max-w-[24ch] truncate" title={run.issue.title}>
+            <TableCell
+              className="max-w-[24ch] truncate"
+              title={run.issue.title}
+            >
               {run.issue.title}
             </TableCell>
             <TableCell>
@@ -150,15 +152,15 @@ export function RunsTable({ runs }: RunsTableProps) {
             <TableCell>
               <Badge tone={STATUS_TONES[run.status]}>{run.status}</Badge>
             </TableCell>
-            <TableCell className="tabular-nums">{run.attempt}</TableCell>
+            <TableCell className="tabular-nums">{run.turnCount ?? 0}</TableCell>
+            <TableCell
+              className="max-w-[22ch] truncate font-mono text-xs"
+              title={run.lastEvent?.message}
+            >
+              {run.lastEvent?.type ?? "—"}
+            </TableCell>
             <TableCell className="tabular-nums">
               {formatElapsed(run.startedAt, run.endedAt)}
-            </TableCell>
-            <TableCell
-              className="tabular-nums text-xs text-slate-500"
-              title={run.updatedAt}
-            >
-              {formatElapsed(run.updatedAt)} ago
             </TableCell>
             <TableCell className="max-w-[24ch] truncate font-mono text-xs">
               {run.branch}

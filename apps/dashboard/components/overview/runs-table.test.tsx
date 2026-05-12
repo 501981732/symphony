@@ -21,9 +21,16 @@ function fixture(overrides: Partial<RunRecord> = {}): RunRecord {
     attempt: 1,
     branch: "ai/42-fix-flaky-test",
     workspacePath: "/home/foo/.issuepilot/workspaces/group-project/42",
-    mergeRequestUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+    mergeRequestUrl:
+      "https://gitlab.example.com/group/project/-/merge_requests/7",
     startedAt: "2026-05-12T05:00:00.000Z",
     updatedAt: "2026-05-12T05:01:00.000Z",
+    turnCount: 3,
+    lastEvent: {
+      type: "turn_completed",
+      message: "Codex turn completed",
+      createdAt: "2026-05-12T05:01:00.000Z",
+    },
     ...overrides,
   };
 }
@@ -37,6 +44,11 @@ describe("RunsTable", () => {
     expect(
       screen.getByText("running", { selector: "span" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Turns" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("turn_completed")).toBeInTheDocument();
     expect(screen.getByText("ai/42-fix-flaky-test")).toBeInTheDocument();
     const mrLink = screen.getByRole("link", { name: "merge request" });
     expect(mrLink).toHaveAttribute(
@@ -45,11 +57,25 @@ describe("RunsTable", () => {
     );
   });
 
+  it("falls back when run metadata has no turns or last event yet", () => {
+    render(
+      <RunsTable
+        runs={[
+          fixture({
+            turnCount: undefined,
+            lastEvent: undefined,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
   it("renders empty-state when there are no runs", () => {
     render(<RunsTable runs={[]} />);
-    expect(
-      screen.getByText(/no active runs/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no active runs/i)).toBeInTheDocument();
   });
 
   it("links to /runs/:runId detail page", () => {
