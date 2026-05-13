@@ -123,10 +123,11 @@ async function main(): Promise<number> {
  * waiting on a daemon that ignored SIGTERM. Always returns once the child
  * is fully drained.
  */
-async function waitForChild(
-  child: ReturnType<typeof execa>,
-  timeoutMs: number,
-): Promise<void> {
+async function waitForChild<
+  T extends PromiseLike<unknown> & {
+    kill(signal: NodeJS.Signals): boolean;
+  },
+>(child: T, timeoutMs: number): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   let timedOut = false;
   const timeoutPromise = new Promise<void>((resolve) => {
@@ -135,7 +136,8 @@ async function waitForChild(
       resolve();
     }, timeoutMs);
   });
-  await Promise.race([child.then(() => undefined), timeoutPromise]);
+  const childPromise: Promise<unknown> = Promise.resolve(child);
+  await Promise.race([childPromise.then(() => undefined), timeoutPromise]);
   if (timer) clearTimeout(timer);
   if (timedOut) {
     console.error(
@@ -146,7 +148,7 @@ async function waitForChild(
     } catch {
       // ignore — child may already be gone.
     }
-    await child.catch(() => undefined);
+    await childPromise.catch(() => undefined);
   }
 }
 

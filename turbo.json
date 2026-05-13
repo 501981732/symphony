@@ -1,5 +1,14 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "tsconfig.base.json",
+    "eslint.config.mjs",
+    ".prettierrc",
+    ".prettierignore",
+    ".npmrc"
+  ],
+  "globalEnv": ["NODE_ENV", "CI"],
+  "globalPassThroughEnv": ["HOME", "USERPROFILE"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -11,14 +20,32 @@
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": ["dist/.tsbuildinfo", "tsconfig.tsbuildinfo"]
     },
     "lint": {
       "outputs": []
     },
+    "coverage": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "//#test:smoke": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "scripts/**/*.ts",
+        "tests/integration/**/*.ts",
+        "vitest.config.ts"
+      ],
+      "outputs": [],
+      "env": ["GITLAB_TOKEN"]
+    },
+    "//#typecheck:scripts": {
+      "inputs": ["scripts/**/*.ts", "scripts/tsconfig.json"],
+      "outputs": []
     }
   }
 }

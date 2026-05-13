@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 2026-05-13 — **Turborepo pipeline 按官方 best-practice skill 重写，消除所有反模式。** 参考 `.agents/skills/turborepo/SKILL.md` 把根 `package.json` 里的 `&&` 串接（`turbo run test && pnpm test:smoke`、`turbo run typecheck && tsc -p scripts/tsconfig.json`、`pnpm --filter ... coverage` 串接）全部消除，重新设计 turbo 任务图，并修复 `scripts/smoke.ts` 一处 `exactOptionalPropertyTypes` 下的 execa 类型不兼容（顺手扫干净 typecheck）。验证：`pnpm typecheck`（18 task 全绿，含 scripts）、`pnpm lint`（10 task 全绿）、`pnpm test`（17/18 通过，单测 + smoke + e2e；blocked-and-failed 偶发 timer flake 重跑通过）。
+  - **T1 消除 `&&` 反模式**：`pnpm test` → `turbo run test test:smoke`、`pnpm typecheck` → `turbo run typecheck typecheck:scripts`、`pnpm coverage` → `turbo run coverage`。新增 root tasks `//#test:smoke`（喂入 `scripts/**/*.ts` + `tests/integration/**/*.ts` + `vitest.config.ts` 作 inputs，声明 `env: ["GITLAB_TOKEN"]`）和 `//#typecheck:scripts`（喂入 `scripts/**/*.ts` + `scripts/tsconfig.json`）。新增根 script `typecheck:scripts` 作为 root task 实现。Coverage 改成 `turbo run coverage` 全 workspace 扫描，已经声明 `coverage` 脚本的包（workflow / tracker-gitlab）会跑，其他包 turbo no-op。
+  - **T3 typecheck outputs 补齐**：`typecheck` task 现在声明 `outputs: ["dist/.tsbuildinfo", "tsconfig.tsbuildinfo"]`，让所有 composite + `incremental` 包（packages/*）和 dashboard（`incremental: true` + `tsc --noEmit` 会写 `tsconfig.tsbuildinfo`）的增量信息能被 cache 还原；命中后第二轮 typecheck 18 task 里 15 个直接 cache hit，1s 左右完成。
+  - **T4 `globalDependencies` 声明顶层共享配置**：`tsconfig.base.json`、`eslint.config.mjs`、`.prettierrc`、`.prettierignore`、`.npmrc` 改动现在会让所有 task 缓存失效，避免改 lint/format 规则后 cache hit 不复跑。
+  - **T5 严格模式 env 声明**：`globalEnv: ["NODE_ENV", "CI"]` + `globalPassThroughEnv: ["HOME", "USERPROFILE"]`，让 turbo strict env mode 下 `packages/workspace/src/mirror.ts` 读 `process.env["HOME"]`、CI 上跑 task 时仍能拿到必要变量；`GITLAB_TOKEN` 限定在 `//#test:smoke` 的 `env` 里（任务级声明，命中时显式 hash），既不污染全局也保证 smoke runtime 可读。
+  - **T6 turbo.json 加 `$schema`**：指向 `https://turbo.build/schema.json` 让编辑器能自动校验配置。
+  - **顺手修复** `scripts/smoke.ts` 的 `waitForChild` 签名：原来 `child: ReturnType<typeof execa>` 在 execa 9 + `exactOptionalPropertyTypes: true` 下推断出 `ResultPromise<具体options>` 跟 `ResultPromise<Options>` 不兼容，typecheck 一直红；改成 `<T extends PromiseLike<unknown> & { kill(signal: NodeJS.Signals): boolean }>(child: T, ...)` 结构化签名，配合 `Promise.resolve(child)` 拿到可 `.then().catch()` 的 promise 引用，函数语义不变。
+  - **未做但 skill 推荐过的项**：transit-nodes 模式不引入。当前 `typecheck` 任务跑 `tsc --noEmit`，配合 monorepo TS Project References 需要上游 `dist/*.d.ts` 真实存在才能解析跨包类型，因此保留 `dependsOn: ["^build"]`；如果后续把跨包路径解析改成 source-mode（`paths` 直接指 `src/`），可以再引入 transit 让 typecheck 并行。
+
 ### Added
 
 - 2026-05-13 — **README 增加项目亮点、Symphony 对比与 Roadmap 三块内容（中英文同步）。** 用户反馈现有 README 缺少"产品价值 hook"和"未来计划"的入口，借机把 fork 与原项目的边界也讲清楚。涉及 `README.md` / `README.zh-CN.md` 三处增量、`CHANGELOG.md` 一处记录，无代码改动；`git diff --check` 通过。

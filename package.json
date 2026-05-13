@@ -9,9 +9,10 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "test": "turbo run test && pnpm test:smoke",
-    "coverage": "pnpm --filter @issuepilot/workflow coverage && pnpm --filter @issuepilot/tracker-gitlab coverage",
-    "typecheck": "turbo run typecheck && tsc -p scripts/tsconfig.json",
+    "test": "turbo run test test:smoke",
+    "coverage": "turbo run coverage",
+    "typecheck": "turbo run typecheck typecheck:scripts",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
