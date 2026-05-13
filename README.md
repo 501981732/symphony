@@ -206,13 +206,12 @@ pnpm --filter @issuepilot/workflow test
 pnpm --filter @issuepilot/orchestrator test
 ```
 
-The CLI is still being wired for full daemon execution. After building, the
-current scaffolded checks can be exercised through the orchestrator package:
+After building, the CLI can be exercised from the workspace root:
 
 ```bash
 pnpm build
-node apps/orchestrator/dist/cli.js doctor
-node apps/orchestrator/dist/cli.js validate --workflow path/to/workflow.md
+pnpm exec issuepilot doctor
+pnpm exec issuepilot validate --workflow path/to/workflow.md
 ```
 
 ## Workflow File

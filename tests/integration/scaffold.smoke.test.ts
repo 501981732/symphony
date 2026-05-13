@@ -20,6 +20,12 @@ describe("monorepo scaffold smoke", () => {
     expect((pkg.engines as Record<string, string>).node).toBe(">=22 <23");
   });
 
+  it("root workspace links the orchestrator CLI bin for pnpm exec", () => {
+    const pkg = readJson("package.json");
+    const devDependencies = pkg.devDependencies as Record<string, string>;
+    expect(devDependencies["@issuepilot/orchestrator"]).toBe("workspace:*");
+  });
+
   it("pnpm-workspace.yaml registers apps/packages/tests", () => {
     const raw = readFileSync(resolve(root, "pnpm-workspace.yaml"), "utf8");
     const cfg = YAML.parse(raw) as { packages: string[] };
