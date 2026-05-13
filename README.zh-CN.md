@@ -2,12 +2,35 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+> 开发项目管理常常需要监督编码代理：盯任务进度、催 PR、查 CI 状态、来回手动
+> 协调验收，效率被切碎在一次次"代理报告进度"上。
+>
+> **IssuePilot 把项目工作转化为隔离的自主实现 run，让团队回到管理工作本身，
+> 而不是监督编码代理。** 每个 GitLab Issue 都会被转成一次有边界的 run：独立
+> worktree、独立 prompt、独立事件流、可审计的工作证明，最终以 Merge Request
+> 的形式交付给人工 Review，而不是让工程师在每一轮 agent 对话里轮值。
+
 IssuePilot 是一个开源的本地 AI 工程调度器，用 GitLab Issue 驱动 Codex
 实现工作。
 
 它会监听 GitLab Issue，通过 label 认领任务，创建隔离的 git worktree，
 通过 app-server 协议运行 Codex，记录可审计事件轨迹，并把结果以 Merge
 Request 的形式交给人工 Review。
+
+### 核心亮点
+
+- **Issue 驱动的工作认领**：监听 GitLab Issue 看板，自动认领带 `ai-ready`
+  label 的 Issue 并生成隔离 run，工程师无需逐条派发。
+- **完整的工作证明**：每次 run 输出 CI 状态、MR 描述与 review 链接、reconciliation
+  事件流、JSONL event store 与 dashboard timeline，关键节点可追溯、可回放。
+- **可信交付边界**：失败 / 阻塞自动落到 `ai-failed` / `ai-blocked`，workspace
+  与日志原地保留供取证；secret 不会泄露到日志、事件、API 响应或 prompt。
+- **本地单机闭环**:`~/.issuepilot` 下落盘的 worktree + JSONL + run record，
+  daemon 重启可恢复 reconciliation，不依赖外部数据库。
+- **与 harness engineering 互补**：面向已经做好 agent harness 的成熟项目使用
+  ——IssuePilot 负责调度与隔离，仓库内 `.agents/workflow.md` 描述提示词与策略。
+- **公开 SPEC + 参考实现**:`SPEC.md` 与 Symphony Elixir 参考实现保留在仓库
+  内，便于团队按需要自建其他语言版本。
 
 本项目起源于 OpenAI Symphony 的 fork。当前产品方向是 TypeScript 优先、
 GitLab 优先；原 Symphony spec 和 Elixir 实现仍保留在仓库中，作为参考材料。
@@ -29,6 +52,36 @@ Issue Tracker 当作控制平面：
 - 人类 Review MR，而不是盯着每一轮 agent 会话。
 
 P0 的目标是跑通本地单机闭环，不是提供托管的多租户服务。
+
+## 与 OpenAI Symphony 的异同
+
+IssuePilot 起源于 OpenAI Symphony 的 fork，因此 **整体架构思路是一脉相承
+的**：都把 Issue Tracker 当作控制平面、都用 per-issue workspace 隔离 agent、
+都通过 Codex app-server 协议执行实现工作、都把工作流策略以仓库内文件的形式
+做版本化、都通过 ticket / 文件系统驱动重启恢复，而不是依赖外部数据库。
+
+差异主要发生在**目标场景**与**实现选择**：
+
+| 维度          | OpenAI Symphony（参考实现，Elixir）              | IssuePilot（本仓库的产品方向）                                                |
+| ------------- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| 定位          | 公开的 prototype，鼓励 fork 自建加固版           | 公司内部的 P0 生产方向，目标是落地到内部工程团队日常使用                      |
+| Issue Tracker | Linear                                           | GitLab（Group Access Token / Personal Token，本地 SaaS / Self-managed 都支持）|
+| 状态机表达    | 基于 Linear issue **status**（state-based）      | 基于 GitLab **label**（`ai-ready` / `ai-running` / `human-review` / …）       |
+| 工作流契约    | `WORKFLOW.md`（仓库根）                          | `.agents/workflow.md`（YAML front matter + Markdown prompt）                  |
+| 实现语言      | Elixir / OTP                                     | TypeScript / Node.js 22 LTS                                                   |
+| 运行形态      | 单进程 Elixir 服务 + 可选 status surface         | orchestrator（Fastify daemon）+ 只读 Next.js dashboard（Tailwind/shadcn）     |
+| 工作区策略    | 每 Issue 独立 workspace                          | bare mirror + git worktree（`~/.issuepilot/{repos,workspaces,state}`）        |
+| 事件 / 日志   | 结构化日志 + 可选 status surface                 | JSONL event store + 原子 run record + SSE 实时流 + pino structured logging    |
+| MR/PR 处理    | 由 agent 通过 workflow 内的 tools 自行 push / 写 | adapter 直接 push / 创建 MR，并提供 orchestrator post-run reconciliation 兜底 |
+| 重启恢复      | tracker + 文件系统驱动                           | label 状态 + workpad note marker（`<!-- issuepilot:run=<runId> -->`）驱动     |
+| 安全姿态      | 实现自行声明 trust posture                       | 拒绝 `danger-full-access` sandbox、token 全链路 redact、Codex cwd 限定 worktree |
+| 公开 SPEC     | `SPEC.md` v1 (language-agnostic)                 | `SPEC.md` 保留为参考；产品 spec 见 `docs/superpowers/specs/`                  |
+| 当前状态      | 评估用 prototype，建议自行加固后使用             | P0 active development，已跑通 fake E2E 与真实 GitLab smoke                    |
+
+如果你需要的是 Linear + Elixir 路线的参考实现，请直接看
+[`elixir/`](elixir/README.md) 与 [`SPEC.md`](SPEC.md)。如果你需要的是
+GitLab + TypeScript 路线、并打算在内部团队范围内试运行，那么本仓库根目录
+的 IssuePilot 实现就是你要的版本。
 
 ## 当前状态
 
@@ -224,10 +277,74 @@ P0 的重要边界：
 合并前仍然需要 Review 生成的代码。IssuePilot 创建的是可 Review 的 Merge
 Request，不替代代码审查。
 
+## Roadmap
+
+下面是 IssuePilot 的版本路线图。完整内容以
+[`docs/superpowers/specs/2026-05-11-issuepilot-design.md`](docs/superpowers/specs/2026-05-11-issuepilot-design.md)
+§20 为准；本节只做摘要，便于先快速判断"现在能用到什么、未来会扩到哪里"。
+
+### V1 / P0 — 本地单机闭环（当前阶段）
+
+进行中，部分能力已经在仓库内可用：
+
+- ✅ 本地 daemon（orchestrator）+ Fastify HTTP API + SSE。
+- ✅ GitLab Issue label 驱动的状态机（`ai-ready` → `ai-running` →
+  `human-review` / `ai-failed` / `ai-blocked` / `ai-rework`）。
+- ✅ Codex app-server runner（thread/turn 生命周期 + 14 类标准化事件）。
+- ✅ bare mirror + git worktree workspace，失败 run 现场保留。
+- ✅ MR 自动创建/更新 + 持久 workpad note + fallback note 兜底。
+- ✅ 只读 Next.js dashboard（overview + run detail + SSE timeline）。
+- ✅ fake GitLab + fake Codex 全闭环 E2E + 真实 GitLab smoke runbook。
+- 🚧 公开 package、版本化 release、安装/升级路径。
+
+### V2 — 团队可运营版本
+
+目标：从"个人单机"升级到"团队共享"，能在内网或团队机器上跑日常工作。
+
+- 部署到团队共享机器或内网服务（multi-user 友好）。
+- 单 daemon 支持多项目 workflow 配置。
+- 并发从 1 扩展到 2–5，配套槽位调度与租约策略。
+- dashboard 增加基础操作：`retry`、`stop`、`archive run`。
+- CI 状态读取 + CI 失败自动回流到 `ai-rework`。
+- PR / MR review feedback sweep（把人工 review 评论喂回下一轮 agent）。
+- 更完整的运行报告：diff summary、测试结果、风险点、耗时分解。
+- workspace 清理与保留策略（按时间 / 大小 / 状态分级）。
+
+### V3 — 生产化执行平台
+
+目标：可以作为内部"AI 工程执行平台"运行，具备权限、预算、可观测性。
+
+- 多 worker 支持：本机、SSH worker、容器 worker 可插拔。
+- Docker / Kubernetes sandbox（替代单机 sandbox 模型）。
+- token / 时长 / 并发 / 成本预算控制。
+- 权限模型：项目级、团队级、管理员级。
+- Webhook + poll 混合调度，减少轮询延迟。
+- 更强的 GitLab 审计 + 全链路 secret redaction。
+- Postgres / SQLite 持久化 run history（替代 JSONL 单机存储）。
+- OpenTelemetry / Loki / Grafana 或内部观测平台集成。
+
+### V4 — 智能研发工作台
+
+目标：超越"单 Issue 单 run"的模型，做面向研发流程的智能工作台。
+
+- 自动拆分大 Issue 为子任务，子任务之间编排执行。
+- 跨 Issue 的依赖与 blocker 分析。
+- 多 agent 协作 + 独立 reviewer agent。
+- 自动生成验收材料：截图、录屏、Playwright walkthrough video。
+- agent 成功率、返工率、CI 通过率、review 命中率等质量指标。
+- workflow / skills 推荐与持续改进闭环。
+- 支持更多执行器，例如 Claude Code 或内部 coding agent。
+
+> Roadmap 内容会随实际进展调整，每次较大变更都会同步更新 design spec 和
+> `CHANGELOG.md`，请以 spec 为准。
+
 ## 文档
 
-- [IssuePilot design spec](docs/superpowers/specs/2026-05-11-issuepilot-design.md)
-- [IssuePilot implementation plan](docs/superpowers/plans/2026-05-11-issuepilot-implementation-plan.md)
+- **[使用指南（中文）](docs/getting-started.zh-CN.md)** — 第一次跑 IssuePilot？从这里开始。30 分钟内跑通你第一个 ai-ready Issue 的端到端流程。
+- [Getting Started (English)](docs/getting-started.md) — 英文版使用指南。
+- [IssuePilot 真实 Smoke Runbook](docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md) — 真实 GitLab + Codex 的端到端验证清单。
+- [IssuePilot design spec](docs/superpowers/specs/2026-05-11-issuepilot-design.md) — 架构、协议、状态机细节。
+- [IssuePilot implementation plan](docs/superpowers/plans/2026-05-11-issuepilot-implementation-plan.md) — 8 Phase 实施计划与 Task 清单。
 - [Original Symphony spec](SPEC.md)
 - [Elixir reference implementation](elixir/README.md)
 
