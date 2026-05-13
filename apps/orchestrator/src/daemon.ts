@@ -238,10 +238,10 @@ export async function startDaemon(
   const gitlab = deps.createGitLab
     ? deps.createGitLab(workflow)
     : createGitLabAdapter({
-        baseUrl: workflow.tracker.baseUrl,
-        projectId: workflow.tracker.projectId,
-        tokenEnv: workflow.tracker.tokenEnv,
-      });
+      baseUrl: workflow.tracker.baseUrl,
+      projectId: workflow.tracker.projectId,
+      tokenEnv: workflow.tracker.tokenEnv,
+    });
 
   const publishEvent = (event: {
     type: string;
@@ -256,8 +256,8 @@ export async function startDaemon(
     const issueIid =
       existing?.issueIid ??
       (typeof run?.["issue"] === "object" &&
-      run["issue"] !== null &&
-      "iid" in run["issue"]
+        run["issue"] !== null &&
+        "iid" in run["issue"]
         ? Number((run["issue"] as { iid: unknown }).iid)
         : undefined);
     if (!issueIid || !Number.isFinite(issueIid)) return;
@@ -405,16 +405,16 @@ export async function startDaemon(
       const run = state.getRun(runId);
       const issue = run?.["issue"] as
         | {
-            id?: string | undefined;
-            iid: number;
-            title: string;
-            url: string;
-            projectId: string;
-            description?: string | undefined;
-            labels?: string[] | undefined;
-            author?: string | undefined;
-            assignees?: string[] | undefined;
-          }
+          id?: string | undefined;
+          iid: number;
+          title: string;
+          url: string;
+          projectId: string;
+          description?: string | undefined;
+          labels?: string[] | undefined;
+          author?: string | undefined;
+          assignees?: string[] | undefined;
+        }
         | undefined;
       if (!issue) throw new Error(`Run not found or missing issue: ${runId}`);
 
@@ -628,6 +628,6 @@ export async function validateWorkflow(
 }
 
 export async function checkCodexAppServer(): Promise<string> {
-  const result = await execaCommand("codex app-server --version");
+  const result = await execa("codex", ["--version"]);
   return result.stdout.trim() || "available";
 }
