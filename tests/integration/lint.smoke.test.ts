@@ -50,7 +50,16 @@ describe("eslint + prettier scaffold", () => {
   it("eslint runs across packages/apps with zero warnings", async () => {
     const result = await execa(
       "pnpm",
-      ["exec", "eslint", "--max-warnings", "0", "packages", "apps", "tests"],
+      [
+        "exec",
+        "eslint",
+        "--max-warnings",
+        "0",
+        "packages",
+        "apps",
+        "tests",
+        "scripts",
+      ],
       { cwd: root, reject: false },
     );
     expect(result.exitCode, result.stdout + result.stderr).toBe(0);

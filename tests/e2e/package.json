@@ -1,0 +1,28 @@
+{
+  "name": "@issuepilot/tests-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint . --max-warnings 0"
+  },
+  "devDependencies": {
+    "@issuepilot/observability": "workspace:*",
+    "@issuepilot/orchestrator": "workspace:*",
+    "@issuepilot/runner-codex-app-server": "workspace:*",
+    "@issuepilot/shared-contracts": "workspace:*",
+    "@issuepilot/tracker-gitlab": "workspace:*",
+    "@issuepilot/workflow": "workspace:*",
+    "@issuepilot/workspace": "workspace:*",
+    "@gitbeaker/rest": "^43.8.0",
+    "@types/node": "^25.6.2",
+    "execa": "^9.6.1",
+    "fastify": "^5.8.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.4"
+  }
+}

@@ -112,4 +112,118 @@ describe("ensureMirror", () => {
       }),
     ).rejects.toThrow();
   });
+
+  // Regression for the production bug fixed in Phase 8: the bare mirror
+  // produced by `git clone --mirror` left `remote.origin.mirror=true` in
+  // the local config, which makes any later `git push origin <refspec>`
+  // call die with "--mirror cannot be used with refspecs". The fix unsets
+  // the flag and installs an explicit fetch refspec; these two assertions
+  // pin both invariants in place so future refactors of `ensureMirror`
+  // cannot silently regress.
+  it("clears remote.origin.mirror and supports refspec push (regression)", async () => {
+    const result = await ensureMirror({
+      repoUrl: `file://${originRepoPath}`,
+      projectSlug: "regression",
+      repoCacheRoot,
+    });
+
+    const mirrorFlag = execaSync(
+      "git",
+      ["--git-dir", result.mirrorPath, "config", "--get", "remote.origin.mirror"],
+      { reject: false },
+    );
+    expect(mirrorFlag.exitCode).not.toBe(0);
+
+    const fetchRefspec = execaSync("git", [
+      "--git-dir",
+      result.mirrorPath,
+      "config",
+      "--get",
+      "remote.origin.fetch",
+    ]);
+    expect(fetchRefspec.stdout.trim()).toBe("+refs/heads/*:refs/heads/*");
+
+    // Set up a worktree off the migrated mirror, mutate it, and push the
+    // change back via a refspec. This is the exact code path that used to
+    // fail with "--mirror cannot be used with refspecs".
+    const worktreeDir = path.join(tmpDir, "worktree");
+    fs.mkdirSync(worktreeDir);
+    execaSync("git", [
+      "--git-dir",
+      result.mirrorPath,
+      "worktree",
+      "add",
+      "-B",
+      "feature/refspec-push",
+      worktreeDir,
+      "main",
+    ]);
+    execaSync("git", ["config", "user.email", "ci@issuepilot.local"], {
+      cwd: worktreeDir,
+    });
+    execaSync("git", ["config", "user.name", "issuepilot-ci"], {
+      cwd: worktreeDir,
+    });
+    fs.writeFileSync(path.join(worktreeDir, "regression.txt"), "fixed\n");
+    execaSync("git", ["add", "regression.txt"], { cwd: worktreeDir });
+    execaSync("git", ["commit", "-m", "regression: refspec push"], {
+      cwd: worktreeDir,
+    });
+    const push = execaSync(
+      "git",
+      ["push", "origin", "feature/refspec-push"],
+      { cwd: worktreeDir, reject: false },
+    );
+    expect(push.exitCode).toBe(0);
+    expect(push.stderr ?? "").not.toMatch(/mirror cannot be used with refspecs/);
+  });
+
+  // Regression for the upgrade path: an existing cache that was originally
+  // created with the old `git clone --mirror` (no flag-strip) must be
+  // migrated in place on the next `ensureMirror` call. Without this, users
+  // on the previous IssuePilot release would have to manually `rm -rf
+  // ~/.issuepilot/repos/<slug>` after upgrading.
+  it("migrates a legacy cache that still has remote.origin.mirror=true", async () => {
+    // Create a "legacy" cache by cloning with --mirror and leaving the
+    // flag in place (i.e. the pre-fix behaviour).
+    const mirrorPath = path.join(repoCacheRoot, "legacy.git");
+    fs.mkdirSync(repoCacheRoot, { recursive: true });
+    execaSync("git", [
+      "clone",
+      "--mirror",
+      `file://${originRepoPath}`,
+      mirrorPath,
+    ]);
+
+    const beforeFlag = execaSync("git", [
+      "--git-dir",
+      mirrorPath,
+      "config",
+      "--get",
+      "remote.origin.mirror",
+    ]);
+    expect(beforeFlag.stdout.trim()).toBe("true");
+
+    await ensureMirror({
+      repoUrl: `file://${originRepoPath}`,
+      projectSlug: "legacy",
+      repoCacheRoot,
+    });
+
+    const afterFlag = execaSync(
+      "git",
+      ["--git-dir", mirrorPath, "config", "--get", "remote.origin.mirror"],
+      { reject: false },
+    );
+    expect(afterFlag.exitCode).not.toBe(0);
+
+    const refspec = execaSync("git", [
+      "--git-dir",
+      mirrorPath,
+      "config",
+      "--get",
+      "remote.origin.fetch",
+    ]);
+    expect(refspec.stdout.trim()).toBe("+refs/heads/*:refs/heads/*");
+  });
 });

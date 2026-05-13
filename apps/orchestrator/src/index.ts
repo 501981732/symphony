@@ -41,5 +41,6 @@ export {
   startDaemon,
   validateWorkflow,
   checkCodexAppServer,
+  splitCommand,
 } from "./daemon.js";
 export { buildCli, type CliDeps } from "./cli.js";

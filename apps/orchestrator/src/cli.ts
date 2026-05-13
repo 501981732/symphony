@@ -41,11 +41,22 @@ export function buildCli(deps: CliDeps = {}): Command {
     .description("Start the orchestrator daemon")
     .requiredOption("--workflow <path>", "Path to workflow file")
     .option("--port <number>", "HTTP API port", "4738")
+    .option(
+      "--host <host>",
+      "HTTP API bind address (default 127.0.0.1; use 0.0.0.0 for container/remote smoke runs)",
+      "127.0.0.1",
+    )
     .action(async (opts) => {
       const workflowPath = path.resolve(opts.workflow);
       const port = parsePort(opts.port);
       if (port === null) {
         console.error(`Error: invalid port: ${opts.port}`);
+        process.exitCode = 1;
+        return;
+      }
+      const host = typeof opts.host === "string" ? opts.host.trim() : "";
+      if (!host) {
+        console.error("Error: --host must not be empty");
         process.exitCode = 1;
         return;
       }
@@ -56,7 +67,7 @@ export function buildCli(deps: CliDeps = {}): Command {
       }
       let handle: DaemonHandle;
       try {
-        handle = await daemonStarter({ workflowPath, port });
+        handle = await daemonStarter({ workflowPath, port, host });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`Error: failed to start daemon: ${message}`);

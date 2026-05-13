@@ -49,11 +49,18 @@ Implemented in this repository:
   HTTP API, SSE, and CLI scaffolding.
 - Read-only dashboard with overview and run detail views, SSE refresh, timeline,
   tool calls, and log tail rendering.
+- End-to-end test harness (`tests/e2e`) with a stateful fake GitLab + scriptable
+  fake Codex app-server, covering the happy path, retry path
+  (`turn/timeout` → ai-failed after `max_attempts`), failure path
+  (`turn/failed` → ai-failed + workpad failure note), permission/escalation path
+  (claim 401/403 → ai-blocked + `claim_failed` event), and approval auto-approve
+  path. 34 e2e cases run in ~10s.
+- Real GitLab smoke runbook + `pnpm smoke` wrapper that boots the orchestrator,
+  polls `/api/state` until ready, prints API + dashboard URLs, and forwards
+  SIGINT/SIGTERM with a hard 5s SIGKILL escalation.
 
 Still stabilizing:
 
-- The end-to-end daemon bootstrap.
-- Real GitLab plus real Codex smoke documentation.
 - Public packaging and versioned releases.
 
 ## How It Works

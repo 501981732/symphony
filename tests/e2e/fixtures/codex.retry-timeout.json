@@ -1,0 +1,21 @@
+[
+  {
+    "expect": "initialize",
+    "respond": {
+      "result": { "serverInfo": { "name": "fake-codex", "version": "0.0.0" } }
+    }
+  },
+  { "expect": "initialized" },
+  {
+    "expect": "thread/start",
+    "respond": { "result": { "threadId": "t1" } }
+  },
+  {
+    "expect": "turn/start",
+    "respond": { "result": { "turnId": "u1" } }
+  },
+  {
+    "notify": "turn/timeout",
+    "params": { "turnId": "u1", "reason": "fake-codex induced timeout" }
+  }
+]
