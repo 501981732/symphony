@@ -7,5 +7,5 @@
   },
   "references": [{ "path": "../shared-contracts" }],
   "include": ["src/**/*.ts"],
-  "exclude": ["**/*.test.ts", "dist/**"]
+  "exclude": ["**/*.test.ts", "**/__tests__/**", "dist/**"]
 }
