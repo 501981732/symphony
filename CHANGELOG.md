@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-13 — **README 增加项目亮点、Symphony 对比与 Roadmap 三块内容（中英文同步）。** 用户反馈现有 README 缺少"产品价值 hook"和"未来计划"的入口，借机把 fork 与原项目的边界也讲清楚。涉及 `README.md` / `README.zh-CN.md` 三处增量、`CHANGELOG.md` 一处记录，无代码改动；`git diff --check` 通过。
+  - **顶部 hook + Highlights**：在 IssuePilot 简介前加一段 blockquote 风格的痛点 + 价值主张（"把项目工作转化为隔离的自主实现 run，让团队回到管理工作本身，而不是监督编码代理"），紧随其后新增 6 条 `### 核心亮点 / Highlights` 列表，覆盖 Issue 驱动认领、工作证明（CI / MR / reconciliation / event store / dashboard）、可信交付边界（fail-blocked + workspace 取证 + secret redact）、本地单机闭环、与 harness engineering 的互补关系、SPEC + Elixir 参考实现的开放属性。中英文版本术语保持一致（`run` / `worktree` / `MR` / `Codex app-server` 等不翻译）。
+  - **「与 OpenAI Symphony 的异同」对比小节**：放在「为什么需要 IssuePilot？/ Why IssuePilot?」与「当前状态 / Current Status」之间。先用一段说明强调"整体架构思路是一脉相承"（Issue Tracker = 控制平面、per-issue workspace、Codex app-server 协议、repo-owned workflow、tracker + 文件系统驱动恢复），再用 13 行对比表列出定位 / Issue Tracker / 状态机表达 / 工作流契约 / 实现语言 / 运行形态 / 工作区策略 / 事件日志 / MR-PR 处理 / 重启恢复 / 安全姿态 / 公开 SPEC / 当前状态 13 个维度的差异，末尾给出"选 Linear+Elixir 看 `elixir/` 与 `SPEC.md`，选 GitLab+TypeScript 看仓库根目录 IssuePilot 实现"的导航句。
+  - **Roadmap 小节**：放在「安全模型 / Security Model」与「文档 / Documentation」之间，基于 `docs/superpowers/specs/2026-05-11-issuepilot-design.md` §20 的 V1–V4 路线图改写，但加上 P0 完成度 emoji（✅ / 🚧）和已落地能力的引用（Fastify daemon / 14 类标准化事件 / dashboard SSE / fake E2E + smoke runbook）。V2 团队可运营版本（多项目 workflow、2–5 并发、dashboard retry/stop/archive、CI 自动回流 ai-rework、review feedback sweep、运行报告、workspace 清理）、V3 生产化平台（多 worker + 容器 sandbox + 预算 + 权限 + webhook + 观测平台 + Postgres）、V4 智能工作台（拆分子任务、跨 Issue 依赖、多 agent + reviewer、walkthrough video、质量指标、workflow 推荐、更多 runners）。末尾标注"以 design spec 为准，路线图随实际进展调整"。
+
+- 2026-05-13 — **新增 IssuePilot 中英文使用指南。** 落地两份产品视角的 Getting Started 文档（不是 smoke runbook 的复制），告诉首次使用者「装好以后该怎么用」：
+  - `docs/getting-started.zh-CN.md` 中文版（12 章 ~430 行）：环境要求、GitLab label/token/SSH 准备、`.agents/workflow.md` 字段说明（含 `token_env` / `active_labels` / `branch_prefix` / `max_attempts` / `approval_policy` / sandbox 限制 / `poll_interval_ms` 7 个要点表）、`pnpm exec issuepilot doctor|validate|run` + `pnpm smoke` 启动流程、第一个 ai-ready Issue 全链路时间线（11 个 IssuePilotEvent 类型）、6 个 label 状态的处理动作、失败 workspace 取证（`.issuepilot/failed-at-*` + JSONL event store + `issuepilot.log`）、hot reload / retry 分类（blocked vs failed vs retryable）/ approval policy / hooks / 容器多机 / 并发 6 个高级用法、CLI cheat sheet + HTTP API 端点、7 条 FAQ（codex 路径 / mirror push / GitLab 401/403 / dashboard CORS / smoke readiness 5s SIGKILL / note runId marker / cancel run）。
+  - `docs/getting-started.md` 英文版（完整 1:1 翻译，保持术语、命令、路径与中文版一致）。
+  - 在 `README.md` 与 `README.zh-CN.md` 的 Documentation 章节顶部新增明显入口，并补充了 smoke runbook、design spec、implementation plan 三条链接的描述说明，让"先打开哪份文档"的认知负担降到最低。
+  - 文档以"实操路径"组织（环境 → GitLab → workflow.md → daemon → first run → label semantics → forensics → advanced → CLI → FAQ → next steps），区别于 spec/runbook 的"逐项验收"组织方式。
+
 ### Fixed
 
 - 2026-05-13 — **IssuePilot Phase 8 code-review 修复合集（M8 加固版）。** 处理 [phase-8 review](docs/superpowers/specs/2026-05-11-issuepilot-design.md) 列出的 7 个 Important + 9 个 Minor 问题，外加一个根因级 bug 修复，e2e 从 28 用例扩到 34 用例并保持全绿。验证：`pnpm -w turbo run build test lint typecheck` 40 个 task 全绿（orchestrator 89 单测、tests-e2e 34 e2e、workspace 40 单测）。
