@@ -145,6 +145,7 @@ describe("CLI", () => {
     expect(startDaemon).toHaveBeenCalledWith({
       workflowPath: wfPath,
       port: 4738,
+      host: "127.0.0.1",
     });
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining("daemon ready"),

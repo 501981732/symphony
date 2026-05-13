@@ -10,6 +10,7 @@ import {
 type DaemonHandle = Awaited<ReturnType<typeof startDaemon>>;
 
 import { listBranches } from "./fakes/git/repo.js";
+import { pickFreePort } from "./helpers/net.js";
 import {
   createE2EWorkspace,
   E2E_TOKEN,
@@ -67,10 +68,12 @@ describe("happy path E2E", () => {
   it("claims an ai-ready issue, runs codex, pushes a branch, opens an MR, writes a note and hands off", async () => {
     if (!ws) throw new Error("workspace not initialised");
 
-    // Pick a deterministic high port for each run to avoid clashing with the
-    // daemon's default 4738; can't rely on `port: 0` because the daemon
-    // reports the requested port verbatim in its `url`.
-    const port = 17_000 + Math.floor(Math.random() * 1_000);
+    const startedAt = performance.now();
+
+    // Use a free OS-assigned port instead of a random number from a fixed
+    // band. The daemon reports `host:port` verbatim in `url`, so we can't
+    // pass `port: 0` and read the bound port back.
+    const port = await pickFreePort();
     daemon = await startDaemon(
       { workflowPath: ws.workflowPath, port },
       { startLoop: withFastPoll },
@@ -123,9 +126,11 @@ describe("happy path E2E", () => {
     expect(runs.length).toBeGreaterThanOrEqual(1);
     const firstRun = runs[0];
     if (!firstRun) throw new Error("expected at least one run");
-    expect(
-      ["completed", "running", "human-review"].includes(firstRun.status),
-    ).toBe(true);
+    // Wait for the run to flip to `completed` — the dispatch path always
+    // ends with `state.setRun(..., status: "completed")` after reconcile,
+    // so anything other than that means the lifecycle stalled. Avoid the
+    // overly broad accept-list which used to mask real regressions.
+    await waitForCompletedRun(daemon.url, firstRun.runId);
 
     // Step 7: event store contains the spec §10 happy-path event types.
     const stateRes = await fetch(`${daemon.url}/api/state`);
@@ -148,5 +153,32 @@ describe("happy path E2E", () => {
       eventTypes.has("codex_tool_call_started") ||
         eventTypes.has("codex_tool_call_completed"),
     ).toBe(true);
-  }, 60_000);
+
+    // plan §Phase 8 验收清单：happy path 在本机 ≤ 30s。我们让 vitest
+    // 的 testTimeout 留 30s，然后这里再补一道软上限断言，便于在 CI
+    // 上回放性能回归 — 一旦超过 25s 立刻定位 root cause（poll 间隔
+    // 加长？多打了一次 fetch？hook 慢了？）。
+    const elapsedMs = performance.now() - startedAt;
+    expect(elapsedMs).toBeLessThan(25_000);
+  }, 30_000);
 });
+
+async function waitForCompletedRun(
+  daemonUrl: string,
+  runId: string,
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${daemonUrl}/api/runs`);
+    if (res.ok) {
+      const list = (await res.json()) as Array<{
+        runId: string;
+        status: string;
+      }>;
+      const found = list.find((r) => r.runId === runId);
+      if (found?.status === "completed") return;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error(`waitForCompletedRun: run ${runId} did not reach completed`);
+}

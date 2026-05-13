@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 2026-05-13 — **IssuePilot Phase 8 code-review 修复合集（M8 加固版）。** 处理 [phase-8 review](docs/superpowers/specs/2026-05-11-issuepilot-design.md) 列出的 7 个 Important + 9 个 Minor 问题，外加一个根因级 bug 修复，e2e 从 28 用例扩到 34 用例并保持全绿。验证：`pnpm -w turbo run build test lint typecheck` 40 个 task 全绿（orchestrator 89 单测、tests-e2e 34 e2e、workspace 40 单测）。
+  - **根因 bug** — `apps/orchestrator/src/orchestrator/classify.ts`：`classifyError` 之前先看 `"status" in err` 把所有带 HTTP 状态码的 `GitLabError` 一律分到运行时 outcome 分支返回 `kind: "failed"`，把 401/403 永久降级成可"重试再失败"的普通 failed，违反 spec §21.12 escalation。修复改为：先按 `name + category` 走 typed error 分支，再按 `typeof status === "string"` 守卫 runner outcome 分支；新增 2 个回归单测覆盖 `GitLabError + status:403` 和 `+ status:401` 必须被分类为 `kind: "blocked"`。
+  - **Important #1** — claim 阶段 401/403 现在能正确升级到 `ai-blocked`：`packages/core/src/orchestrator/claim.ts` `ClaimInput` 加 `onClaimError` 回调；`apps/orchestrator/src/daemon.ts` 在 `claim()` 里挂钩——失败时 `classifyError` 是 `blocked` 才生成 synthetic runId、`runIndex` 注册、best-effort 推 `ai-blocked` label、发布带 `iid/kind/code/labelTransitioned/targetLabel` 的 `claim_failed` 事件。两条 e2e（"escalates ai-blocked" + "permanently denied 不动 label 但仍发事件"）覆盖 ai-blocked 升级路径与永久 403 兜底路径。
+  - **Important #2** — retry 路径有了真实 e2e 覆盖：新增 `tests/e2e/fixtures/codex.retry-timeout.json`（连续两次 `turn/timeout` 让 spec §13 retryable 生效），`tests/e2e/fixtures/workflow.fake.md.tpl` 加 `__MAX_ATTEMPTS__` / `__TURN_TIMEOUT_MS__` 模板变量并把 `before_run` hook 的 `git commit` 改幂等（`git diff --cached --quiet || git commit ...`）以承受重试；`tests/e2e/helpers/workspace.ts` 把 `maxAttempts` / `turnTimeoutMs` option 透出。新增 e2e 断言 `run.attempt === 2` + `run.status === "failed"` + `retry_scheduled` 事件存在。
+  - **Important #3 + Minor #M3** — `packages/workspace/src/mirror.ts` 抽出 `migrateMirrorClone` 并在「首次 clone」与「复用已有 mirror」两条路径都跑一次，确保用旧版 cache 升级上来的镜像也能正确 `git push origin <refspec>`；fetch 的注释明确「显式 `--prune origin` 而不是 mirror-fetch all-refs」原因，避免后续误改。
+  - **Important #4** — `packages/workspace/src/mirror.test.ts` 加两个回归测试：① `clone --mirror` 之后 `remote.origin.mirror` 必须被 unset 且 `git push origin <refspec>` 成功；② 模拟「老版本遗留 cache（remote.origin.mirror=true）」场景，`ensureMirror` 必须把它修复掉。
+  - **Important #5** — `tests/e2e/helpers/net.ts` 新增 `pickFreePort()`（`net.createServer().listen(0)` 拿真实 free port，避免 `Math.random` 端口冲突），`happy-path.test.ts` 与 `blocked-and-failed.test.ts` 全部改用。
+  - **Important #6 + Minor #M6** — `tests/e2e/happy-path.test.ts` 把 `it` timeout 收紧到 30s 并加 `performance.now()` 运行时断言（`<25_000ms`）；新增 `waitForCompletedRun` helper 把 `run.status` 严格断言到 `"completed"`（不再放过 `"reconciling" | "retrying"` 等中间态）。
+  - **Important #7 + Minor #M9** — `tests/e2e/fakes/codex/script.ts` 实现 `ScriptRequestStep.expectResponse` 校验：`kind: "result"` 时收到 error 报错，`kind: "error"` 时收到 result 也报错；`tests/e2e/fakes/codex/script.test.ts` 加 3 个用例（result-OK / result-with-error-rejected / error-with-result-rejected）。同时把内部 `pendingToolCalls` 改名 `pendingServerRequests`（Minor #M4），因为它同时承载 `tool_call` 与 `request` 两类 server-request。
+  - **Minor #M1** — `tests/integration/smoke-runner.test.ts` 把"propagates JSON shape errors as fatal"重命名为「resolves immediately on a minimal valid ready response」，并新增「malformed JSON 继续轮询」「缺少 service 字段继续轮询」两个用例（之前的名字与实现含义不一致）。
+  - **Minor #M2** — `tests/e2e/fakes/gitlab/server.ts` 新增 `pathMatchesFault()`，要求 `url === prefix || startsWith(prefix + "/") || startsWith(prefix + "?")`，避免 `/issues/12` 的 fault 误中 `/issues/120` 或 `/issues/12/notes`；`server.test.ts` 加专项断言。
+  - **Minor #M5** — `apps/orchestrator/src/daemon.ts` 把 `splitCommand` 提取并 `export`，新实现支持单/双引号包裹（路径含空格也能用），完成 spec §16 命令解析；`tests/e2e/helpers/workspace.ts` 也加了控制字符防御性校验，防止假 codex 命令路径里塞奇怪字符。新增 `apps/orchestrator/src/daemon.test.ts` 7 个 splitCommand 单测覆盖空串/未配对引号/混合 quoting。
+  - **Minor #M7** — `scripts/smoke.ts` 新增 `waitForChild(child, ms)`：readiness 失败 SIGTERM 后再等 5s，超时升级 SIGKILL，避免 daemon 不退出导致 wrapper 卡死。
+  - **Minor #M8** — `apps/orchestrator/src/cli.ts` `run` 子命令新增 `--host <host>` option 透传到 `startDaemon`，`scripts/smoke.ts` 把 `--host` 真正传给 daemon；`apps/orchestrator/src/cli.test.ts` 更新断言；`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md` "常见问题" 节同步说明。
+  - **Recommendation #1** — 新增 `tests/e2e/helpers/run-until-label.ts` 抽出"启动 daemon → 等 label 出现"的通用 pattern，让后续场景测试少写半屏样板代码。
+  - 配套：`apps/orchestrator/src/index.ts` 导出 `splitCommand`；publishEvent 在 ENOENT（teardown 期 workspace 已删）时静默，保留其他错误的 `console.error`，让 e2e 输出更干净。
+
 ### Added
 
 - 2026-05-12 — **IssuePilot P0 Phase 8（M8 端到端验证）完成。** 用 fake GitLab + fake Codex app-server 跑通 spec §18.2 全闭环，并提供 spec §18.3 真实 GitLab smoke runbook。验证：`pnpm -w turbo run build test typecheck lint` 全绿；`tests/e2e` 7 个测试文件 28 个 case 全绿（含 happy-path + 3 个失败/blocked 路径）；`pnpm smoke` 真实启动 daemon → ready → SIGINT 关停一次本地烟测通过。涵盖 5 个 Task：

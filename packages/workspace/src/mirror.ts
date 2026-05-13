@@ -24,7 +24,44 @@ function expandHome(p: string): string {
 }
 
 /**
+ * Strip the mirror flag from a clone and install an explicit fetch refspec
+ * so subsequent `git push origin <refspec>` calls do not trip git's
+ * "--mirror cannot be used with refspecs" guard.
+ *
+ * This is safe to run repeatedly:
+ *   - `git config --unset-all` is a no-op when the key is already absent;
+ *   - `git config remote.origin.fetch <refspec>` overwrites any existing
+ *     value, so the second invocation is idempotent.
+ *
+ * IssuePilot only pushes branch refs from worktrees; we deliberately do
+ * NOT mirror `refs/tags/*` or `refs/notes/*` because the orchestrator
+ * never produces or consumes them. Operators relying on tag mirroring
+ * should adjust the refspec or pre-push tags manually.
+ */
+async function migrateMirrorClone(mirrorPath: string): Promise<void> {
+  await execa("git", [
+    "--git-dir",
+    mirrorPath,
+    "config",
+    "--unset-all",
+    "remote.origin.mirror",
+  ]).catch(() => undefined);
+  await execa("git", [
+    "--git-dir",
+    mirrorPath,
+    "config",
+    "remote.origin.fetch",
+    "+refs/heads/*:refs/heads/*",
+  ]);
+}
+
+/**
  * Clone a bare mirror if it doesn't exist, or fetch --prune if it does.
+ *
+ * Engineers who installed IssuePilot before the mirror-flag fix landed will
+ * have `remote.origin.mirror=true` baked into their existing cache. The
+ * `else` branch below detects + migrates those caches in place so the
+ * upgrade path works without `rm -rf ~/.issuepilot/repos`.
  */
 export async function ensureMirror(
   input: EnsureMirrorInput,
@@ -44,27 +81,15 @@ export async function ensureMirror(
 
   if (!exists) {
     await execa("git", ["clone", "--mirror", input.repoUrl, mirrorPath]);
-    // `git clone --mirror` sets `remote.origin.mirror=true`, which would
-    // refuse any `git push origin <refspec>` we issue later (git emits
-    // "--mirror cannot be used with refspecs"). We still want the mirror to
-    // hold every remote ref locally, but we also want refspec-aware pushes
-    // from worktrees, so we drop the flag and install an explicit catch-all
-    // fetch refspec to preserve mirror-like behaviour on subsequent fetches.
-    await execa("git", [
-      "--git-dir",
-      mirrorPath,
-      "config",
-      "--unset-all",
-      "remote.origin.mirror",
-    ]).catch(() => undefined);
-    await execa("git", [
-      "--git-dir",
-      mirrorPath,
-      "config",
-      "remote.origin.fetch",
-      "+refs/heads/*:refs/heads/*",
-    ]);
+    await migrateMirrorClone(mirrorPath);
   } else {
+    // The pre-fix cache has `remote.origin.mirror=true`. If we leave that in
+    // place, the next `git push origin <refspec>` from a worktree will fail
+    // with "--mirror cannot be used with refspecs". `git config --get`
+    // exits 1 when the key is missing, so a successful exit means we need
+    // to migrate; we run the migration unconditionally either way because
+    // it is idempotent.
+    await migrateMirrorClone(mirrorPath);
     await execa("git", ["--git-dir", mirrorPath, "fetch", "--prune", "origin"]);
   }
 

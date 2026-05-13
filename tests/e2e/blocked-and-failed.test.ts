@@ -7,6 +7,8 @@ import {
   type LoopHandle,
 } from "@issuepilot/orchestrator";
 
+import { pickFreePort } from "./helpers/net.js";
+import { waitForEvent } from "./helpers/sse.js";
 import {
   createE2EWorkspace,
   E2E_TOKEN,
@@ -64,7 +66,7 @@ describe("failure and blocked classifications E2E", () => {
         },
       ],
     });
-    const port = 17_000 + Math.floor(Math.random() * 1_000);
+    const port = await pickFreePort();
     daemon = await startDaemon(
       { workflowPath: ws.workflowPath, port },
       { startLoop: withFastPoll },
@@ -89,9 +91,9 @@ describe("failure and blocked classifications E2E", () => {
     );
     expect(failureNote).toBeDefined();
     expect(failureNote?.body).toMatch(/Kind/);
-  }, 45_000);
+  }, 30_000);
 
-  it("labels the issue ai-blocked without retrying when GitLab returns 403", async () => {
+  it("escalates the issue into ai-blocked when GitLab returns 403 on claim", async () => {
     const ISSUE_IID = 12;
     ws = await createE2EWorkspace({
       codexScriptFixture: "codex.happy.json",
@@ -99,14 +101,94 @@ describe("failure and blocked classifications E2E", () => {
         {
           iid: ISSUE_IID,
           title: "Permission denied scenario",
-          description: "Permission failure should not retry.",
+          description:
+            "Claim PUT fails once — orchestrator should push to ai-blocked.",
           labels: ["ai-ready"],
         },
       ],
     });
 
-    // Inject a permission failure that fires the next time the daemon tries
-    // to transition labels (i.e. during claim).
+    // Fail just the FIRST PUT against this issue (the claim transition).
+    // The follow-up best-effort PUT into ai-blocked is allowed to succeed,
+    // which matches the spec §21.12 expectation that blocked issues land
+    // in `ai-blocked` rather than getting silently re-polled.
+    ws.gitlabServer.injectFault({
+      pathPrefix: `/api/v4/projects/${encodeURIComponent(ws.projectId)}/issues/${ISSUE_IID}`,
+      method: "PUT",
+      status: 403,
+      body: { message: "403 Forbidden" },
+      consume: 1,
+    });
+
+    const port = await pickFreePort();
+    daemon = await startDaemon(
+      { workflowPath: ws.workflowPath, port },
+      { startLoop: withFastPoll },
+    );
+
+    // Subscribe to the SSE stream BEFORE the claim tick can run (the
+    // orchestrator polls every 100ms via withFastPoll). The SSE channel
+    // only delivers events that arrive AFTER the subscribe call, and the
+    // synthetic claim runId is an internal detail not exposed via the
+    // persisted /api/events endpoint, so we have to race the subscribe
+    // ahead of the first claim attempt.
+    const claimFailedPromise = waitForEvent(
+      daemon.url,
+      (e) => {
+        const ev = e as { type: string; iid?: number };
+        return ev.type === "claim_failed" && ev.iid === ISSUE_IID;
+      },
+      { timeoutMs: 10_000 },
+    );
+
+    await ws.gitlabServer.waitFor(
+      (s) => {
+        const issue = s.issues.get(ISSUE_IID);
+        return !!issue && issue.labels.includes("ai-blocked");
+      },
+      { timeoutMs: 10_000, intervalMs: 50 },
+    );
+
+    const issue = ws.gitlabState.issues.get(ISSUE_IID);
+    if (!issue) throw new Error("issue gone");
+    expect(issue.labels).toContain("ai-blocked");
+    expect(issue.labels).not.toContain("ai-ready");
+    expect(issue.labels).not.toContain("ai-running");
+    expect(issue.labels).not.toContain("human-review");
+
+    // The orchestrator did not retry the failed claim; no run record was
+    // ever created because the claim never acquired a slot.
+    const runs = daemon.state.listRuns();
+    for (const r of runs) {
+      expect(r.attempt).toBeLessThanOrEqual(1);
+    }
+
+    const claimFailed = (await claimFailedPromise) as {
+      type: string;
+      iid?: number;
+      kind?: string;
+      labelTransitioned?: boolean;
+    };
+    expect(claimFailed.kind).toBe("blocked");
+    expect(claimFailed.labelTransitioned).toBe(true);
+  }, 30_000);
+
+  it("emits claim_failed without changing labels when permissions are permanently denied", async () => {
+    const ISSUE_IID = 15;
+    ws = await createE2EWorkspace({
+      codexScriptFixture: "codex.happy.json",
+      issues: [
+        {
+          iid: ISSUE_IID,
+          title: "Permanent permission denial",
+          description: "Every PUT against the issue is rejected.",
+          labels: ["ai-ready"],
+        },
+      ],
+    });
+
+    // Both the claim PUT AND the follow-up ai-blocked PUT will fail. We
+    // still want a `claim_failed` event so operators see the attempt.
     ws.gitlabServer.injectFault({
       pathPrefix: `/api/v4/projects/${encodeURIComponent(ws.projectId)}/issues/${ISSUE_IID}`,
       method: "PUT",
@@ -115,36 +197,88 @@ describe("failure and blocked classifications E2E", () => {
       consume: 99,
     });
 
-    const port = 17_000 + Math.floor(Math.random() * 1_000);
+    const port = await pickFreePort();
     daemon = await startDaemon(
       { workflowPath: ws.workflowPath, port },
       { startLoop: withFastPoll },
     );
 
-    // Allow several tick cycles so the daemon has tried (and failed) to
-    // claim the issue at least once. With every PUT to issues/12 returning
-    // 403, the claim path itself trips. Two ticks at 250ms = 500ms minimum
-    // — give a comfortable margin to absorb fastify boot + first claim.
-    await new Promise((r) => setTimeout(r, 2_000));
+    await waitForEvent(daemon.url, (e) => {
+      const ev = e as { type: string; iid?: number };
+      return ev.type === "claim_failed" && ev.iid === ISSUE_IID;
+    });
 
     const issue = ws.gitlabState.issues.get(ISSUE_IID);
     if (!issue) throw new Error("issue gone");
-    // The agent never made progress: no running, no handoff.
-    expect(issue.labels).not.toContain("human-review");
-    expect(issue.labels).not.toContain("ai-running");
-    // The label stays `ai-ready` until permissions are restored — this is
-    // the expected outcome of a permission-denied claim. The orchestrator
-    // does NOT push it into `ai-blocked` because no run record was ever
-    // created (the PUT to add `ai-running` failed first).
     expect(issue.labels).toContain("ai-ready");
+    expect(issue.labels).not.toContain("ai-blocked");
+    expect(issue.labels).not.toContain("ai-running");
 
-    // No retries happened despite the failure: either zero run records
-    // (claim never succeeded) or a single record with attempt === 1.
     const runs = daemon.state.listRuns();
     for (const r of runs) {
       expect(r.attempt).toBeLessThanOrEqual(1);
     }
-  }, 45_000);
+  }, 30_000);
+
+  it("retries once on a retryable failure and finally lands on ai-failed", async () => {
+    // Spec §13: a `retryable` outcome (turn/timeout) must drive one retry
+    // when `agent.max_attempts > 1`, then surface as `ai-failed` once the
+    // retry budget is exhausted. We use turn/timeout (not turn/failed)
+    // because spec §13 classifies hard `failed` outcomes as non-retryable;
+    // only timeout / transient / rate_limit go through `scheduleRetry`.
+    const ISSUE_IID = 14;
+    ws = await createE2EWorkspace({
+      codexScriptFixture: "codex.retry-timeout.json",
+      maxAttempts: 2,
+      issues: [
+        {
+          iid: ISSUE_IID,
+          title: "Retry-then-fail scenario",
+          description: "Forces a retry and a final failure.",
+          labels: ["ai-ready"],
+        },
+      ],
+    });
+
+    const port = await pickFreePort();
+    daemon = await startDaemon(
+      { workflowPath: ws.workflowPath, port },
+      { startLoop: withFastPoll },
+    );
+
+    await ws.gitlabServer.waitFor(
+      (s) => {
+        const issue = s.issues.get(ISSUE_IID);
+        return !!issue && issue.labels.includes("ai-failed");
+      },
+      { timeoutMs: 15_000, intervalMs: 50 },
+    );
+
+    const issue = ws.gitlabState.issues.get(ISSUE_IID);
+    if (!issue) throw new Error("issue gone after waitFor");
+    expect(issue.labels).toContain("ai-failed");
+    expect(issue.labels).not.toContain("ai-running");
+
+    // The dispatch loop scheduled exactly one retry (attempt=1 → retrying
+    // → dispatch attempt=2 → dispatch_failed). After the second timeout,
+    // the run record's attempt counter should sit at 2 with status=failed.
+    const runs = daemon.state.listRuns();
+    expect(runs).toHaveLength(1);
+    const run = runs[0]!;
+    expect(run.attempt).toBe(2);
+    expect(run.status).toBe("failed");
+
+    // The event store must contain at least one `retry_scheduled` event
+    // for that run, proving the retry path actually fired.
+    const eventsRes = await fetch(
+      `${daemon.url}/api/events?runId=${encodeURIComponent(run.runId)}&limit=200`,
+    );
+    expect(eventsRes.ok).toBe(true);
+    const events = (await eventsRes.json()) as Array<{ type: string }>;
+    const types = events.map((e) => e.type);
+    expect(types.filter((t) => t === "retry_scheduled").length).toBe(1);
+    expect(types.filter((t) => t === "dispatch_failed").length).toBe(1);
+  }, 30_000);
 
   it("auto-approves codex approval requests under approval_policy=never", async () => {
     const ISSUE_IID = 13;
@@ -160,7 +294,7 @@ describe("failure and blocked classifications E2E", () => {
       ],
     });
 
-    const port = 17_000 + Math.floor(Math.random() * 1_000);
+    const port = await pickFreePort();
     daemon = await startDaemon(
       { workflowPath: ws.workflowPath, port },
       { startLoop: withFastPoll },
@@ -185,8 +319,16 @@ describe("failure and blocked classifications E2E", () => {
       `${daemon.url}/api/events?runId=${encodeURIComponent(firstRun.runId)}&limit=200`,
     );
     expect(eventsRes.ok).toBe(true);
-    const eventsBody = (await eventsRes.json()) as Array<{ type: string }>;
+    const eventsBody = (await eventsRes.json()) as Array<{
+      type: string;
+      data?: { decision?: string };
+    }>;
     const types = new Set(eventsBody.map((e) => e.type));
     expect(types.has("codex_approval_auto_approved")).toBe(true);
-  }, 45_000);
+
+    // The fake-codex script declared `expectResponse: { kind: "result" }`
+    // for the approval request. The script engine now enforces that
+    // contract: any error response would have aborted runScript and the
+    // run would never have reached `human-review`.
+  }, 30_000);
 });

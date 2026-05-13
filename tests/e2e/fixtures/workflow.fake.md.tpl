@@ -23,13 +23,13 @@ agent:
   runner: codex-app-server
   max_concurrent_agents: 1
   max_turns: 2
-  max_attempts: 1
+  max_attempts: __MAX_ATTEMPTS__
   retry_backoff_ms: 100
 codex:
   command: __CODEX_CMD__
   approval_policy: never
   thread_sandbox: workspace-write
-  turn_timeout_ms: 15000
+  turn_timeout_ms: __TURN_TIMEOUT_MS__
   turn_sandbox_policy:
     type: workspaceWrite
 hooks:
@@ -39,7 +39,11 @@ hooks:
     git config user.name "issuepilot-ci"
     echo "CHANGELOG updated by IssuePilot" > CHANGELOG_AI.md
     git add CHANGELOG_AI.md
-    git commit -m "feat: ai changelog entry"
+    # Idempotent commit: skip when nothing changed (e.g. on retry the file
+    # already matches HEAD). Without this `git commit` would exit non-zero
+    # and the hook would surface as `HookFailedError`, masking the actual
+    # failure path under test.
+    git diff --cached --quiet || git commit -m "feat: ai changelog entry"
 poll_interval_ms: 1000
 ---
 Issue: {{ issue.identifier }}

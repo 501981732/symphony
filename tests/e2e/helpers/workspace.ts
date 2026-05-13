@@ -51,6 +51,18 @@ export interface CreateE2EWorkspaceOptions {
   issues?: SeedIssueInput[];
   codexScriptFixture: string;
   workflowTemplate?: string;
+  /**
+   * Override `agent.max_attempts` in the rendered workflow. Defaults to `1`
+   * to match the spec §6 example. Tests that exercise the retry loop should
+   * bump this to `2` or higher.
+   */
+  maxAttempts?: number;
+  /**
+   * Override `codex.turn_timeout_ms` in the rendered workflow. Defaults to
+   * 15 000 ms. Tests that synthetically time out a turn (to drive the retry
+   * path) want a much smaller value (~500 ms) so the e2e finishes quickly.
+   */
+  turnTimeoutMs?: number;
 }
 
 export async function createE2EWorkspace(
@@ -78,6 +90,20 @@ export async function createE2EWorkspace(
   );
   writeFileSync(codexScriptPath, fixtureScript);
 
+  // The daemon's `splitCommand` now understands single + double quotes, so
+  // any path containing spaces (`HOME="/Users/User Name"` etc.) survives.
+  // Surface a clear error for surprising whitespace classes that the
+  // tokenizer doesn't yet handle (control chars), instead of letting the
+  // daemon explode obscurely.
+  for (const piece of [TSX_BIN, FAKE_CODEX_MAIN, codexScriptPath]) {
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000-\u001f]/.test(piece)) {
+      throw new Error(
+        `createE2EWorkspace: command path contains control character: ${JSON.stringify(piece)}`,
+      );
+    }
+  }
+
   const workflowPath = join(tmpRoot, "workflow.fake.md");
   const tplName = opts.workflowTemplate ?? "workflow.fake.md.tpl";
   const tpl = readFileSync(join(FIXTURES, tplName), "utf8");
@@ -90,7 +116,9 @@ export async function createE2EWorkspace(
     .replaceAll("__WORKSPACE_ROOT__", workspaceRoot)
     .replaceAll("__REPO_CACHE_ROOT__", repoCacheRoot)
     .replaceAll("__REPO_URL__", bareRepo.bareDir)
-    .replaceAll("__CODEX_CMD__", codexCmd);
+    .replaceAll("__CODEX_CMD__", codexCmd)
+    .replaceAll("__MAX_ATTEMPTS__", String(opts.maxAttempts ?? 1))
+    .replaceAll("__TURN_TIMEOUT_MS__", String(opts.turnTimeoutMs ?? 15_000));
   writeFileSync(workflowPath, rendered);
 
   return {

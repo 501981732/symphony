@@ -8,22 +8,11 @@ const BLOCKED_CATEGORIES = new Set(["auth", "permission"]);
 const RETRYABLE_CATEGORIES = new Set(["transient", "rate_limit"]);
 
 export function classifyError(err: unknown): Classification {
-  if (err && typeof err === "object" && "status" in err) {
-    const outcome = err as { status: string; reason?: string };
-    if (outcome.status === "timeout") {
-      return {
-        kind: "retryable",
-        reason: outcome.reason ?? "turn timed out",
-        code: "turn_timeout",
-      };
-    }
-    return {
-      kind: "failed",
-      reason: outcome.reason ?? outcome.status,
-      code: `runner_${outcome.status}`,
-    };
-  }
-
+  // Named typed errors first — these carry more structure than the runner
+  // outcome shape and can shadow it (e.g. `GitLabError` also has a numeric
+  // `.status`, but we want it routed by `.category`, not by the lifecycle
+  // status branch below). Order matters: do the typed-error branches
+  // BEFORE the runner-outcome branch.
   if (err instanceof Error || (err && typeof err === "object" && "name" in err)) {
     const e = err as Error & { category?: string; name: string };
 
@@ -53,7 +42,47 @@ export function classifyError(err: unknown): Classification {
       return { kind: "blocked", reason: e.message, code: "workflow_config" };
     }
 
-    return { kind: "failed", reason: e.message, code: "unknown" };
+    // Fall through to the runner-outcome branch below for shape-only
+    // discriminated objects (the lifecycle re-throws plain `{ status:
+    // "timeout" | "failed" | ... }` records that have no `.name`).
+    if (typeof e.name !== "string" || e.name === "Error") {
+      // Plain Error or no name — fall through to runner outcome check.
+    } else if (
+      typeof (err as { status?: unknown }).status !== "string"
+    ) {
+      // Anything else with a non-string status is NOT a runner outcome;
+      // bail out as a generic failed.
+      return {
+        kind: "failed",
+        reason: e.message,
+        code: "unknown",
+      };
+    }
+  }
+
+  if (
+    err &&
+    typeof err === "object" &&
+    "status" in err &&
+    typeof (err as { status: unknown }).status === "string"
+  ) {
+    const outcome = err as { status: string; reason?: string };
+    if (outcome.status === "timeout") {
+      return {
+        kind: "retryable",
+        reason: outcome.reason ?? "turn timed out",
+        code: "turn_timeout",
+      };
+    }
+    return {
+      kind: "failed",
+      reason: outcome.reason ?? outcome.status,
+      code: `runner_${outcome.status}`,
+    };
+  }
+
+  if (err instanceof Error) {
+    return { kind: "failed", reason: err.message, code: "unknown" };
   }
 
   return { kind: "failed", reason: String(err), code: "unknown" };

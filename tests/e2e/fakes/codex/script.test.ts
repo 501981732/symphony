@@ -170,4 +170,64 @@ describe("runScript", () => {
       error: { code: -32000, message: "boom" },
     });
   });
+
+  it("request + expectResponse=result accepts a result reply", async () => {
+    const steps: ScriptStep[] = [
+      {
+        request: { method: "item/commandExecution/requestApproval" },
+        expectResponse: { kind: "result" },
+      },
+    ];
+    const { io, send, end, written, awaitWritten } = createTestIO();
+    const done = runScript(steps, io);
+    await awaitWritten(1);
+    const sent = written[0]?.value as Record<string, unknown>;
+    send({
+      jsonrpc: "2.0",
+      id: sent["id"],
+      result: { decision: "accept" },
+    });
+    end();
+    await done;
+  });
+
+  it("request + expectResponse=result rejects an error reply", async () => {
+    const steps: ScriptStep[] = [
+      {
+        request: { method: "item/commandExecution/requestApproval" },
+        expectResponse: { kind: "result" },
+      },
+    ];
+    const { io, send, end, written, awaitWritten } = createTestIO();
+    const done = runScript(steps, io);
+    await awaitWritten(1);
+    const sent = written[0]?.value as Record<string, unknown>;
+    send({
+      jsonrpc: "2.0",
+      id: sent["id"],
+      error: { code: -32000, message: "denied" },
+    });
+    end();
+    await expect(done).rejects.toThrow(/expected a result but received error/i);
+  });
+
+  it("request + expectResponse=error rejects an unexpected result", async () => {
+    const steps: ScriptStep[] = [
+      {
+        request: { method: "item/commandExecution/requestApproval" },
+        expectResponse: { kind: "error" },
+      },
+    ];
+    const { io, send, end, written, awaitWritten } = createTestIO();
+    const done = runScript(steps, io);
+    await awaitWritten(1);
+    const sent = written[0]?.value as Record<string, unknown>;
+    send({
+      jsonrpc: "2.0",
+      id: sent["id"],
+      result: { decision: "accept" },
+    });
+    end();
+    await expect(done).rejects.toThrow(/expected an error but received result/i);
+  });
 });

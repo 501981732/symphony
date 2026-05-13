@@ -50,9 +50,16 @@ export interface ScriptRequestStep {
     method: string;
     params?: unknown;
   };
-  /** Optional callback to inspect the response while the script runs. */
+  /**
+   * When set, `runScript` enforces that the runner's response carries the
+   * declared shape. Mismatches throw — letting fixtures encode "this
+   * approval request must be auto-approved" or "this tool call must error"
+   * as protocol-level contracts rather than out-of-band documentation.
+   *
+   * `kind: "result"` rejects if `response.error` is present.
+   * `kind: "error"` rejects if `response.error` is missing.
+   */
   expectResponse?: {
-    /** Either "result" or "error" — used purely for documentation. */
     kind: "result" | "error";
   };
 }
@@ -103,8 +110,10 @@ export async function runScript(
 ): Promise<void> {
   // Tool-call IDs use their own counter so they cannot collide with client ids.
   let serverRequestId = 100_000;
-  // Cache pending server-request ids so we can route their responses.
-  const pendingToolCalls = new Map<
+  // Cache pending server-request ids so we can route their responses. Both
+  // `tool_call` and `request` steps live here — the name reflects "any
+  // outbound server-request awaiting a reply", not just tool calls.
+  const pendingServerRequests = new Map<
     number,
     {
       resolve: (msg: JsonRpcMessage) => void;
@@ -144,11 +153,11 @@ export async function runScript(
     if (
       typeof parsed.id === "number" &&
       parsed.method === undefined &&
-      pendingToolCalls.has(parsed.id)
+      pendingServerRequests.has(parsed.id)
     ) {
-      const waiter = pendingToolCalls.get(parsed.id);
+      const waiter = pendingServerRequests.get(parsed.id);
       if (waiter) {
-        pendingToolCalls.delete(parsed.id);
+        pendingServerRequests.delete(parsed.id);
         waiter.resolve(parsed);
       }
       return { kind: "routed" };
@@ -218,17 +227,17 @@ export async function runScript(
         },
       };
       const responsePromise = new Promise<JsonRpcMessage>((resolve, reject) => {
-        pendingToolCalls.set(id, { resolve, reject });
+        pendingServerRequests.set(id, { resolve, reject });
       });
       io.writeLine(JSON.stringify(payload));
       // Pump messages until the matching response arrives. Routed messages
       // (the response we want) end the loop; regular messages get queued so
       // the next `expect` can consume them.
-      while (pendingToolCalls.has(id)) {
+      while (pendingServerRequests.has(id)) {
         const outcome = await readOne();
         if (outcome.kind === "eof") {
-          if (pendingToolCalls.has(id)) {
-            pendingToolCalls.delete(id);
+          if (pendingServerRequests.has(id)) {
+            pendingServerRequests.delete(id);
             throw new Error(
               `tool_call ${step.tool_call.tool} did not receive a response before EOF`,
             );
@@ -253,14 +262,14 @@ export async function runScript(
         payload["params"] = step.request.params;
       }
       const responsePromise = new Promise<JsonRpcMessage>((resolve, reject) => {
-        pendingToolCalls.set(id, { resolve, reject });
+        pendingServerRequests.set(id, { resolve, reject });
       });
       io.writeLine(JSON.stringify(payload));
-      while (pendingToolCalls.has(id)) {
+      while (pendingServerRequests.has(id)) {
         const outcome = await readOne();
         if (outcome.kind === "eof") {
-          if (pendingToolCalls.has(id)) {
-            pendingToolCalls.delete(id);
+          if (pendingServerRequests.has(id)) {
+            pendingServerRequests.delete(id);
             throw new Error(
               `request ${step.request.method} did not receive a response before EOF`,
             );
@@ -271,7 +280,20 @@ export async function runScript(
           queued.push(outcome.value);
         }
       }
-      await responsePromise;
+      const response = await responsePromise;
+      if (step.expectResponse) {
+        const hasError = response.error !== undefined && response.error !== null;
+        if (step.expectResponse.kind === "result" && hasError) {
+          throw new Error(
+            `request ${step.request.method} expected a result but received error: ${JSON.stringify(response.error)}`,
+          );
+        }
+        if (step.expectResponse.kind === "error" && !hasError) {
+          throw new Error(
+            `request ${step.request.method} expected an error but received result: ${JSON.stringify(response.result)}`,
+          );
+        }
+      }
     } else {
       // exhaustive
       const _never: never = step;

@@ -33,7 +33,7 @@ import {
 import { execa, execaCommand } from "execa";
 
 import { claimCandidates } from "./orchestrator/claim.js";
-import type { Classification } from "./orchestrator/classify.js";
+import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
 import { startLoop } from "./orchestrator/loop.js";
 import { reconcile } from "./orchestrator/reconcile.js";
@@ -107,12 +107,69 @@ function toEventRecord(event: {
   };
 }
 
-function splitCommand(command: string): { command: string; args: string[] } {
-  const parts = command.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) {
+/**
+ * Tokenize a `codex.command` string into `{ command, args[] }`. Supports
+ * single + double quoted segments so paths containing spaces survive the
+ * trip from the workflow YAML through to `execa`. Without this, an absolute
+ * path like `/Users/User Name/.local/bin/codex` would be split into three
+ * tokens by the previous `split(/\s+/)` and `execa` would try to spawn
+ * `/Users/User`.
+ *
+ * Rules (intentionally a subset of POSIX shell):
+ *   - Whitespace separates tokens.
+ *   - `"…"` and `'…'` create a single token; the surrounding quotes are
+ *     stripped. Escapes are NOT honoured inside quotes — keep paths simple.
+ *   - Unbalanced quotes throw, matching the bash behaviour of refusing to
+ *     execute the line.
+ */
+export function splitCommand(command: string): {
+  command: string;
+  args: string[];
+} {
+  const trimmed = command.trim();
+  if (trimmed.length === 0) {
     throw new Error("codex.command must not be empty");
   }
-  const [cmd, ...args] = parts;
+  const tokens: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let inToken = false;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const ch = trimmed[i]!;
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      inToken = true;
+      continue;
+    }
+    if (ch === " " || ch === "\t" || ch === "\n") {
+      if (inToken) {
+        tokens.push(current);
+        current = "";
+        inToken = false;
+      }
+      continue;
+    }
+    current += ch;
+    inToken = true;
+  }
+  if (quote) {
+    throw new Error(
+      `codex.command has an unbalanced ${quote} quote: ${command}`,
+    );
+  }
+  if (inToken) tokens.push(current);
+  if (tokens.length === 0) {
+    throw new Error("codex.command must not be empty");
+  }
+  const [cmd, ...args] = tokens;
   return { command: cmd!, args };
 }
 
@@ -209,6 +266,12 @@ export async function startDaemon(
     void eventStore
       .append(key.projectSlug, key.issueIid, record)
       .catch((err) => {
+        // ENOENT can fire during teardown if the workspace dir was
+        // removed between scheduling the publish and flushing it. Silence
+        // that specific case to keep test output clean; everything else
+        // is still surfaced for diagnostics.
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT") return;
         console.error(err);
       });
   };
@@ -288,6 +351,50 @@ export async function startDaemon(
           workflow.tracker.failedLabel,
           workflow.tracker.blockedLabel,
         ],
+        onClaimError: async ({ issue, error }) => {
+          // Spec §21.12 says blocked issues must surface as `ai-blocked`
+          // (not silently re-polled). When a permission/auth error trips
+          // the claim transition we cannot acquire a slot, but we can:
+          //   1. emit a `claim_failed` event so the dashboard sees it;
+          //   2. best-effort push the label into `ai-blocked` so the
+          //      issue exits the active-label set and stops getting polled.
+          const classification = classifyError(error);
+          if (classification.kind !== "blocked") return;
+
+          const syntheticRunId = randomUUID();
+          runIndex.set(syntheticRunId, runKey(workflow, issue.iid));
+
+          let labelTransitioned = false;
+          try {
+            await gitlab.transitionLabels(issue.iid, {
+              add: [workflow.tracker.blockedLabel],
+              remove: [
+                workflow.tracker.runningLabel,
+                ...workflow.tracker.activeLabels,
+              ],
+            });
+            labelTransitioned = true;
+          } catch {
+            // Both the claim transition and the blocked transition failed
+            // (e.g. the token has no PUT permission anywhere). The label
+            // stays as-is, but the `claim_failed` event below still gives
+            // operators a visible signal.
+          }
+
+          publishEvent({
+            type: "claim_failed",
+            runId: syntheticRunId,
+            ts: new Date().toISOString(),
+            detail: {
+              iid: issue.iid,
+              kind: classification.kind,
+              code: classification.code,
+              reason: classification.reason,
+              labelTransitioned,
+              targetLabel: workflow.tracker.blockedLabel,
+            },
+          });
+        },
       });
       for (const c of claimed) {
         runIndex.set(c.runId, runKey(workflow, c.issue.iid));

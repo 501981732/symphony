@@ -160,6 +160,20 @@ function nextMrIid(state: GitLabFakeState): number {
   return max + 1;
 }
 
+/**
+ * Match a request URL against a fault's path prefix. We accept the prefix
+ * itself, the prefix followed by a path separator (`/...`), and the prefix
+ * followed by a query string (`?...`). This avoids the over-match that
+ * naive `startsWith` causes — `/issues/12` would otherwise gobble up
+ * `/issues/12/notes`, `/issues/12/notes/123`, and `/issues/120`.
+ */
+function pathMatchesFault(url: string, prefix: string): boolean {
+  if (url === prefix) return true;
+  if (url.startsWith(prefix + "/")) return true;
+  if (url.startsWith(prefix + "?")) return true;
+  return false;
+}
+
 export async function startGitLabFakeServer(
   input: StartGitLabFakeServerInput,
 ): Promise<GitLabFakeServer> {
@@ -186,7 +200,7 @@ export async function startGitLabFakeServer(
       const methodMatches =
         !fault.method ||
         req.method.toUpperCase() === fault.method.toUpperCase();
-      if (methodMatches && req.url.startsWith(fault.pathPrefix)) {
+      if (methodMatches && pathMatchesFault(req.url, fault.pathPrefix)) {
         const consume = fault.consume ?? 1;
         if (consume <= 1) faults.splice(i, 1);
         else fault.consume = consume - 1;

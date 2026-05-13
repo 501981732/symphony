@@ -200,4 +200,33 @@ describe("fake GitLab server", () => {
       server.waitFor(() => false, { timeoutMs: 30, intervalMs: 5 }),
     ).rejects.toThrow(/timed out/i);
   });
+
+  it("fault injection only matches the exact path or path-prefixed children", async () => {
+    // Fault at `/issues/7` should NOT collide with `/issues/77` or
+    // `/issues/77/notes`; it should only intercept `/issues/7` itself,
+    // `/issues/7/notes`, etc.
+    const issueUrl = `/api/v4/projects/${encodeURIComponent(PROJECT_ID)}/issues/7`;
+    server.injectFault({
+      pathPrefix: issueUrl,
+      method: "GET",
+      status: 503,
+      body: { message: "fault" },
+      consume: 1,
+    });
+
+    // `/issues/77` does not exist in seed data — make sure we don't
+    // accidentally trip the fault for it. Without the precise matcher this
+    // request would have eaten the consume budget.
+    const sibling = await fetch(`${server.baseUrl}${issueUrl.replace(/7$/, "77")}`,
+      { headers: auth },
+    );
+    expect(sibling.status).toBe(404);
+
+    // Now the fault should still be armed — the next GET on /issues/7
+    // (not its sibling) is the one that gets a 503.
+    const intercepted = await fetch(`${server.baseUrl}${issueUrl}`, {
+      headers: auth,
+    });
+    expect(intercepted.status).toBe(503);
+  });
 });

@@ -79,4 +79,31 @@ describe("classifyError", () => {
     const c = classifyError({ status: "timeout", reason: "turn timed out" });
     expect(c.kind).toBe("retryable");
   });
+
+  // Regression: GitLabError carries a numeric `.status` (HTTP status code)
+  // alongside `.category`. The old classifier read `.status` first and
+  // routed every HTTP error into the runner-outcome branch as
+  // `kind: "failed"`, which silently demoted permission denials from
+  // blocked → failed and broke the spec §21.12 escalation path.
+  it("routes GitLabError by category even when it carries an HTTP status", () => {
+    const err = Object.assign(new Error("403 Forbidden"), {
+      name: "GitLabError",
+      category: "permission",
+      status: 403,
+    });
+    const c = classifyError(err);
+    expect(c.kind).toBe("blocked");
+    expect(c.code).toBe("permission");
+  });
+
+  it("routes GitLabError 401/auth as blocked even with status set", () => {
+    const err = Object.assign(new Error("401 Unauthorized"), {
+      name: "GitLabError",
+      category: "auth",
+      status: 401,
+    });
+    const c = classifyError(err);
+    expect(c.kind).toBe("blocked");
+    expect(c.code).toBe("auth");
+  });
 });

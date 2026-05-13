@@ -61,6 +61,8 @@ async function main(): Promise<number> {
       workflowAbs,
       "--port",
       String(opts.port),
+      "--host",
+      opts.apiHost,
     ],
     {
       cwd: repoRoot,
@@ -100,7 +102,10 @@ async function main(): Promise<number> {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[smoke] readiness check failed: ${message}`);
     stop("SIGTERM");
-    await child;
+    // Give the daemon up to 5s to honour SIGTERM. If the pnpm wrapper or
+    // the daemon itself swallows the signal we escalate to SIGKILL so the
+    // smoke command always returns control to the operator.
+    await waitForChild(child, 5_000);
     return 1;
   }
 
@@ -110,6 +115,39 @@ async function main(): Promise<number> {
     return result.exitCode;
   }
   return 0;
+}
+
+/**
+ * Race `await child` against a timeout. If the child has not exited within
+ * `timeoutMs` we escalate to SIGKILL so the wrapper cannot hang forever
+ * waiting on a daemon that ignored SIGTERM. Always returns once the child
+ * is fully drained.
+ */
+async function waitForChild(
+  child: ReturnType<typeof execa>,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  let timedOut = false;
+  const timeoutPromise = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, timeoutMs);
+  });
+  await Promise.race([child.then(() => undefined), timeoutPromise]);
+  if (timer) clearTimeout(timer);
+  if (timedOut) {
+    console.error(
+      `[smoke] daemon did not exit within ${timeoutMs}ms — sending SIGKILL.`,
+    );
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // ignore — child may already be gone.
+    }
+    await child.catch(() => undefined);
+  }
 }
 
 main()

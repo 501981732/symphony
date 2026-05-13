@@ -30,6 +30,18 @@ export interface ClaimInput {
   activeLabels: string[];
   runningLabel: string;
   excludeLabels: string[];
+  /**
+   * Invoked when `transitionLabels` throws while we are trying to claim an
+   * issue. The orchestrator wires this to inspect the error and, if it looks
+   * like a GitLab permission/auth failure (HTTP 401/403), escalate the issue
+   * into `ai-blocked` so it cannot be silently re-polled forever (spec §21
+   * point 12). Implementations must swallow their own errors — they run on a
+   * best-effort path inside the claim loop.
+   */
+  onClaimError?: (opts: {
+    issue: IssueRef;
+    error: unknown;
+  }) => Promise<void> | void;
 }
 
 export interface ClaimedIssue {
@@ -66,7 +78,15 @@ export async function claimCandidates(
         transitionOpts.requireCurrent = [matchedLabel];
       }
       await input.gitlab.transitionLabels(issue.iid, transitionOpts);
-    } catch {
+    } catch (err) {
+      if (input.onClaimError) {
+        try {
+          await input.onClaimError({ issue, error: err });
+        } catch {
+          // best-effort callback; never fail the claim loop because the
+          // escalation hook itself misbehaved.
+        }
+      }
       continue;
     }
 

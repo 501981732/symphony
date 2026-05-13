@@ -317,4 +317,10 @@ rm -rf ~/.issuepilot/repos/group__issuepilot-smoke
 
 - **dashboard 401 / CORS**：dashboard 走的是 `http://127.0.0.1:4738`，
   和 `--host` 必须一致。如果你跑在容器/远程机器上，临时让
-  `--host 0.0.0.0`。
+  `--host 0.0.0.0`（`pnpm smoke` 会把 `--host` 透传给 orchestrator
+  CLI 的 `--host`，daemon 会真正绑到该地址；同时记得让 dashboard 的
+  `NEXT_PUBLIC_API_BASE` 指向同一地址）。
+
+- **`pnpm smoke` 卡在 readiness 失败**：如果 readiness 探测失败，
+  smoke wrapper 会发 SIGTERM 给 daemon 然后等最多 5s。仍未退出会自动
+  升级到 SIGKILL，所以命令一定会返回控制权（不会无限 hang）。

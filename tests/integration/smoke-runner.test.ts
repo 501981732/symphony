@@ -99,7 +99,7 @@ describe("pollUntilReady", () => {
     ).rejects.toThrow(/did not report ready/i);
   });
 
-  it("propagates JSON shape errors as fatal", async () => {
+  it("resolves immediately on a minimal valid ready response", async () => {
     await expect(
       pollUntilReady("http://127.0.0.1:9/api/state", {
         timeoutMs: 80,
@@ -111,6 +111,44 @@ describe("pollUntilReady", () => {
           }),
       }),
     ).resolves.toBeTruthy();
+  });
+
+  it("keeps polling when the body shape is malformed (no service field)", async () => {
+    let attempts = 0;
+    await expect(
+      pollUntilReady("http://127.0.0.1:9/api/state", {
+        timeoutMs: 80,
+        intervalMs: 20,
+        fetch: async () => {
+          attempts += 1;
+          return new Response(JSON.stringify({ wrong: "shape" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      }),
+    ).rejects.toThrow(/did not report ready/i);
+    // Without a `service.status` we should treat the response as "not yet
+    // ready" and keep polling, not bail out on the first response.
+    expect(attempts).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps polling when the JSON itself fails to parse", async () => {
+    let attempts = 0;
+    await expect(
+      pollUntilReady("http://127.0.0.1:9/api/state", {
+        timeoutMs: 80,
+        intervalMs: 20,
+        fetch: async () => {
+          attempts += 1;
+          return new Response("not json at all", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      }),
+    ).rejects.toThrow(/did not report ready/i);
+    expect(attempts).toBeGreaterThanOrEqual(2);
   });
 });
 
