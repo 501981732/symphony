@@ -301,8 +301,7 @@ export async function startDaemon(
       }
       credential = await resolver.resolve(resolveInput);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       throw new Error(
         `Failed to resolve GitLab credentials for ${hostname}: ${message}`,
       );
@@ -337,8 +336,8 @@ export async function startDaemon(
     const issueIid =
       existing?.issueIid ??
       (typeof run?.["issue"] === "object" &&
-        run["issue"] !== null &&
-        "iid" in run["issue"]
+      run["issue"] !== null &&
+      "iid" in run["issue"]
         ? Number((run["issue"] as { iid: unknown }).iid)
         : undefined);
     if (!issueIid || !Number.isFinite(issueIid)) return;
@@ -413,10 +412,15 @@ export async function startDaemon(
           excludeLabels: string[];
         }) => {
           const issues = await gitlab.listCandidateIssues(opts);
-          return issues.map((issue) => ({
-            ...issue,
-            labels: [...issue.labels],
-          }));
+          return Promise.all(
+            issues.map(async (issue) => {
+              const fullIssue = await gitlab.getIssue(issue.iid);
+              return {
+                ...fullIssue,
+                labels: [...fullIssue.labels],
+              };
+            }),
+          );
         },
         transitionLabels: gitlab.transitionLabels,
       };
@@ -486,16 +490,16 @@ export async function startDaemon(
       const run = state.getRun(runId);
       const issue = run?.["issue"] as
         | {
-          id?: string | undefined;
-          iid: number;
-          title: string;
-          url: string;
-          projectId: string;
-          description?: string | undefined;
-          labels?: string[] | undefined;
-          author?: string | undefined;
-          assignees?: string[] | undefined;
-        }
+            id?: string | undefined;
+            iid: number;
+            title: string;
+            url: string;
+            projectId: string;
+            description?: string | undefined;
+            labels?: string[] | undefined;
+            author?: string | undefined;
+            assignees?: string[] | undefined;
+          }
         | undefined;
       if (!issue) throw new Error(`Run not found or missing issue: ${runId}`);
 

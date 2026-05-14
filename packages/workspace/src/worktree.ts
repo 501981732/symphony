@@ -65,6 +65,15 @@ async function isClean(dir: string): Promise<boolean> {
   return result.stdout.trim() === "";
 }
 
+async function hasValidHead(dir: string): Promise<boolean> {
+  try {
+    await execa("git", ["-C", dir, "rev-parse", "--verify", "HEAD"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function listBranches(mirrorPath: string): Promise<string[]> {
   const result = await execa("git", [
     "--git-dir",
@@ -103,6 +112,27 @@ async function assertBaseBranchExists(
   }
 }
 
+async function createWorktree(input: {
+  mirrorPath: string;
+  workspacePath: string;
+  branch: string;
+  baseBranch: string;
+}): Promise<void> {
+  await fs.mkdir(path.dirname(input.workspacePath), { recursive: true });
+  await assertBaseBranchExists(input.mirrorPath, input.baseBranch);
+
+  await execa("git", [
+    "--git-dir",
+    input.mirrorPath,
+    "worktree",
+    "add",
+    input.workspacePath,
+    "-B",
+    input.branch,
+    input.baseBranch,
+  ]);
+}
+
 export async function ensureWorktree(
   input: EnsureWorktreeInput,
 ): Promise<EnsureWorktreeResult> {
@@ -134,19 +164,12 @@ export async function ensureWorktree(
   }
 
   if (!exists) {
-    await fs.mkdir(path.dirname(workspacePath), { recursive: true });
-    await assertBaseBranchExists(input.mirrorPath, input.baseBranch);
-
-    await execa("git", [
-      "--git-dir",
-      input.mirrorPath,
-      "worktree",
-      "add",
+    await createWorktree({
+      mirrorPath: input.mirrorPath,
       workspacePath,
-      "-B",
       branch,
-      input.baseBranch,
-    ]);
+      baseBranch: input.baseBranch,
+    });
 
     return { workspacePath, branch, reused: false };
   }
@@ -162,6 +185,26 @@ export async function ensureWorktree(
     throw new WorkspaceDirtyError(
       `Worktree is on branch '${current}', expected '${branch}'`,
     );
+  }
+
+  if (!(await hasValidHead(workspacePath))) {
+    await execa("git", [
+      "--git-dir",
+      input.mirrorPath,
+      "worktree",
+      "remove",
+      "--force",
+      workspacePath,
+    ]);
+    await execa("git", ["--git-dir", input.mirrorPath, "worktree", "prune"]);
+    await createWorktree({
+      mirrorPath: input.mirrorPath,
+      workspacePath,
+      branch,
+      baseBranch: input.baseBranch,
+    });
+
+    return { workspacePath, branch, reused: false };
   }
 
   if (!(await isClean(workspacePath))) {
