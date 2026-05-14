@@ -110,6 +110,54 @@ describe("ensureWorktree", () => {
     expect(second.branch).toBe(first.branch);
   });
 
+  it("recreates an invalid unborn worktree for the expected branch", async () => {
+    const first = await ensureWorktree({
+      mirrorPath,
+      projectSlug: "myproject",
+      issueIid: 42,
+      titleSlug: "fix-login",
+      baseBranch: "main",
+      branchPrefix: "ai",
+      workspaceRoot,
+    });
+
+    execaSync("git", [
+      "--git-dir",
+      mirrorPath,
+      "update-ref",
+      "-d",
+      "refs/heads/ai/42-fix-login",
+    ]);
+
+    const status = execaSync("git", ["status", "--porcelain"], {
+      cwd: first.workspacePath,
+    }).stdout;
+    expect(status).toContain("README.md");
+
+    const second = await ensureWorktree({
+      mirrorPath,
+      projectSlug: "myproject",
+      issueIid: 42,
+      titleSlug: "fix-login",
+      baseBranch: "main",
+      branchPrefix: "ai",
+      workspaceRoot,
+    });
+
+    expect(second.reused).toBe(false);
+    expect(second.workspacePath).toBe(first.workspacePath);
+    expect(
+      execaSync("git", ["rev-parse", "--verify", "HEAD"], {
+        cwd: second.workspacePath,
+      }).stdout.trim(),
+    ).toMatch(/^[0-9a-f]{40}$/);
+    expect(
+      execaSync("git", ["status", "--porcelain"], {
+        cwd: second.workspacePath,
+      }).stdout.trim(),
+    ).toBe("");
+  });
+
   it("throws WorkspaceDirtyError when worktree has uncommitted changes", async () => {
     const result = await ensureWorktree({
       mirrorPath,
