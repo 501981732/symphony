@@ -269,18 +269,40 @@ async function pushBranch(cwd: string, branch: string): Promise<void> {
 async function createFailureNote(
   gitlab: GitLabAdapter,
   iid: number,
-  classification: Classification,
-  attempt: number,
+  input: {
+    runId: string;
+    branch: string;
+    classification: Classification;
+    attempt: number;
+    statusLabel: string;
+    readyLabel: string;
+  },
 ): Promise<void> {
+  const title =
+    input.classification.kind === "blocked"
+      ? "IssuePilot run blocked"
+      : "IssuePilot run failed";
   await gitlab.createIssueNote(
     iid,
     [
-      `**IssuePilot run failed** after attempt ${attempt}.`,
+      `## ${title}`,
       "",
-      `- Kind: \`${classification.kind}\``,
-      `- Reason: ${classification.reason}`,
+      `- Status: ${input.statusLabel}`,
+      `- Run: \`${input.runId}\``,
+      `- Attempt: ${input.attempt}`,
+      `- Branch: \`${input.branch}\``,
+      "",
+      "### Reason",
+      input.classification.reason,
+      "",
+      "### Next action",
+      `Address the reason above, then move this Issue back to \`${input.readyLabel}\`.`,
     ].join("\n"),
   );
+}
+
+function readyLabel(workflow: WorkflowConfig): string {
+  return workflow.tracker.activeLabels[0] ?? "ai-ready";
 }
 
 async function readLogTail(logFile: string, limit = 200): Promise<string[]> {
@@ -528,6 +550,11 @@ export async function startDaemon(
 
           const syntheticRunId = randomUUID();
           runIndex.set(syntheticRunId, runKey(workflow, issue.iid));
+          const issueBranch = branchName({
+            prefix: workflow.git.branchPrefix,
+            iid: issue.iid,
+            titleSlug: slugify(issue.title),
+          });
 
           let labelTransitioned = false;
           try {
@@ -544,6 +571,20 @@ export async function startDaemon(
             // (e.g. the token has no PUT permission anywhere). The label
             // stays as-is, but the `claim_failed` event below still gives
             // operators a visible signal.
+          }
+
+          try {
+            await createFailureNote(gitlab, issue.iid, {
+              runId: syntheticRunId,
+              branch: issueBranch,
+              classification,
+              attempt: 1,
+              statusLabel: workflow.tracker.blockedLabel,
+              readyLabel: readyLabel(workflow),
+            });
+          } catch {
+            // A token that cannot transition labels may also be unable to
+            // write notes. Keep the claim_failed event as the durable signal.
           }
 
           publishEvent({
@@ -742,7 +783,14 @@ export async function startDaemon(
               add: [label],
               remove: [workflow.tracker.runningLabel],
             });
-            await createFailureNote(gitlab, issue.iid, classification, attempt);
+            await createFailureNote(gitlab, issue.iid, {
+              runId: _failedRunId,
+              branch,
+              classification,
+              attempt,
+              statusLabel: label,
+              readyLabel: readyLabel(workflow),
+            });
           },
         },
       );

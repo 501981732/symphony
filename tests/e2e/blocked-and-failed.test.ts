@@ -87,10 +87,16 @@ describe("failure and blocked classifications E2E", () => {
 
     const notes = ws.gitlabState.notes.get(ISSUE_IID) ?? [];
     const failureNote = notes.find((n) =>
-      n.body.includes("IssuePilot run failed"),
+      n.body.includes("## IssuePilot run failed"),
     );
     expect(failureNote).toBeDefined();
-    expect(failureNote?.body).toMatch(/Kind/);
+    expect(failureNote?.body).toContain("- Status: ai-failed");
+    expect(failureNote?.body).toContain("- Run: `");
+    expect(failureNote?.body).toContain("- Attempt: 1");
+    expect(failureNote?.body).toContain("- Branch: `");
+    expect(failureNote?.body).toContain("### Reason");
+    expect(failureNote?.body).toContain("### Next action");
+    expect(failureNote?.body).toContain("move this Issue back to `ai-ready`");
   }, 30_000);
 
   it("escalates the issue into ai-blocked when GitLab returns 403 on claim", async () => {
@@ -155,6 +161,15 @@ describe("failure and blocked classifications E2E", () => {
     expect(issue.labels).not.toContain("ai-ready");
     expect(issue.labels).not.toContain("ai-running");
     expect(issue.labels).not.toContain("human-review");
+
+    const notes = ws.gitlabState.notes.get(ISSUE_IID) ?? [];
+    const blockedNote = notes.find((n) =>
+      n.body.includes("## IssuePilot run blocked"),
+    );
+    expect(blockedNote).toBeDefined();
+    expect(blockedNote?.body).toContain("- Status: ai-blocked");
+    expect(blockedNote?.body).toContain("### Reason");
+    expect(blockedNote?.body).toContain("move this Issue back to `ai-ready`");
 
     // The orchestrator did not retry the failed claim; no run record was
     // ever created because the claim never acquired a slot.
