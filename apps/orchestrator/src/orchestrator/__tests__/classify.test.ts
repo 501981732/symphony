@@ -63,6 +63,15 @@ describe("classifyError", () => {
     expect(c.kind).toBe("blocked");
   });
 
+  it("classifies WorkspaceBaseBranchError as blocked", () => {
+    const err = Object.assign(new Error("base branch missing"), {
+      name: "WorkspaceBaseBranchError",
+    });
+    const c = classifyError(err);
+    expect(c.kind).toBe("blocked");
+    expect(c.code).toBe("workspace_base_branch");
+  });
+
   it("classifies unknown errors as failed", () => {
     const err = new Error("something unexpected");
     const c = classifyError(err);

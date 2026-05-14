@@ -12,6 +12,13 @@ export class WorkspaceDirtyError extends Error {
   }
 }
 
+export class WorkspaceBaseBranchError extends Error {
+  override name = "WorkspaceBaseBranchError" as const;
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 export interface EnsureWorktreeInput {
   mirrorPath: string;
   projectSlug: string;
@@ -30,10 +37,12 @@ export interface EnsureWorktreeResult {
 
 async function isGitWorktree(dir: string): Promise<boolean> {
   try {
-    const result = await execa(
-      "git",
-      ["-C", dir, "rev-parse", "--is-inside-work-tree"],
-    );
+    const result = await execa("git", [
+      "-C",
+      dir,
+      "rev-parse",
+      "--is-inside-work-tree",
+    ]);
     return result.stdout.trim() === "true";
   } catch {
     return false;
@@ -41,16 +50,57 @@ async function isGitWorktree(dir: string): Promise<boolean> {
 }
 
 async function currentBranch(dir: string): Promise<string> {
-  const result = await execa(
-    "git",
-    ["-C", dir, "symbolic-ref", "--short", "HEAD"],
-  );
+  const result = await execa("git", [
+    "-C",
+    dir,
+    "symbolic-ref",
+    "--short",
+    "HEAD",
+  ]);
   return result.stdout.trim();
 }
 
 async function isClean(dir: string): Promise<boolean> {
   const result = await execa("git", ["-C", dir, "status", "--porcelain"]);
   return result.stdout.trim() === "";
+}
+
+async function listBranches(mirrorPath: string): Promise<string[]> {
+  const result = await execa("git", [
+    "--git-dir",
+    mirrorPath,
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/heads",
+  ]);
+
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+async function assertBaseBranchExists(
+  mirrorPath: string,
+  baseBranch: string,
+): Promise<void> {
+  try {
+    await execa("git", [
+      "--git-dir",
+      mirrorPath,
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/heads/${baseBranch}^{commit}`,
+    ]);
+  } catch {
+    const branches = await listBranches(mirrorPath);
+    const available =
+      branches.length > 0 ? branches.join(", ") : "(no local branches)";
+    throw new WorkspaceBaseBranchError(
+      `Base branch '${baseBranch}' does not exist in mirror ${mirrorPath}. Available branches: ${available}. Update git.base_branch in .agents/workflow.md or push the branch to the repository.`,
+    );
+  }
 }
 
 export async function ensureWorktree(
@@ -85,6 +135,7 @@ export async function ensureWorktree(
 
   if (!exists) {
     await fs.mkdir(path.dirname(workspacePath), { recursive: true });
+    await assertBaseBranchExists(input.mirrorPath, input.baseBranch);
 
     await execa("git", [
       "--git-dir",

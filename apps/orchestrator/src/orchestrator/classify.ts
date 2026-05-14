@@ -13,7 +13,10 @@ export function classifyError(err: unknown): Classification {
   // `.status`, but we want it routed by `.category`, not by the lifecycle
   // status branch below). Order matters: do the typed-error branches
   // BEFORE the runner-outcome branch.
-  if (err instanceof Error || (err && typeof err === "object" && "name" in err)) {
+  if (
+    err instanceof Error ||
+    (err && typeof err === "object" && "name" in err)
+  ) {
     const e = err as Error & { category?: string; name: string };
 
     if (e.name === "GitLabError" && e.category) {
@@ -28,6 +31,14 @@ export function classifyError(err: unknown): Classification {
 
     if (e.name === "WorkspacePathError") {
       return { kind: "blocked", reason: e.message, code: "workspace_path" };
+    }
+
+    if (e.name === "WorkspaceBaseBranchError") {
+      return {
+        kind: "blocked",
+        reason: e.message,
+        code: "workspace_base_branch",
+      };
     }
 
     if (e.name === "WorkspaceDirtyError") {
@@ -47,9 +58,7 @@ export function classifyError(err: unknown): Classification {
     // "timeout" | "failed" | ... }` records that have no `.name`).
     if (typeof e.name !== "string" || e.name === "Error") {
       // Plain Error or no name — fall through to runner outcome check.
-    } else if (
-      typeof (err as { status?: unknown }).status !== "string"
-    ) {
+    } else if (typeof (err as { status?: unknown }).status !== "string") {
       // Anything else with a non-string status is NOT a runner outcome;
       // bail out as a generic failed.
       return {
