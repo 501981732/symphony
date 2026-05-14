@@ -12,14 +12,18 @@ interface FakeApi {
   fetchIssue: () => Promise<unknown>;
 }
 
-function makeFakeCtor(seenTokens: string[]): GitlabCtor {
+function makeFakeCtor(
+  seenTokens: string[],
+  seenOpts: Array<Record<string, unknown>> = [],
+): GitlabCtor {
   return vi.fn(function (
     this: object,
-    opts: { host: string; token: string },
+    opts: { host: string; token?: string; oauthToken?: string },
   ) {
-    seenTokens.push(opts.token);
+    seenOpts.push(opts);
+    seenTokens.push(opts.token ?? opts.oauthToken ?? "");
     const api: FakeApi = {
-      __token: opts.token,
+      __token: opts.token ?? opts.oauthToken ?? "",
       fetchIssue: async () => ({}),
     };
     return Object.assign(this, api);
@@ -34,7 +38,10 @@ function envCredential(token: string): ResolvedCredential {
   };
 }
 
-function oauthCredential(token: string, refresh: () => Promise<ResolvedCredential>): ResolvedCredential {
+function oauthCredential(
+  token: string,
+  refresh: () => Promise<ResolvedCredential>,
+): ResolvedCredential {
   return {
     source: "oauth",
     hostname: "gitlab.example.com",
@@ -55,6 +62,29 @@ describe("createGitLabClientFromCredential", () => {
       GitlabCtor: ctor,
     });
     expect(tokens).toEqual(["env-token-1"]);
+  });
+
+  it("uses oauthToken for OAuth credentials", () => {
+    const tokens: string[] = [];
+    const opts: Array<Record<string, unknown>> = [];
+    const ctor = makeFakeCtor(tokens, opts);
+    createGitLabClientFromCredential<FakeApi>({
+      baseUrl: "https://gitlab.example.com",
+      projectId: "group/project",
+      credential: oauthCredential("oauth-token-1", async () =>
+        oauthCredential("oauth-token-2", async () =>
+          oauthCredential("oauth-token-3", async () => {
+            throw new Error("unused");
+          }),
+        ),
+      ),
+      GitlabCtor: ctor,
+    });
+    expect(opts[0]).toMatchObject({
+      host: "https://gitlab.example.com",
+      oauthToken: "oauth-token-1",
+    });
+    expect(opts[0]).not.toHaveProperty("token");
   });
 
   it("does not refresh on 401 when source is env", async () => {

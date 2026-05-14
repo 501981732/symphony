@@ -1,45 +1,42 @@
-# IssuePilot Getting Started
+# IssuePilot Quick Start
 
 English | [简体中文](./getting-started.zh-CN.md)
 
-This guide is for engineers running IssuePilot for the first time. It tells you **what to do after you've cloned this repo**. In ~30 minutes you should be able to:
+This guide is for engineers running IssuePilot for the first time. The goal is to turn one GitLab Issue into a branch, a Merge Request, and an Issue handoff note.
 
-1. Prepare the local runtime;
-2. Configure `.agents/workflow.md` in your target GitLab project;
-3. Start the orchestrator daemon + dashboard;
-4. Label a GitLab Issue with `ai-ready` and watch IssuePilot take over end-to-end (code → branch push → merge request → issue note).
+Keep two repos separate:
 
-> This is the product-level "how to use it" doc. For the full end-to-end smoke validation (real GitLab + real Codex), pair this with [`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`](./superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md) §18.3.
+- **IssuePilot repo**: where you install, authenticate, and run the orchestrator + dashboard.
+- **Target project repo**: the product repo Codex will modify. This repo needs `.agents/workflow.md`.
 
----
+```text
+/path/to/issuepilot
+  run: pnpm smoke / pnpm dev:dashboard / pnpm exec issuepilot ...
 
-## 1. What it is
-
-IssuePilot is a **local, single-machine** orchestrator:
-
-- Polls GitLab and claims Issues with the `ai-ready` label;
-- Creates an isolated git worktree per Issue under `~/.issuepilot/`;
-- Drives Codex via the app-server JSON-RPC protocol inside that worktree;
-- Pushes a branch, creates/updates a merge request, writes a handoff note;
-- Communicates outcomes via labels (`ai-running` → `human-review` / `ai-failed` / `ai-blocked`);
-- Ships with a read-only dashboard showing run timeline, tool calls, and recent logs.
-
-P0 is **not** SaaS, multi-tenant, or clustered — it is a daemon on one dev machine plus a static dashboard. The goal is to let an AI engineer take the first pass on well-described Issues so humans review a merge request instead of supervising every agent turn.
+/path/to/target-project
+  stores: .agents/workflow.md
+  gets modified through IssuePilot-created worktrees
+```
 
 ---
 
-## 2. Prerequisites
+## 1. What IssuePilot Does
 
-| Tool | Version | Notes |
-|---|---|---|
-| Node.js | `>=22 <23` | `.npmrc` enables engine-strict |
-| pnpm | `10.x` | `packageManager: pnpm@10.x`; use corepack |
-| Git | `>=2.40` | Real git CLI called through `execa` |
-| Codex CLI | any version exposing `codex app-server` | must be logged in |
-| GitLab | instance + sandbox project | Group/Project Access Token with `api`, `read_repository`, `write_repository` |
-| SSH key | able to push to the target project | `repo_url` uses SSH form `git@host:group/proj.git` |
+IssuePilot is a local, single-machine orchestrator. It:
 
-Run a one-shot environment check:
+1. Polls GitLab for Issues labeled `ai-ready`.
+2. Creates one isolated git worktree per Issue under `~/.issuepilot`.
+3. Starts `codex app-server` inside that worktree and lets Codex implement the Issue.
+4. Pushes a branch, creates or updates an MR, and writes an Issue handoff note.
+5. Moves the Issue from `ai-running` to `human-review`, `ai-failed`, or `ai-blocked`.
+
+P0 is a local developer tool. It is not SaaS, not a worker cluster, and not an auto-merge system. Humans still review MRs before merging.
+
+---
+
+## 2. Prepare Your Machine
+
+Run this in the **IssuePilot repo**:
 
 ```bash
 corepack enable
@@ -48,56 +45,77 @@ pnpm -F @issuepilot/orchestrator build
 pnpm exec issuepilot doctor
 ```
 
-Expect all `[OK]`: Node.js, git, codex app-server, `~/.issuepilot/state` writable.
+Expected: `doctor` reports `[OK]` for Node.js, Git, Codex app-server, and `~/.issuepilot/state`.
+
+Required tools:
+
+| Tool      | Requirement                                          |
+| --------- | ---------------------------------------------------- |
+| Node.js   | `>=22 <23`                                           |
+| pnpm      | `10.x`, preferably through corepack                  |
+| Git       | `>=2.40`                                             |
+| Codex CLI | must run `codex app-server` and already be logged in |
+| GitLab    | a test project with API, label, Issue, and MR access |
+| SSH key   | can push to the target project                       |
 
 ---
 
-## 3. Prepare the GitLab project
+## 3. Prepare the Target GitLab Project
 
-In the target GitLab project:
+Do these steps in the GitLab project that IssuePilot will work on.
 
-### 3.1 Create labels
+### 3.1 Create Workflow Labels
 
-Create at least these six labels (any colour):
+Create these labels:
 
-| Label | Meaning |
-|---|---|
-| `ai-ready` | Candidate Issue, IssuePilot will pick it up |
-| `ai-running` | Claimed and being executed |
-| `human-review` | MR is ready, awaiting human review |
-| `ai-rework` | Human requested another AI pass after review |
-| `ai-failed` | Run failed, requires human intervention |
-| `ai-blocked` | Missing info / permission / secret, parked for humans |
+| Label          | Meaning                                  |
+| -------------- | ---------------------------------------- |
+| `ai-ready`     | Candidate Issue; IssuePilot will pick it |
+| `ai-running`   | Claimed and currently running            |
+| `human-review` | MR is ready for human review             |
+| `ai-rework`    | Human requested another AI pass          |
+| `ai-failed`    | Run failed and needs investigation       |
+| `ai-blocked`   | Missing info, permission, or secret      |
 
-### 3.2 Create an access token
+### 3.2 Confirm SSH Push Access
 
-Settings → Access Tokens:
-
-- Name: `issuepilot-local` (any)
-- Role: `Maintainer` (needs branch push, label edits, note write, MR create)
-- Scopes: `api`, `read_repository`, `write_repository`
-- Copy the token — you'll set it as `GITLAB_TOKEN` below
-
-### 3.3 SSH credentials for push
-
-`workflow.git.repo_url` uses SSH form. IssuePilot pushes through the local `~/.ssh` setup, **not** via the token over HTTPS.
+`workflow.git.repo_url` should normally use SSH. Git pushes use your local SSH key, not the GitLab API token.
 
 ```bash
-ssh -T git@gitlab.example.com  # should recognise you
+ssh -T git@gitlab.example.com
+```
+
+If your company has multiple GitLab instances, check each one:
+
+```bash
+ssh -T git@gitlab.chehejia.com
+ssh -T git@gitlabee.chehejia.com
 ```
 
 ---
 
-## 4. Add `.agents/workflow.md` to the target project
+## 4. Add `.agents/workflow.md`
 
-`.agents/workflow.md` is the contract between IssuePilot and the target repository. It has two parts:
+Create `.agents/workflow.md` at the root of the **target project repo**, then commit it to the target project's default branch.
+This step only creates the target project's config; do not start IssuePilot from the target project repo.
 
-- **YAML front matter** — machine-readable configuration (tracker, workspace, git, agent, codex).
-- **Markdown body** — Liquid template that gets rendered into the prompt for Codex.
+```bash
+cd /path/to/target-project
+mkdir -p .agents
+$EDITOR .agents/workflow.md
+```
 
-Put it in the **target project's** git repo (not the IssuePilot repo) at exactly `.agents/workflow.md`.
+After creating it, get its absolute path and copy that path. Later, when starting the daemon from the IssuePilot repo, `--workflow` receives this path:
 
-Minimal working template:
+```bash
+WORKFLOW_PATH="$(pwd)/.agents/workflow.md"
+echo "$WORKFLOW_PATH"
+
+# macOS: copy to clipboard so you can paste it into later commands
+printf "%s" "$WORKFLOW_PATH" | pbcopy
+```
+
+Minimal template:
 
 ```md
 ---
@@ -105,7 +123,6 @@ tracker:
   kind: gitlab
   base_url: "https://gitlab.example.com"
   project_id: "group/project"
-  token_env: "GITLAB_TOKEN"
   active_labels:
     - ai-ready
     - ai-rework
@@ -153,107 +170,133 @@ Description:
 {{ issue.description }}
 
 Requirements:
+
 1. Read the relevant code before editing.
-2. Confine your work to the provided workspace.
-3. Implement what the Issue describes.
-4. Commit your changes and create/update an MR via `gitlab_create_merge_request`.
-5. Post a handoff note on the Issue via `gitlab_create_issue_note` covering implementation, validation, risks, and the MR link.
-6. Let the orchestrator transition the Issue to `human-review` on success.
-7. If you're blocked on info/permission/secrets, call `gitlab_transition_labels` to set `ai-blocked` and explain why.
+2. Keep all work inside the provided workspace.
+3. Implement the requested Issue changes.
+4. Commit the changes and call `gitlab_create_merge_request` to create or update the MR.
+5. Call `gitlab_create_issue_note` with implementation, validation, risks, and MR link.
+6. Let the orchestrator move the Issue to `human-review` after success.
+7. If blocked by missing info, permission, or secrets, call `gitlab_transition_labels` to set `ai-blocked` and explain why.
 ```
 
-### 4.1 Key fields
-
-| Field | Meaning |
-|---|---|
-| `tracker.token_env` | IssuePilot **does not** read this variable's value at parse time — it reads `process.env[name]` at runtime. **Never put the token in the workflow file.** |
-| `tracker.active_labels` | Candidate labels. Default `["ai-ready", "ai-rework"]`. |
-| `git.base_branch` | MR target branch. Falls back to the GitLab project's default branch if unset. |
-| `git.branch_prefix` | Branch naming prefix. Final branch is `<prefix>/<issue-iid>-<title-slug>`. |
-| `agent.max_attempts` | Total attempts per Issue. `retryable` errors retry automatically; exhaustion moves to `ai-failed`. |
-| `codex.approval_policy` | `never` = orchestrator auto-approves Codex's approval requests and emits `approval_auto_approved`. Other values are described in spec §6. |
-| `codex.thread_sandbox` / `codex.turn_sandbox_policy.type` | Codex sandbox levels. **`danger-full-access` / `dangerFullAccess` are rejected by the schema validator.** |
-| `poll_interval_ms` | GitLab poll cadence, default `10000`. |
-
-Push `.agents/workflow.md` to the target project's `main`:
+Commit the workflow:
 
 ```bash
-cd /path/to/target-project
-mkdir -p .agents
-$EDITOR .agents/workflow.md   # paste the template, update values
 git add .agents/workflow.md
-git commit -m "chore(issuepilot): seed workflow.md"
+git commit -m "chore(issuepilot): add workflow"
 git push origin main
 ```
 
----
+Key fields:
 
-## 5. Start IssuePilot
+| Field                         | How to set it                                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `tracker.kind`                | Always `gitlab`; do not use `gitlabee`                                                               |
+| `tracker.base_url`            | GitLab instance URL, e.g. `https://gitlab.chehejia.com`                                              |
+| `tracker.project_id`          | GitLab project path or numeric ID, e.g. `group/project`                                              |
+| `tracker.token_env`           | Optional. Only set it when using an environment token; the value is the variable name, not the token |
+| `git.repo_url`                | target project SSH clone URL                                                                         |
+| `git.base_branch`             | MR target branch, usually `main` or `master`                                                         |
+| `agent.max_concurrent_agents` | start with `1`; increase after the flow is stable                                                    |
+| `codex.approval_policy`       | use `never` for P0                                                                                   |
 
-### 5.0 Provide credentials
+Multiple GitLab instances still use the same `kind: gitlab`; distinguish them with `base_url`:
 
-IssuePilot accepts GitLab credentials from three sources, **resolved in this order of precedence**:
+```yaml
+# gitlab.chehejia.com
+tracker:
+  kind: gitlab
+  base_url: "https://gitlab.chehejia.com"
+  project_id: "group/project"
 
-| Source | When to use | Token origin |
-| --- | --- | --- |
-| `issuepilot auth login` (recommended) | Personal dev machine; don't want to manage PATs by hand | Built-in OAuth 2.0 Device Flow, auto-refresh, stored at `~/.issuepilot/credentials` (mode `0600`) |
-| `.env` + [direnv](https://direnv.net/) | Team or CI environments; already have a PAT/Group Token | `cd` into the dir auto-exports env vars, auto-unsets on exit |
-| `glab auth token` bridge | Already using [glab CLI](https://gitlab.com/gitlab-org/cli) | `export GITLAB_TOKEN=$(glab auth token -h <host>)` |
-
-> The daemon first reads the env var named in `tracker.token_env`; if unset it falls back to `~/.issuepilot/credentials`. Tokens are always redacted from events, logs, the dashboard, and prompts.
-
-#### A. `issuepilot auth login` (recommended)
-
-```bash
-pnpm exec issuepilot auth login --hostname gitlab.example.com
-# Follow the prompt to enter user_code in your browser. Token is persisted automatically.
-pnpm exec issuepilot auth status   # Show login state and token expiry
-pnpm exec issuepilot auth logout   # Remove local credentials
+# gitlabee.chehejia.com
+tracker:
+  kind: gitlab
+  base_url: "https://gitlabee.chehejia.com"
+  project_id: "group/project"
 ```
-
-#### B. `.env` + direnv
-
-```bash
-brew install direnv     # macOS; other platforms: https://direnv.net/
-cp .env.example .env    # Edit .env, set GITLAB_TOKEN=glpat-xxx
-echo 'dotenv' > .envrc && direnv allow .
-echo $GITLAB_TOKEN      # Verify it's loaded
-```
-
-> Both `.env` and `.envrc` are listed in `.gitignore` — they will not be committed.
-
-#### C. glab CLI bridge
-
-```bash
-glab auth login --hostname gitlab.example.com   # Browser-based OAuth
-export GITLAB_TOKEN=$(glab auth token --hostname gitlab.example.com)
-```
-
-> glab issues `gloas-...` OAuth tokens; these and hand-rolled `glpat-...` PATs are equivalent at the GitLab API. IssuePilot passes them straight through `@gitbeaker/rest` — no distinction needed.
 
 ---
 
-### 5.1 Prepare the IssuePilot repo
+## 5. Configure GitLab Credentials
+
+IssuePilot supports two common paths. Use OAuth on personal dev machines. Use environment tokens for CI or shared team environments.
+
+### 5.1 Option A: OAuth Login (Recommended)
+
+Prerequisite: each GitLab instance needs an OAuth Application.
+
+A GitLab admin creates the application:
+
+- URL: `https://<gitlab-host>/admin/applications`
+- Name: `IssuePilot`
+- Confidential: unchecked; it must be a public application
+- Scopes: `api`, `read_repository`, `write_repository`
+- Enable Device Authorization Grant if GitLab shows that option
+- Save and copy the **Application ID**. That is the `--client-id`
+
+Then log in from the **IssuePilot repo**:
+
+```bash
+pnpm exec issuepilot auth login --hostname gitlab.example.com --client-id <oauth-application-id>
+pnpm exec issuepilot auth status --hostname gitlab.example.com
+```
+
+`--client-id` is the OAuth Application's public Application ID. It is not the Application Secret and not an Access Token.
+
+If you use two company GitLab instances, log in to both hostnames:
+
+```bash
+pnpm exec issuepilot auth login --hostname gitlab.chehejia.com --client-id <oauth-application-id>
+pnpm exec issuepilot auth login --hostname gitlabee.chehejia.com --client-id <oauth-application-id>
+```
+
+After login, tokens are stored in `~/.issuepilot/credentials` with mode `0600`. If you use OAuth login, do not set `tracker.token_env` in the workflow. Once `tracker.token_env` is present, the daemon requires that environment variable to exist.
+
+### 5.2 Option B: Environment Token
+
+If you already have a GitLab PAT, Group Access Token, Project Access Token, or `glab auth token`, export it before starting the daemon.
+
+```bash
+export GITLAB_TOKEN="<token>"
+```
+
+If you choose this path, add `token_env` to the workflow's `tracker` section. This is not part of the default template; it only applies to environment-token setups:
+
+```yaml
+tracker:
+  base_url: "https://gitlab.chehejia.com"
+  token_env: "GITLAB_TOKEN"
+
+tracker:
+  base_url: "https://gitlabee.chehejia.com"
+  token_env: "GITLABEE_TOKEN"
+```
+
+Before starting the daemon:
+
+```bash
+export GITLAB_TOKEN="<gitlab.chehejia.com token>"
+export GITLABEE_TOKEN="<gitlabee.chehejia.com token>"
+```
+
+Never put tokens in `.agents/workflow.md`, Issues, prompts, or logs.
+
+---
+
+## 6. Validate the Workflow
+
+Run this in the **IssuePilot repo**:
 
 ```bash
 cd /path/to/issuepilot
-pnpm install
-pnpm -w turbo run build
+# If this is a new terminal, put the copied absolute path back into the variable.
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
 ```
 
-You **must** build before the first run — `pnpm smoke` boots `apps/orchestrator/dist/bin.js`.
-
-### 5.2 Validate the workflow (recommended)
-
-Run a static + GitLab-connectivity check before starting the daemon:
-
-```bash
-# Skip if §5.0 credentials are already in place; otherwise export ad-hoc:
-# export GITLAB_TOKEN="<your token>"
-pnpm exec issuepilot validate --workflow /path/to/target-project/.agents/workflow.md
-```
-
-Expected output:
+Successful output:
 
 ```text
 Workflow loaded: /path/to/target-project/.agents/workflow.md
@@ -263,243 +306,185 @@ Validation passed.
 
 Common failures:
 
-- `WorkflowConfigError: tracker` → front matter missing fields / wrong types.
-- `WorkflowConfigError: tracker.token_env` → `process.env.GITLAB_TOKEN` is unset.
-- `GitLabError(category="auth")` → token wrong or expired.
-- `GitLabError(category="permission")` → token lacks the `api` scope or the target project is not visible to it.
-
-### 5.3 Start the daemon
-
-**Terminal A** (orchestrator):
-
-```bash
-# Skip if §5.0 credentials are already in place; otherwise export ad-hoc:
-# export GITLAB_TOKEN="<token>"
-pnpm smoke --workflow /path/to/target-project/.agents/workflow.md
-```
-
-Successful output:
-
-```text
-[smoke] starting orchestrator daemon on 127.0.0.1:4738…
-======================================================
- IssuePilot daemon ready
-------------------------------------------------------
- API:        http://127.0.0.1:4738
- Dashboard:  http://localhost:3000
- Workflow:   /path/to/target-project/.agents/workflow.md
- Project:    group/project
- Poll every: 10000ms
- Concurrency:1
-------------------------------------------------------
- Walk through the §18.3 smoke checklist now. Press Ctrl+C to stop.
-======================================================
-```
-
-`Ctrl+C` exits the daemon gracefully. If readiness probing fails, the smoke wrapper SIGTERMs and escalates to SIGKILL within 5 seconds — it will **never hang**.
-
-> If you don't want the smoke wrapper: `node apps/orchestrator/dist/bin.js run --workflow <path> [--port 4738] [--host 127.0.0.1]`.
-
-**Terminal B** (dashboard):
-
-```bash
-pnpm dev:dashboard
-```
-
-Open `http://localhost:3000`. You should see the ServiceHeader (status / project / concurrency / pollIntervalMs / lastPollAt), the SummaryCards (running / retrying / human-review / failed / blocked), and an empty RunsTable.
-
-> Port collision: `pnpm smoke --workflow ... --port 4839 --dashboard-url http://localhost:3000`.
+| Error                                    | What to check                                                                                                                    |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `WorkflowConfigError: tracker`           | front matter field names and YAML indentation                                                                                    |
+| `WorkflowConfigError: tracker.token_env` | workflow sets `token_env`, but the daemon shell does not have that env var; export it, or remove `token_env` and use OAuth login |
+| `GitLabError(category="auth")`           | token is wrong, expired, or OAuth credentials are missing                                                                        |
+| `GitLabError(category="permission")`     | token lacks `api` scope or project access                                                                                        |
 
 ---
 
-## 6. Run your first Issue
+## 7. Start IssuePilot
+
+Use two terminals.
+
+### 7.1 Terminal A: Start the Orchestrator
+
+Recommended: use the smoke wrapper, which waits until the daemon is ready.
+
+```bash
+cd /path/to/issuepilot
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+pnpm smoke --workflow "$WORKFLOW_PATH"
+```
+
+Direct start also works:
+
+```bash
+cd /path/to/issuepilot
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+pnpm exec issuepilot run --workflow "$WORKFLOW_PATH" --port 4738 --host 127.0.0.1
+```
+
+When ready, it prints the API URL. The default is:
+
+```text
+API: http://127.0.0.1:4738
+```
+
+### 7.2 Terminal B: Start the Dashboard
+
+```bash
+cd /path/to/issuepilot
+pnpm dev:dashboard
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+The dashboard defaults to `http://127.0.0.1:4738`. If the orchestrator uses another port, set:
+
+```bash
+NEXT_PUBLIC_API_BASE=http://127.0.0.1:4839 pnpm dev:dashboard
+```
+
+If the page shows `IssuePilot orchestrator unreachable` / `fetch failed`, confirm Terminal A is still running and that the dashboard points at the same port.
+
+---
+
+## 8. Run the First Issue
 
 In the target GitLab project:
 
-1. Create a simple Issue, e.g. "append `Hello from IssuePilot` to README.md".
+1. Create a simple Issue, for example: “append `Hello from IssuePilot` to README”.
 2. Add the `ai-ready` label.
-3. **Don't** assign yourself (IssuePilot doesn't need an assignee).
+3. Do not assign it to yourself; IssuePilot does not need an assignee.
 
-After about `poll_interval_ms` (default 10s):
+After about 10 seconds, IssuePilot should:
 
-- The dashboard `/` shows a new row in RunsTable, status `claimed` → `running`.
-- Open `/runs/<runId>` and watch the timeline grow:
-  - `run_started`
-  - `claim_succeeded`
-  - `workspace_ready` (worktree ready)
-  - `session_started` (Codex app-server up)
-  - `turn_started` → `tool_call_started` → `tool_call_completed` (Codex calling `gitlab_*` tools)
-  - `gitlab_push` (branch pushed)
-  - `gitlab_mr_created` (MR opened)
-  - `gitlab_note_created` (handoff note posted)
-  - `gitlab_labels_transitioned` (label moves from `ai-running` → `human-review`)
-  - `run_completed`
-- On GitLab: branch `ai/<iid>-<slug>` exists, a draft MR is open, the Issue has a handoff note from IssuePilot, the label is now `human-review`.
-- Terminal A streams structured logs.
+1. Move the Issue to `ai-running`.
+2. Show a new run in the dashboard.
+3. Create a worktree and start Codex.
+4. Push an `ai/<iid>-<slug>` branch.
+5. Create a draft MR.
+6. Write an Issue handoff note.
+7. Move the Issue to `human-review`.
 
-The whole flow is hands-off. Afterwards a human reviews the MR and decides to merge or request `ai-rework`.
+A human reviews the MR. To ask AI for another pass, move the Issue label to `ai-rework`.
 
 ---
 
-## 7. What each label means for you
+## 9. How to Handle States
 
-| Current label | Meaning | What you do |
-|---|---|---|
-| `ai-ready` | Candidate | Nothing — wait for IssuePilot to claim it |
-| `ai-running` | Claimed | Watch the dashboard |
-| `human-review` | MR awaiting review | Review the MR in GitLab; merge to complete, or relabel to `ai-rework` to ask for changes |
-| `ai-rework` | Human asked for another pass | Wait for IssuePilot to pick it up again (treated like `ai-ready`) |
-| `ai-failed` | Run failed | Read IssuePilot's failure note on the Issue; check dashboard timeline; fix the root cause; manually move the label back to `ai-ready` or `ai-rework` |
-| `ai-blocked` | Missing info / permission / secret | Read the note for what's missing; resolve it; move label back to `ai-ready` |
+| Current label  | What you do                                                                |
+| -------------- | -------------------------------------------------------------------------- |
+| `ai-ready`     | wait for IssuePilot to pick it up                                          |
+| `ai-running`   | watch the dashboard                                                        |
+| `human-review` | review the MR in GitLab                                                    |
+| `ai-rework`    | wait for IssuePilot to run another pass                                    |
+| `ai-failed`    | read the failure note and dashboard timeline, then retry                   |
+| `ai-blocked`   | provide missing info, permission, or secrets; then move back to `ai-ready` |
 
-> `ai-rework` is **not** an alias of `ai-ready` — it's a distinct human-driven state. IssuePilot treats both as candidate sources by default (`active_labels`).
+Failed runs are preserved. Forensics live at:
+
+```bash
+~/.issuepilot/state/logs/issuepilot.log
+~/.issuepilot/state/events/<project-slug>-<iid>.jsonl
+~/.issuepilot/state/runs/<project-slug>-<iid>.json
+~/.issuepilot/workspaces/<project-slug>/<iid>/
+```
 
 ---
 
-## 8. Forensics for failed workspaces
-
-Failed runs are **never deleted**.
+## 10. Command Cheat Sheet
 
 ```bash
-ls ~/.issuepilot/workspaces/<project-slug>/<iid>/
-# .issuepilot/failed-at-<iso>.json holds the failure context
-```
-
-Event streams persist too:
-
-```bash
-~/.issuepilot/state/events/<project-slug>-<iid>.jsonl   # full IssuePilotEvent JSONL
-~/.issuepilot/state/runs/<project-slug>-<iid>.json      # latest RunRecord
-~/.issuepilot/state/logs/issuepilot.log                 # daemon structured logs
-```
-
-Investigation flow:
-
-1. On the dashboard `/runs/<runId>`, find the **first** red event in the timeline.
-2. Grep `~/.issuepilot/state/logs/issuepilot.log` by `runId` for surrounding context.
-3. Reproduce in the worktree: `cd ~/.issuepilot/workspaces/<project-slug>/<iid>/ && git status`.
-4. Fix the root cause (token scope, prompt, workflow.md, etc.).
-5. Relabel the Issue back to `ai-ready` in GitLab to retry.
-
----
-
-## 9. Advanced usage
-
-### 9.1 Workflow hot reload
-
-Changes to `.agents/workflow.md` **do not** require restarting the daemon. The orchestrator uses `fs.watch` + `stat` polling:
-
-- Parse succeeds → next tick uses the new config (dashboard ServiceHeader's `lastConfigReloadAt` updates).
-- Parse fails → last-known-good is retained; daemon does not crash; the error lands in `~/.issuepilot/state/logs/issuepilot.log`.
-
-### 9.2 Tuning the retry strategy
-
-`agent.max_attempts` controls total attempts per Issue. Errors classify into:
-
-- **blocked** (e.g. 401/403) — labels move to `ai-blocked`, **no retry**.
-- **failed** (e.g. logic errors) — labels move to `ai-failed`, **no retry**.
-- **retryable** (e.g. `turn/timeout`, 5xx, network) — emits `retry_scheduled`, waits `retryBackoffMs`, retries; on exhaustion converts to `failed`.
-
-Set `max_attempts: 1` to disable retries (useful for smoke / cost control).
-
-### 9.3 Approval policy
-
-| Value | Meaning |
-|---|---|
-| `never` | Orchestrator auto-approves every Codex approval request, emitting `approval_auto_approved`. |
-| `untrusted` / `on-request` | See spec §6 (P0 mostly uses `never`). |
-
-### 9.4 Hooks
-
-`hooks.after_create` / `hooks.before_run` / `hooks.after_run` are bash strings run via `bash -lc` from the worktree cwd. Examples:
-
-```yaml
-hooks:
-  before_run: |
-    git diff --cached --quiet || git commit -m "wip(issuepilot): snapshot before AI run"
-  after_run: |
-    test -f .agents/post-checks.sh && bash .agents/post-checks.sh
-```
-
-A non-zero exit raises `HookFailedError` and routes the run to `ai-failed`. Each of stdout/stderr is capped at 1 MB and tagged `[truncated]` beyond that.
-
-### 9.5 Containers / remote machines
-
-`--host` defaults to `127.0.0.1`. For containers:
-
-```bash
-pnpm smoke --workflow ... --host 0.0.0.0 --dashboard-url http://your-host:3000
-```
-
-Also set `NEXT_PUBLIC_API_BASE=http://your-host:4738` for the dashboard so the browser doesn't fall back to `127.0.0.1:4738`.
-
-### 9.6 Concurrency
-
-`agent.max_concurrent_agents` controls concurrent slots. Each slot gets its own worktree and Codex child process. P0 recommends starting at `1` and increasing once stable.
-
----
-
-## 10. CLI cheat sheet
-
-```bash
-# Prerequisite check
+# Environment check
+cd /path/to/issuepilot
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
 pnpm exec issuepilot doctor
 
-# Static + GitLab connectivity validation
-pnpm exec issuepilot validate --workflow <path>
+# OAuth login
+pnpm exec issuepilot auth login --hostname <gitlab-host> --client-id <oauth-application-id>
+pnpm exec issuepilot auth status --hostname <gitlab-host>
+pnpm exec issuepilot auth logout --hostname <gitlab-host>
 
-# Start the daemon
-pnpm exec issuepilot run --workflow <path> [--port 4738] [--host 127.0.0.1]
+# Validate workflow
+pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
 
-# Recommended: smoke wrapper waits for readiness automatically
-pnpm smoke --workflow <path> [--port 4738] [--host 127.0.0.1] [--dashboard-url http://localhost:3000]
+# Start orchestrator
+pnpm smoke --workflow "$WORKFLOW_PATH"
+pnpm exec issuepilot run --workflow "$WORKFLOW_PATH"
 
-# Dashboard only (dev)
+# Start dashboard
 pnpm dev:dashboard
-```
-
-HTTP API endpoints (default `http://127.0.0.1:4738`, see spec §15):
-
-```text
-GET /api/state                    # OrchestratorStateSnapshot
-GET /api/runs?status=&limit=      # RunRecord[]
-GET /api/runs/:runId              # RunRecord & { events, logsTail }
-GET /api/events?runId=            # IssuePilotEvent[] (paginated)
-GET /api/events/stream            # text/event-stream (SSE)
 ```
 
 ---
 
 ## 11. FAQ
 
-- **`pnpm exec issuepilot doctor` says codex app-server not found.**
-  `codex app-server` must be invokable. Run `which codex`, then set `command: "/Users/xxx/.local/bin/codex app-server"` in workflow.md.
+**`codex app-server not found`**
 
-- **`Could not resolve remote.origin` / git push hangs.**
-  The workspace mirror is created with `git clone --mirror`, but pushes cannot run in mirror mode. This repo already fixes that in `packages/workspace/src/mirror.ts` (sets `remote.origin.mirror=false` + explicit refspec). If it still hangs, `rm -rf ~/.issuepilot/repos/<slug>` to force re-clone.
+Confirm Codex CLI is installed and logged in:
 
-- **GitLab 401/403.**
-  Most common: `GITLAB_TOKEN` wasn't exported into the daemon process; token lacks `api` scope; token has no visibility on the project. After fixing the token, **restart** the daemon.
+```bash
+which codex
+codex app-server --help
+```
 
-- **Dashboard stays empty / CORS errors.**
-  The dashboard talks to `http://127.0.0.1:4738` by default — must match `--host`. For containers/remote, see §9.5.
+If Codex is not on PATH, set `codex.command` in the workflow to an absolute path.
 
-- **`pnpm smoke` hangs on readiness.**
-  When readiness probing fails, the smoke wrapper SIGTERMs the daemon and escalates to SIGKILL within 5 seconds — the command always returns control (never an infinite hang).
+**`auth login failed ... category=invalid_client`**
 
-- **How do I know which run wrote a given note?**
-  Every IssuePilot note's first line is `<!-- issuepilot:run=<runId> -->`. The same run reuses the note; different runs create new ones.
+The GitLab instance has no matching OAuth Application, or Device Authorization Grant is disabled. Register the application, copy the Application ID, then run:
 
-- **How do I cancel a run?**
-  P0 has no cancel endpoint. Relabel the Issue away from `ai-running` in GitLab (e.g. to `ai-blocked`) and the orchestrator will observe the mismatch on the next reconcile tick and stop processing it; the workspace is preserved for forensics.
+```bash
+pnpm exec issuepilot auth login --hostname <host> --client-id <oauth-application-id>
+```
+
+**GitLab 401 / 403**
+
+Check that the token is exported in the same shell that starts the daemon, has the `api` scope, and can access the target project. Restart the orchestrator after fixing it.
+
+**Dashboard shows `orchestrator unreachable`**
+
+The dashboard is only the frontend. Start the orchestrator in another terminal:
+
+```bash
+cd /path/to/issuepilot
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+pnpm smoke --workflow "$WORKFLOW_PATH"
+```
+
+If the orchestrator is not on `4738`, set `NEXT_PUBLIC_API_BASE`.
+
+**How do I know which run wrote an Issue note?**
+
+The first line of the note contains:
+
+```text
+<!-- issuepilot:run:<runId> -->
+```
 
 ---
 
-## 12. Next steps
+## 12. Next Steps
 
-- Read [`docs/superpowers/specs/2026-05-11-issuepilot-design.md`](./superpowers/specs/2026-05-11-issuepilot-design.md) for the architecture and protocol details.
-- Walk through [`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`](./superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md) for a full smoke run.
-- See [`CHANGELOG.md`](../CHANGELOG.md) for recent updates.
-- Run a few more Issues on your sandbox, including the failed / blocked paths.
-
-**Always human-review the MR before merging.** IssuePilot is not a replacement for code review — it just lets the AI engineer do the heavy lifting first.
+- Architecture details: [`docs/superpowers/specs/2026-05-11-issuepilot-design.md`](./superpowers/specs/2026-05-11-issuepilot-design.md)
+- Full smoke runbook: [`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`](./superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md)
+- Recent changes: [`CHANGELOG.md`](../CHANGELOG.md)

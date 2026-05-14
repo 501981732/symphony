@@ -29,12 +29,8 @@ export interface CliDeps {
   authLogin?:
     | ((opts: AuthLoginOptions, deps?: AuthLoginDeps) => Promise<unknown>)
     | undefined;
-  authStatus?:
-    | ((opts: AuthStatusOptions) => Promise<unknown>)
-    | undefined;
-  authLogout?:
-    | ((opts: AuthLogoutOptions) => Promise<unknown>)
-    | undefined;
+  authStatus?: ((opts: AuthStatusOptions) => Promise<unknown>) | undefined;
+  authLogout?: ((opts: AuthLogoutOptions) => Promise<unknown>) | undefined;
 }
 
 function parsePort(value: string): number | null {
@@ -197,7 +193,10 @@ export function buildCli(deps: CliDeps = {}): Command {
       "--scope <scopes>",
       "Space-separated OAuth scopes (default: api read_repository write_repository)",
     )
-    .option("--client-id <id>", "Override OAuth client_id (default: issuepilot-cli)")
+    .option(
+      "--client-id <id>",
+      "GitLab OAuth Application ID / client_id (default: issuepilot-cli)",
+    )
     .option(
       "--base-url <url>",
       "Override base URL (default: https://<hostname>)",

@@ -1,45 +1,42 @@
-# IssuePilot 使用指南（中文）
+# IssuePilot 快速上手
 
 [English](./getting-started.md) | 简体中文
 
-本指南面向第一次使用 IssuePilot 的工程师，告诉你**装好之后该怎么用**。在 30 分钟内你应该可以：
+本指南面向第一次使用 IssuePilot 的工程师。目标是把一个 GitLab Issue 自动跑成一条分支、一个 Merge Request 和一条 Issue 回写说明。
 
-1. 在本机准备好运行环境；
-2. 在目标 GitLab 项目里配置 `.agents/workflow.md`；
-3. 启动 orchestrator daemon + dashboard；
-4. 给一个 Issue 打 `ai-ready` label，让 IssuePilot 自动接管，完成代码 → 推分支 → 开 MR → 回写 Issue note 的全流程。
+最快路径只需要记住两件事：
 
-> 本指南是产品视角的"怎么用"。如果你想做端到端 smoke 验证，请配合阅读 [`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`](./superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md) 的 §18.3 验收清单。
+- **IssuePilot 仓库**：你在这里安装、登录、启动 orchestrator 和 dashboard。
+- **目标项目仓库**：真正要被 AI 修改的业务仓库，里面需要放 `.agents/workflow.md`。
 
----
+```text
+/path/to/issuepilot
+  运行：pnpm smoke / pnpm dev:dashboard / pnpm exec issuepilot ...
 
-## 1. 它是什么
-
-IssuePilot 是一个**本地单机** orchestrator：
-
-- 轮询 GitLab，发现带 `ai-ready` label 的 Issue 自动认领；
-- 在 `~/.issuepilot/` 下为每个 Issue 创建独立的 git worktree；
-- 用 Codex app-server（JSON-RPC stdio）在该 worktree 内驱动 AI 工程师完成代码；
-- 推送分支、创建/更新 MR、给 Issue 写 handoff note；
-- 通过 label 切换（`ai-running` → `human-review` / `ai-failed` / `ai-blocked`）表达运行结果；
-- 提供只读 dashboard 展示运行时间线、工具调用、最近日志。
-
-P0 不是 SaaS、不是多租户、不是集群 — 它是一台 dev 机器上的 daemon + 一个静态 dashboard，目标是让 AI 工程师把"已经描述清楚的 Issue"先做掉一轮，留给人 review 的是 MR 而不是 agent turn。
+/path/to/target-project
+  存放：.agents/workflow.md
+  被 IssuePilot 创建 worktree 后修改
+```
 
 ---
 
-## 2. 环境要求
+## 1. IssuePilot 做什么
 
-| 工具      | 版本                                     | 说明                                                                              |
-| --------- | ---------------------------------------- | --------------------------------------------------------------------------------- |
-| Node.js   | `>=22 <23`                               | `.npmrc` 启用 engine-strict                                                       |
-| pnpm      | `10.x`                                   | 仓库 `packageManager: pnpm@10.x`，用 corepack 即可                                |
-| Git       | `>=2.40`                                 | 真实 git CLI 通过 `execa` 调用                                                    |
-| Codex CLI | 任意版本，需要 `codex app-server` 子命令 | 必须先登录                                                                        |
-| GitLab    | 实例 + 一个测试项目                      | Group/Project Access Token，可访问 `api` / `read_repository` / `write_repository` |
-| SSH key   | 能 push 到目标项目                       | repo_url 用 SSH 形式 `git@host:group/proj.git`                                    |
+IssuePilot 是本地单机 orchestrator。它会：
 
-跑一次环境检查：
+1. 轮询 GitLab，找到带 `ai-ready` label 的 Issue。
+2. 为每个 Issue 在 `~/.issuepilot` 下创建独立 git worktree。
+3. 在 worktree 里启动 `codex app-server`，让 Codex 完成代码修改。
+4. 推送分支，创建或更新 MR，给 Issue 写 handoff note。
+5. 把 Issue label 从 `ai-running` 切到 `human-review`、`ai-failed` 或 `ai-blocked`。
+
+P0 是本地开发工具，不是 SaaS、集群或自动合并系统。MR 合并前必须人工 review。
+
+---
+
+## 2. 准备环境
+
+在 **IssuePilot 仓库**里执行：
 
 ```bash
 corepack enable
@@ -48,56 +45,77 @@ pnpm -F @issuepilot/orchestrator build
 pnpm exec issuepilot doctor
 ```
 
-期望全部 `[OK]`：Node.js、git、codex app-server、`~/.issuepilot/state` 可写。
+期望 `doctor` 输出里 Node.js、Git、Codex app-server、`~/.issuepilot/state` 都是 `[OK]`。
+
+需要的工具：
+
+| 工具      | 要求                                     |
+| --------- | ---------------------------------------- |
+| Node.js   | `>=22 <23`                               |
+| pnpm      | `10.x`，通过 corepack 使用               |
+| Git       | `>=2.40`                                 |
+| Codex CLI | 需要能执行 `codex app-server`，且已登录  |
+| GitLab    | 一个测试项目，支持 API、label、Issue、MR |
+| SSH key   | 能 push 到目标项目                       |
 
 ---
 
-## 3. 准备 GitLab 项目
+## 3. 准备目标 GitLab 项目
 
-在目标 GitLab 项目里：
+以下步骤在 **目标项目**对应的 GitLab project 里完成。
 
-### 3.1 创建 label
+### 3.1 创建 workflow labels
 
-至少创建以下 6 个 label（颜色随意）：
+至少创建这些 label：
 
-| Label          | 含义                                   |
-| -------------- | -------------------------------------- |
-| `ai-ready`     | 候选 Issue，IssuePilot 会拾取它        |
-| `ai-running`   | IssuePilot 已认领并正在运行            |
-| `human-review` | 已生成 MR，等人 review                 |
-| `ai-rework`    | 人 review 后要求再跑一轮 AI            |
-| `ai-failed`    | 运行失败，需要人介入                   |
-| `ai-blocked`   | 缺少信息 / 权限 / 密钥，停在这等人解锁 |
+| Label          | 含义                          |
+| -------------- | ----------------------------- |
+| `ai-ready`     | 候选 Issue，IssuePilot 会拾取 |
+| `ai-running`   | IssuePilot 已认领并正在运行   |
+| `human-review` | MR 已生成，等待人工 review    |
+| `ai-rework`    | 人工 review 后要求 AI 再跑    |
+| `ai-failed`    | 运行失败，需要人工排障        |
+| `ai-blocked`   | 缺信息、权限或密钥            |
 
-### 3.2 创建 Access Token
+### 3.2 确认 SSH 能 push
 
-Settings → Access Tokens：
-
-- 名称：`issuepilot-local`（或任意）
-- 角色：`Maintainer`（需要 push 分支、改 label、写 note、开 MR）
-- 权限：勾选 `api`、`read_repository`、`write_repository`
-- 复制 token，下面 `GITLAB_TOKEN` 会用到
-
-### 3.3 准备 SSH 推送凭据
-
-`workflow.git.repo_url` 用 SSH 形式，IssuePilot 通过本机 `~/.ssh` 走 git 协议 push，**不通过 token 走 https**。
+`workflow.git.repo_url` 推荐使用 SSH 地址。IssuePilot 的 Git push 走本机 SSH key，不走 GitLab API token。
 
 ```bash
-ssh -T git@gitlab.example.com  # 应该认出你是谁
+ssh -T git@gitlab.example.com
+```
+
+如果你们公司有两套 GitLab，需要分别确认：
+
+```bash
+ssh -T git@gitlab.chehejia.com
+ssh -T git@gitlabee.chehejia.com
 ```
 
 ---
 
-## 4. 在目标项目里配置 `.agents/workflow.md`
+## 4. 配置 `.agents/workflow.md`
 
-`.agents/workflow.md` 是 IssuePilot 与目标项目的契约文件。它有两部分：
+在 **目标项目仓库**根目录创建 `.agents/workflow.md`，并提交到目标项目默认分支。
+这里只放配置，不在目标项目里启动 IssuePilot。
 
-- **YAML front matter**：机器读的配置，包括 tracker、workspace、git、agent、codex 设置。
-- **Markdown 正文**：作为 Liquid 模板渲染出来的 prompt，发给 Codex。
+```bash
+cd /path/to/target-project
+mkdir -p .agents
+$EDITOR .agents/workflow.md
+```
 
-把它放进**目标项目**的 git 仓库（不是 IssuePilot 仓库），位置必须是 `.agents/workflow.md`。
+创建后拿到它的绝对路径，并复制这条路径。后续在 IssuePilot 仓库启动 daemon 时，`--workflow` 需要传这个路径：
 
-最小可用模板：
+```bash
+WORKFLOW_PATH="$(pwd)/.agents/workflow.md"
+echo "$WORKFLOW_PATH"
+
+# macOS：复制到剪贴板，方便粘到后面的命令里
+printf "%s" "$WORKFLOW_PATH" | pbcopy
+```
+
+最小模板：
 
 ```md
 ---
@@ -105,7 +123,6 @@ tracker:
   kind: gitlab
   base_url: "https://gitlab.example.com"
   project_id: "group/project"
-  token_env: "GITLAB_TOKEN"
   active_labels:
     - ai-ready
     - ai-rework
@@ -157,104 +174,129 @@ Description:
 1. 先阅读相关代码再开始改。
 2. 工作只能落在提供的 workspace 内。
 3. 完成 Issue 描述里的修改。
-4. 提交代码，并通过 `gitlab_create_merge_request` 创建/更新 MR。
-5. 用 `gitlab_create_issue_note` 给 Issue 回写工作日志（实现、验证、风险、MR 链接）。
+4. 提交代码，并通过 `gitlab_create_merge_request` 创建或更新 MR。
+5. 用 `gitlab_create_issue_note` 给 Issue 回写实现、验证、风险和 MR 链接。
 6. 完成后让 orchestrator 把 Issue 转到 `human-review`。
-7. 缺信息/权限/密钥时调 `gitlab_transition_labels` 打 `ai-blocked` 并说明原因。
+7. 缺信息、权限或密钥时，调 `gitlab_transition_labels` 打 `ai-blocked` 并说明原因。
 ```
 
-### 4.1 关键字段说明
-
-| 字段                                                      | 说明                                                                                                       |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `tracker.token_env`                                       | IssuePilot **不读** 这个变量本身，它读 `process.env[此变量名]`。**token 不能写进 workflow 文件**。         |
-| `tracker.active_labels`                                   | 候选 label 列表。默认 `["ai-ready", "ai-rework"]`。                                                        |
-| `git.base_branch`                                         | MR target 分支。缺省时 fallback 到 GitLab 项目的 default branch。                                          |
-| `git.branch_prefix`                                       | 分支命名前缀，最终分支是 `<prefix>/<issue-iid>-<title-slug>`。                                             |
-| `agent.max_attempts`                                      | 单个 Issue 总尝试次数。`retryable` 错误自动重试，达到上限切到 `ai-failed`。                                |
-| `codex.approval_policy`                                   | `never` = orchestrator 自动批准 Codex 的人工审批请求并发 `approval_auto_approved` 事件；其他值见 spec §6。 |
-| `codex.thread_sandbox` / `codex.turn_sandbox_policy.type` | Codex 的 sandbox 级别。**不允许** `danger-full-access` / `dangerFullAccess`，校验阶段会直接拒绝。          |
-| `poll_interval_ms`                                        | 轮询 GitLab 间隔，默认 `10000`。                                                                           |
-
-把 `.agents/workflow.md` 推到目标项目的 `main`：
+提交 workflow：
 
 ```bash
-cd /path/to/target-project
-mkdir -p .agents
-$EDITOR .agents/workflow.md   # 粘贴上面模板并改成你的实际值
 git add .agents/workflow.md
-git commit -m "chore(issuepilot): seed workflow.md"
+git commit -m "chore(issuepilot): add workflow"
 git push origin main
 ```
 
----
+关键字段：
 
-## 5. 启动 IssuePilot
+| 字段                          | 怎么填                                                         |
+| ----------------------------- | -------------------------------------------------------------- |
+| `tracker.kind`                | 固定写 `gitlab`，不要写 `gitlabee`                             |
+| `tracker.base_url`            | GitLab 实例地址，如 `https://gitlab.chehejia.com`              |
+| `tracker.project_id`          | GitLab 项目路径或数字 ID，如 `group/project`                   |
+| `tracker.token_env`           | 可选。只有使用环境变量 token 时才写；值是变量名，不是 token 值 |
+| `git.repo_url`                | 目标项目 SSH clone 地址                                        |
+| `git.base_branch`             | MR target branch，通常是 `main` 或 `master`                    |
+| `agent.max_concurrent_agents` | 建议先用 `1`，稳定后再调大                                     |
+| `codex.approval_policy`       | P0 推荐 `never`                                                |
 
-### 5.0 管理凭据
+多 GitLab 实例也用同一个 `kind: gitlab`，通过 `base_url` 区分：
 
-IssuePilot 支持三种方式提供 GitLab 凭据，**按从上到下的优先级**择优使用：
+```yaml
+# gitlab.chehejia.com
+tracker:
+  kind: gitlab
+  base_url: "https://gitlab.chehejia.com"
+  project_id: "group/project"
 
-| 方式 | 适用场景 | token 来源 |
-| --- | --- | --- |
-| `issuepilot auth login`（推荐） | 个人开发机；不想手动管理 PAT | 内置 OAuth 2.0 Device Flow，token 自动 refresh，存于 `~/.issuepilot/credentials`（权限 `0600`） |
-| `.env` + [direnv](https://direnv.net/) | 团队共享或 CI 环境；已有 PAT/Group Token | `cd` 进目录自动 export 环境变量，离开自动 unset |
-| `glab auth token` 桥接 | 已经在用 [glab CLI](https://gitlab.com/gitlab-org/cli) | `export GITLAB_TOKEN=$(glab auth token -h <host>)` |
-
-> daemon 启动时优先读 `tracker.token_env` 指向的环境变量；缺失时再读 `~/.issuepilot/credentials`。token 在事件、日志、dashboard、prompt 中始终被 redact。
-
-#### A. 用 `issuepilot auth login`（推荐）
-
-```bash
-pnpm exec issuepilot auth login --hostname gitlab.example.com
-# 按提示在浏览器输入 user_code 完成授权，token 自动存盘
-pnpm exec issuepilot auth status   # 查看登录状态和过期时间
-pnpm exec issuepilot auth logout   # 清除本地 credentials
+# gitlabee.chehejia.com
+tracker:
+  kind: gitlab
+  base_url: "https://gitlabee.chehejia.com"
+  project_id: "group/project"
 ```
-
-#### B. `.env` + direnv
-
-```bash
-brew install direnv     # macOS；其他平台见 https://direnv.net/
-cp .env.example .env    # 编辑 .env 填入 GITLAB_TOKEN=glpat-xxx
-echo 'dotenv' > .envrc && direnv allow .
-echo $GITLAB_TOKEN      # 验证已加载
-```
-
-> `.env` 与 `.envrc` 已在 `.gitignore` 中，不会被提交。
-
-#### C. glab CLI 桥接
-
-```bash
-glab auth login --hostname gitlab.example.com   # 浏览器 OAuth
-export GITLAB_TOKEN=$(glab auth token --hostname gitlab.example.com)
-```
-
-> glab 颁发的是 `gloas-...` OAuth token，与手写的 `glpat-...` PAT 在 GitLab API 上等效，IssuePilot 透传 `@gitbeaker/rest` 无需区分。
 
 ---
 
-### 5.1 准备 IssuePilot 仓库
+## 5. 配置 GitLab 凭据
+
+IssuePilot 支持两条常用路径。个人开发机推荐 OAuth；CI 或团队共享环境推荐环境变量 token。
+
+### 5.1 方式 A：OAuth 登录（推荐）
+
+前置条件：每个 GitLab 实例需要先注册一个 OAuth Application。
+
+管理员在 GitLab 上创建 Application：
+
+- 入口：`https://<gitlab-host>/admin/applications`
+- Name：`IssuePilot`
+- Confidential：不勾选，必须是 public application
+- Scopes：`api`、`read_repository`、`write_repository`
+- 如果有 Device Authorization Grant 开关，需要勾选
+- 保存后复制 **Application ID**，它就是 `--client-id`
+
+然后在 **IssuePilot 仓库**里登录：
+
+```bash
+pnpm exec issuepilot auth login --hostname gitlab.example.com --client-id <oauth-application-id>
+pnpm exec issuepilot auth status --hostname gitlab.example.com
+```
+
+`--client-id` 是 OAuth Application 的公开 Application ID，不是 Application Secret，也不是 Access Token。
+
+如果你同时使用两套公司 GitLab，需要分别登录：
+
+```bash
+pnpm exec issuepilot auth login --hostname gitlab.chehejia.com --client-id <oauth-application-id>
+pnpm exec issuepilot auth login --hostname gitlabee.chehejia.com --client-id <oauth-application-id>
+```
+
+登录成功后，token 会保存到 `~/.issuepilot/credentials`，文件权限为 `0600`。如果你使用 OAuth 登录，workflow 里不要写 `tracker.token_env`；一旦写了 `tracker.token_env`，daemon 会要求对应环境变量必须存在。
+
+### 5.2 方式 B：环境变量 token
+
+如果你已经有 GitLab PAT、Group Access Token、Project Access Token 或 `glab auth token`，可以直接用环境变量。
+
+```bash
+export GITLAB_TOKEN="<token>"
+```
+
+如果选择这条路径，需要在 workflow 的 `tracker` 段额外加 `token_env`。这不是默认模板，只适用于环境变量 token：
+
+```yaml
+tracker:
+  base_url: "https://gitlab.chehejia.com"
+  token_env: "GITLAB_TOKEN"
+
+tracker:
+  base_url: "https://gitlabee.chehejia.com"
+  token_env: "GITLABEE_TOKEN"
+```
+
+对应启动前：
+
+```bash
+export GITLAB_TOKEN="<gitlab.chehejia.com token>"
+export GITLABEE_TOKEN="<gitlabee.chehejia.com token>"
+```
+
+不要把 token 写进 `.agents/workflow.md`、Issue、prompt 或日志。
+
+---
+
+## 6. 验证 workflow
+
+在 **IssuePilot 仓库**里执行：
 
 ```bash
 cd /path/to/issuepilot
-pnpm install
-pnpm -w turbo run build
+# 如果这是新终端，把第 4 节复制的绝对路径重新放进变量
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
 ```
 
-第一次跑前**必须** build orchestrator，因为 `pnpm smoke` 会启动 `apps/orchestrator/dist/bin.js`。
-
-### 5.2 验证 workflow（推荐）
-
-在启动 daemon 之前用 `validate` 子命令做一次纯静态校验：
-
-```bash
-# 已按 §5.0 设置好凭据则无需再 export，否则临时执行：
-# export GITLAB_TOKEN="<你刚才创建的 token>"
-pnpm exec issuepilot validate --workflow /path/to/target-project/.agents/workflow.md
-```
-
-期望输出：
+成功时应该看到：
 
 ```text
 Workflow loaded: /path/to/target-project/.agents/workflow.md
@@ -262,245 +304,187 @@ GitLab project: group/project
 Validation passed.
 ```
 
-如果报错：
+常见失败：
 
-- `WorkflowConfigError: tracker` → workflow front matter 缺字段或字段类型不对。
-- `WorkflowConfigError: tracker.token_env` → `process.env.GITLAB_TOKEN` 没设置。
-- `GitLabError(category="auth")` → token 错了或者过期。
-- `GitLabError(category="permission")` → token 没 `api` scope，或者目标项目对该 token 不可见。
-
-### 5.3 启动 daemon
-
-**终端 A**（orchestrator）：
-
-```bash
-# 已按 §5.0 设置好凭据则无需再 export，否则临时执行：
-# export GITLAB_TOKEN="<token>"
-pnpm smoke --workflow /path/to/target-project/.agents/workflow.md
-```
-
-成功输出形如：
-
-```text
-[smoke] starting orchestrator daemon on 127.0.0.1:4738…
-======================================================
- IssuePilot daemon ready
-------------------------------------------------------
- API:        http://127.0.0.1:4738
- Dashboard:  http://localhost:3000
- Workflow:   /path/to/target-project/.agents/workflow.md
- Project:    group/project
- Poll every: 10000ms
- Concurrency:1
-------------------------------------------------------
- Walk through the §18.3 smoke checklist now. Press Ctrl+C to stop.
-======================================================
-```
-
-`Ctrl+C` 优雅退出 daemon，readiness 失败时 wrapper 会 5 秒内 SIGTERM → SIGKILL，**不会卡死**。
-
-> 如果不想用 smoke wrapper，也可以直接：`node apps/orchestrator/dist/bin.js run --workflow <path> [--port 4738] [--host 127.0.0.1]`。
-
-**终端 B**（dashboard）：
-
-```bash
-pnpm dev:dashboard
-```
-
-打开 `http://localhost:3000`，应能看到 ServiceHeader（status / project / concurrency / pollIntervalMs / lastPollAt 等），SummaryCards（running / retrying / human-review / failed / blocked 5 张计数卡），RunsTable（初始为空）。
-
-> 端口冲突时：`pnpm smoke --workflow ... --port 4839 --dashboard-url http://localhost:3000`。
+| 错误                                     | 处理方式                                                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `WorkflowConfigError: tracker`           | 检查 workflow front matter 字段名和缩进                                                                             |
+| `WorkflowConfigError: tracker.token_env` | workflow 写了 `token_env`，但启动 daemon 的 shell 没有对应环境变量；export 它，或删掉 `token_env` 并使用 OAuth 登录 |
+| `GitLabError(category="auth")`           | token 错误、过期，或 OAuth credentials 不存在                                                                       |
+| `GitLabError(category="permission")`     | token 缺 `api` scope，或无目标项目权限                                                                              |
 
 ---
 
-## 6. 跑你的第一个 Issue
+## 7. 启动 IssuePilot
+
+需要两个终端。
+
+### 7.1 终端 A：启动 orchestrator
+
+推荐用 smoke wrapper，它会等待 daemon ready：
+
+```bash
+cd /path/to/issuepilot
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+pnpm smoke --workflow "$WORKFLOW_PATH"
+```
+
+也可以直接启动：
+
+```bash
+cd /path/to/issuepilot
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+pnpm exec issuepilot run --workflow "$WORKFLOW_PATH" --port 4738 --host 127.0.0.1
+```
+
+ready 后会看到 API 地址，默认是：
+
+```text
+API: http://127.0.0.1:4738
+```
+
+### 7.2 终端 B：启动 dashboard
+
+```bash
+cd /path/to/issuepilot
+pnpm dev:dashboard
+```
+
+打开：
+
+```text
+http://localhost:3000
+```
+
+dashboard 默认连接 `http://127.0.0.1:4738`。如果 orchestrator 用了其他端口，启动 dashboard 时指定：
+
+```bash
+NEXT_PUBLIC_API_BASE=http://127.0.0.1:4839 pnpm dev:dashboard
+```
+
+如果页面显示 `IssuePilot orchestrator unreachable` / `fetch failed`，先确认终端 A 里的 orchestrator 还在运行，并且 dashboard 连接的是同一个端口。
+
+---
+
+## 8. 跑第一个 Issue
 
 在目标 GitLab 项目里：
 
-1. 新建一个简单 Issue，比如「在 README 末尾加一行 `Hello from IssuePilot`」。
-2. 给它打上 `ai-ready` label。
-3. **不要** 把自己 assign 上去（IssuePilot 不需要 assignee）。
+1. 新建一个简单 Issue，例如「在 README 末尾添加一行 `Hello from IssuePilot`」。
+2. 给 Issue 打 `ai-ready` label。
+3. 不需要 assign 给自己。
 
-约 `poll_interval_ms`（默认 10 秒）后：
+约 10 秒后，IssuePilot 应该会：
 
-- Dashboard `/` 的 RunsTable 出现一行新 run，状态从 `claimed` → `running`；
-- 进入 `/runs/<runId>` 看到 timeline 滚动出：
-  - `run_started`
-  - `claim_succeeded`
-  - `workspace_ready`（worktree 已建）
-  - `session_started`（Codex app-server 起来了）
-  - `turn_started` → `tool_call_started` → `tool_call_completed`（Codex 在调 `gitlab_*` 工具）
-  - `gitlab_push`（分支已推）
-  - `gitlab_mr_created`（MR 已开）
-  - `gitlab_note_created`（Issue note 已写）
-  - `gitlab_labels_transitioned`（label 从 `ai-running` → `human-review`）
-  - `run_completed`
-- GitLab 上：分支 `ai/<iid>-<slug>` 出现，MR 自动开成 draft，Issue 评论里出现 IssuePilot 写的工作日志，label 变成 `human-review`。
-- 终端 A 滚动结构化日志。
+1. 把 Issue label 切到 `ai-running`。
+2. 在 dashboard 里出现一条 run。
+3. 创建 worktree 并启动 Codex。
+4. 推送 `ai/<iid>-<slug>` 分支。
+5. 创建 draft MR。
+6. 给 Issue 写 handoff note。
+7. 把 Issue 切到 `human-review`。
 
-整个流程是无人值守的。完成后，人 review MR、决定合并或要求 `ai-rework`。
+人类随后 review MR。要让 AI 再改一轮，把 label 改成 `ai-rework`。
 
 ---
 
-## 7. 各 label 状态对应的处理
+## 9. 状态怎么处理
 
-| 当前 label     | 含义             | 你该做什么                                                                                                              |
-| -------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `ai-ready`     | 候选             | 什么都不用做，等 IssuePilot 拾取                                                                                        |
-| `ai-running`   | 已认领           | 等待，看 dashboard                                                                                                      |
-| `human-review` | 有 MR 等 review  | 去 GitLab review MR；合并 = 完成；要求改 = 把 label 改回 `ai-rework`                                                    |
-| `ai-rework`    | 人主动打回       | 等 IssuePilot 重新拾取（与 `ai-ready` 一样进入候选）                                                                    |
-| `ai-failed`    | 运行失败         | 查 Issue 上 IssuePilot 写的失败 note；看 dashboard timeline 找根因；修问题后人工把 label 改回 `ai-ready` 或 `ai-rework` |
-| `ai-blocked`   | 缺信息/权限/密钥 | 看 note 里说缺什么；解决后把 label 改回 `ai-ready`                                                                      |
+| 当前 label     | 你该做什么                                    |
+| -------------- | --------------------------------------------- |
+| `ai-ready`     | 等 IssuePilot 拾取                            |
+| `ai-running`   | 看 dashboard 等结果                           |
+| `human-review` | 去 GitLab review MR                           |
+| `ai-rework`    | 等 IssuePilot 再跑一轮                        |
+| `ai-failed`    | 看失败 note 和 dashboard timeline，修复后重试 |
+| `ai-blocked`   | 补信息、权限或密钥，解决后改回 `ai-ready`     |
 
-> `ai-rework` **不是** `ai-ready` 的别名 — 它是人主动打回的状态。IssuePilot 默认把这两个 label 都当成候选源（`active_labels`）。
+失败 run 不会删除。排障时看：
+
+```bash
+~/.issuepilot/state/logs/issuepilot.log
+~/.issuepilot/state/events/<project-slug>-<iid>.jsonl
+~/.issuepilot/state/runs/<project-slug>-<iid>.json
+~/.issuepilot/workspaces/<project-slug>/<iid>/
+```
 
 ---
 
-## 8. 失败 workspace 的取证
-
-失败的 run **不会** 被删除。
+## 10. 常用命令
 
 ```bash
-ls ~/.issuepilot/workspaces/<project-slug>/<iid>/
-# 里面有 .issuepilot/failed-at-<iso>.json，含失败上下文
-```
-
-事件流也保留：
-
-```bash
-~/.issuepilot/state/events/<project-slug>-<iid>.jsonl   # 完整 IssuePilotEvent JSONL
-~/.issuepilot/state/runs/<project-slug>-<iid>.json      # 最近一次 RunRecord
-~/.issuepilot/state/logs/issuepilot.log                 # daemon 结构化日志
-```
-
-排障流程：
-
-1. 在 dashboard `/runs/<runId>` 看 timeline，确定**第一个**红色事件。
-2. 用 `runId` 在 `~/.issuepilot/state/logs/issuepilot.log` grep 上下文。
-3. 进 worktree 复现：`cd ~/.issuepilot/workspaces/<project-slug>/<iid>/ && git status`。
-4. 修问题（如：补 token 权限、改 prompt、修 workflow.md）。
-5. 在 GitLab 上把 label 改回 `ai-ready` 重新触发。
-
----
-
-## 9. 高级用法
-
-### 9.1 Workflow Hot Reload
-
-`.agents/workflow.md` 改了之后**不需要**重启 daemon。orchestrator 用 `fs.watch` + `stat` 轮询监测变更：
-
-- 解析成功 → 下一次 tick 立即用新配置（dashboard ServiceHeader 的 `lastConfigReloadAt` 会更新）。
-- 解析失败 → 保留 last-known-good，不会让 daemon 崩；错误进 `~/.issuepilot/state/logs/issuepilot.log`。
-
-### 9.2 调整 retry 策略
-
-`agent.max_attempts` 控制总尝试次数。一次失败被分类为：
-
-- **blocked**（如 401/403） → 直接切 `ai-blocked`，**不重试**。
-- **failed**（如逻辑错误） → 切 `ai-failed`，**不重试**。
-- **retryable**（如 `turn/timeout`、5xx、网络） → `retry_scheduled` 事件 + `setTimeout(retryBackoffMs)` 后重新进入 dispatch；攻击到 `max_attempts` 后转 `failed`。
-
-把 `max_attempts: 1` 可禁用重试（适合 smoke / 节省调用）。
-
-### 9.3 Approval policy
-
-| 取值                       | 含义                                                                             |
-| -------------------------- | -------------------------------------------------------------------------------- |
-| `never`                    | orchestrator 自动批准 Codex 的所有人工审批请求，发 `approval_auto_approved` 事件 |
-| `untrusted` / `on-request` | 见 spec §6（P0 主要用 `never`）                                                  |
-
-### 9.4 Hooks
-
-`hooks.after_create` / `hooks.before_run` / `hooks.after_run` 是 bash 脚本字符串，在 worktree cwd 里 `bash -lc` 执行。常见用法：
-
-```yaml
-hooks:
-  before_run: |
-    git diff --cached --quiet || git commit -m "wip(issuepilot): snapshot before AI run"
-  after_run: |
-    test -f .agents/post-checks.sh && bash .agents/post-checks.sh
-```
-
-hook 非零退出 → `HookFailedError` → run 进入 `ai-failed` 分支。stdout/stderr 每条限制 1MB，超出截断标 `[truncated]`。
-
-### 9.5 在容器/远程机器上跑
-
-`--host` 默认 `127.0.0.1`，容器场景：
-
-```bash
-pnpm smoke --workflow ... --host 0.0.0.0 --dashboard-url http://your-host:3000
-```
-
-同时 dashboard 那边设置 `NEXT_PUBLIC_API_BASE=http://your-host:4738`，否则会走默认 `127.0.0.1:4738`。
-
-### 9.6 多 Issue 并发
-
-`agent.max_concurrent_agents` 控制并发槽位。每个 槽位独立 worktree + 独立 Codex 子进程。P0 推荐先 `1`，跑稳定后再加。
-
----
-
-## 10. CLI 速查
-
-```bash
-# 系统先决条件检查
+# 环境检查
+cd /path/to/issuepilot
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
 pnpm exec issuepilot doctor
 
-# workflow 静态 + GitLab 连通性校验
-pnpm exec issuepilot validate --workflow <path>
+# OAuth 登录
+pnpm exec issuepilot auth login --hostname <gitlab-host> --client-id <oauth-application-id>
+pnpm exec issuepilot auth status --hostname <gitlab-host>
+pnpm exec issuepilot auth logout --hostname <gitlab-host>
 
-# 启动 daemon
-pnpm exec issuepilot run --workflow <path> [--port 4738] [--host 127.0.0.1]
+# 校验 workflow
+pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
 
-# 推荐：用 smoke wrapper 起 daemon 并自动等 ready
-pnpm smoke --workflow <path> [--port 4738] [--host 127.0.0.1] [--dashboard-url http://localhost:3000]
+# 启动 orchestrator
+pnpm smoke --workflow "$WORKFLOW_PATH"
+pnpm exec issuepilot run --workflow "$WORKFLOW_PATH"
 
-# 单独跑 dashboard（开发用）
+# 启动 dashboard
 pnpm dev:dashboard
 ```
 
-HTTP API 端点（默认 `http://127.0.0.1:4738`，见 spec §15）：
-
-```text
-GET /api/state                    # OrchestratorStateSnapshot
-GET /api/runs?status=&limit=      # RunRecord[]
-GET /api/runs/:runId              # RunRecord & { events, logsTail }
-GET /api/events?runId=            # IssuePilotEvent[]（分页）
-GET /api/events/stream            # text/event-stream（SSE）
-```
-
 ---
 
-## 11. 常见问题（FAQ）
+## 11. FAQ
 
-- **`pnpm exec issuepilot doctor` 报 codex app-server not found**
-  `codex app-server` 必须是可执行的子命令。`which codex` 查绝对路径，在 workflow.md 里写 `command: "/Users/xxx/.local/bin/codex app-server"`。
+**`codex app-server not found`**
 
-- **`Could not resolve remote.origin` / git push 卡住**
-  workspace mirror 用 `git clone --mirror` 创建，但 push 不能走 mirror 模式。本仓库已经在 `packages/workspace/src/mirror.ts` 里修过（设 `remote.origin.mirror=false` + 显式 refspec）。如果还卡，`rm -rf ~/.issuepilot/repos/<slug>` 让 IssuePilot 重新克隆。
+确认 Codex CLI 已安装并登录：
 
-- **GitLab 401/403**
-  最常见：`GITLAB_TOKEN` 没 export 进 daemon 进程；token 缺 `api` scope；token 对目标项目不可见。修了 token 之后**重启** daemon。
+```bash
+which codex
+codex app-server --help
+```
 
-- **dashboard 一直空 / 报 CORS**
-  Dashboard 默认走 `http://127.0.0.1:4738`，必须和 `--host` 一致。容器场景见 §9.5。
+如果 Codex 不在 PATH 里，在 workflow 里把 `codex.command` 改成绝对路径。
 
-- **`pnpm smoke` 卡 readiness**
-  readiness 探测失败时 smoke wrapper 会 SIGTERM 给 daemon 等最多 5 秒，仍未退出会 SIGKILL，命令一定会返回控制权（不会无限 hang）。
+**`auth login failed ... category=invalid_client`**
 
-- **怎么知道 IssuePilot 写的 note 是哪个 run？**
-  每条 note 第一行有 marker：`<!-- issuepilot:run=<runId> -->`。同一 run 复用、不同 run 创建新 note。
+GitLab 上没有注册匹配的 OAuth Application，或没有启用 Device Authorization Grant。重新注册 Application，复制 Application ID，再执行：
 
-- **怎么停一个 run？**
-  P0 没有 cancel 接口。直接在 GitLab 上把 label 从 `ai-running` 改回别的（如 `ai-blocked`）会让 orchestrator 在下次 tick reconcile 时观察到 label 不对、不再处理；workspace 保留供取证。
+```bash
+pnpm exec issuepilot auth login --hostname <host> --client-id <oauth-application-id>
+```
+
+**GitLab 401 / 403**
+
+检查 token 是否 export 到启动 daemon 的同一个 shell、是否有 `api` scope、是否能访问目标项目。修复后重启 orchestrator。
+
+**dashboard 显示 `orchestrator unreachable`**
+
+dashboard 只是前端。必须另开一个终端启动 orchestrator：
+
+```bash
+cd /path/to/issuepilot
+export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+pnpm smoke --workflow "$WORKFLOW_PATH"
+```
+
+如果 orchestrator 不在 `4738`，用 `NEXT_PUBLIC_API_BASE` 指定地址。
+
+**怎么知道 IssuePilot 写的 note 对应哪个 run？**
+
+Issue note 第一行有 marker：
+
+```text
+<!-- issuepilot:run:<runId> -->
+```
 
 ---
 
 ## 12. 下一步
 
-- 看 [`docs/superpowers/specs/2026-05-11-issuepilot-design.md`](./superpowers/specs/2026-05-11-issuepilot-design.md) 了解架构与协议细节。
-- 看 [`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`](./superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md) 跑一次完整 smoke。
-- 看 [`CHANGELOG.md`](../CHANGELOG.md) 了解最新进展。
-- 在你自己的 sandbox 上多跑几个 Issue，把 failed / blocked 路径也走一遍。
-
-合并 MR 之前**人 review**。IssuePilot 不替代 code review，它只是让 AI 工程师**先把准备工作做完**。
+- 架构细节：[`docs/superpowers/specs/2026-05-11-issuepilot-design.md`](./superpowers/specs/2026-05-11-issuepilot-design.md)
+- 完整 smoke runbook：[`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`](./superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md)
+- 更新记录：[`CHANGELOG.md`](../CHANGELOG.md)

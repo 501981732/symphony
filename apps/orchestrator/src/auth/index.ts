@@ -152,6 +152,30 @@ export async function authLogin(
     device = await requestDeviceCodeImpl({ baseUrl, clientId, scope });
   } catch (err) {
     if (err instanceof OAuthError) {
+      if (err.category === "invalid_client") {
+        throw new Error(
+          [
+            `Failed to start OAuth device authorization (category=invalid_client): client_id "${clientId}" is not registered on ${options.hostname}.`,
+            ``,
+            `To fix this, a GitLab administrator needs to register an OAuth Application on ${options.hostname}:`,
+            `  1. Go to: https://${options.hostname.replace(/^https?:\/\//, "")}/admin/applications`,
+            `     (or User Settings → Applications for a personal OAuth app)`,
+            `  2. Create a new application:`,
+            `       Name: IssuePilot (or any name)`,
+            `       Redirect URI: (leave empty or use urn:ietf:wg:oauth:2.0:oob)`,
+            `       Confidential: NO (must be unchecked)`,
+            `       Scopes: api, read_repository, write_repository`,
+            `       Enable "Device Authorization Grant" (if present)`,
+            `  3. Copy the generated Application ID.`,
+            ``,
+            `Then run:`,
+            `  pnpm exec issuepilot auth login --hostname ${options.hostname.replace(/^https?:\/\//, "")} --client-id <application-id>`,
+            ``,
+            `Or set the env var permanently:`,
+            `  export IPILOT_OAUTH_CLIENT_ID=<application-id>`,
+          ].join("\n"),
+        );
+      }
       throw new Error(
         `Failed to start OAuth device authorization (category=${err.category})`,
       );

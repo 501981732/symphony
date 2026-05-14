@@ -47,7 +47,10 @@ describe("createGitLabClient", () => {
 
   it("propagates GitLabError instances unchanged", async () => {
     const c = makeClient();
-    const sentinel = new GitLabError("nope", { category: "permission", status: 403 });
+    const sentinel = new GitLabError("nope", {
+      category: "permission",
+      status: 403,
+    });
     await expect(
       c.request("test", () => {
         throw sentinel;
@@ -71,17 +74,48 @@ describe("createGitLabClient", () => {
       { status: 503, category: "transient", retriable: true },
     ];
     for (const { status, category, retriable } of cases) {
-      const err = await c.request("ping", () => {
-        const e: unknown = Object.assign(new Error("boom"), {
-          cause: { response: { status } },
-        });
-        throw e;
-      }).catch((e) => e);
+      const err = await c
+        .request("ping", () => {
+          const e: unknown = Object.assign(new Error("boom"), {
+            cause: { response: { status } },
+          });
+          throw e;
+        })
+        .catch((e) => e);
       expect(err).toBeInstanceOf(GitLabError);
       expect(err.category).toBe(category);
       expect(err.status).toBe(status);
       expect(err.retriable).toBe(retriable);
     }
+  });
+
+  it("does not retain request auth headers in normalized error causes", async () => {
+    const c = makeClient();
+    const err = await c
+      .request("ping", () => {
+        const headers = new Headers();
+        headers.set("private-token", "super-secret-token-value");
+        const e: unknown = Object.assign(new Error("auth"), {
+          cause: {
+            request: {
+              method: "GET",
+              url: "https://gitlab.example.com/api/v4/projects/x/issues",
+              headers,
+            },
+            response: {
+              status: 401,
+              statusText: "Unauthorized",
+              url: "https://gitlab.example.com/api/v4/projects/x/issues",
+            },
+          },
+        });
+        throw e;
+      })
+      .catch((e) => e);
+
+    expect(err).toBeInstanceOf(GitLabError);
+    expect(JSON.stringify(err.cause)).not.toContain("super-secret-token-value");
+    expect(JSON.stringify(err.cause)).toContain("private-token");
   });
 
   it("maps network / unknown failures to transient + retriable", async () => {

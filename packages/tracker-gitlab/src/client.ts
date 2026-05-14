@@ -10,7 +10,8 @@ import { GitLabError, toGitLabError } from "./errors.js";
  */
 export type GitlabCtor = new (opts: {
   host: string;
-  token: string;
+  token?: string;
+  oauthToken?: string;
 }) => unknown;
 
 export interface CreateGitLabClientInput {
@@ -59,13 +60,20 @@ export interface GitLabClient<TApi = unknown> {
   toJSON(): { baseUrl: string; projectId: string };
 }
 
+type GitLabAuth =
+  | { kind: "private-token"; token: string }
+  | { kind: "oauth"; token: string };
+
 interface InternalClientState {
   api: unknown;
   token: string;
 }
 
-function buildApi(Ctor: GitlabCtor, host: string, token: string): unknown {
-  return new Ctor({ host, token });
+function buildApi(Ctor: GitlabCtor, host: string, auth: GitLabAuth): unknown {
+  if (auth.kind === "oauth") {
+    return new Ctor({ host, oauthToken: auth.token });
+  }
+  return new Ctor({ host, token: auth.token });
 }
 
 function defineHiddenToken<T extends GitLabClient<unknown>>(
@@ -95,7 +103,7 @@ export function createGitLabClient<TApi = unknown>(
   );
   const Ctor = input.GitlabCtor ?? (Gitlab as unknown as GitlabCtor);
   const state: InternalClientState = {
-    api: buildApi(Ctor, input.baseUrl, token),
+    api: buildApi(Ctor, input.baseUrl, { kind: "private-token", token }),
     token,
   };
 
@@ -131,7 +139,10 @@ export function createGitLabClientFromCredential<TApi = unknown>(
 ): GitLabClient<TApi> {
   const Ctor = input.GitlabCtor ?? (Gitlab as unknown as GitlabCtor);
   const state: InternalClientState = {
-    api: buildApi(Ctor, input.baseUrl, input.credential.accessToken),
+    api: buildApi(Ctor, input.baseUrl, {
+      kind: input.credential.source === "oauth" ? "oauth" : "private-token",
+      token: input.credential.accessToken,
+    }),
     token: input.credential.accessToken,
   };
   let credential = input.credential;
@@ -171,7 +182,10 @@ export function createGitLabClientFromCredential<TApi = unknown>(
         }
         credential = refreshed;
         state.token = refreshed.accessToken;
-        state.api = buildApi(Ctor, input.baseUrl, refreshed.accessToken);
+        state.api = buildApi(Ctor, input.baseUrl, {
+          kind: "oauth",
+          token: refreshed.accessToken,
+        });
         defineHiddenToken(client, refreshed.accessToken);
         try {
           return await fn(state.api as TApi);
