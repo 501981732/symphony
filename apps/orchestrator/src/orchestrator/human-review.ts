@@ -157,6 +157,12 @@ async function reconcileIssue(
     }
 
     if (mrState === "closed") {
+      emit(input, {
+        type: "human_review_mr_closed_unmerged",
+        issueIid: issue.iid,
+        runId: workpad.runId,
+        detail: mrDetail(workpad.branch, mr),
+      });
       await input.gitlab.transitionLabels(issue.iid, {
         add: [input.reworkLabel],
         remove: [input.handoffLabel],
@@ -200,6 +206,13 @@ async function closeMergedIssue(
   parsed: IssuePilotWorkpadRef,
   mr: HumanReviewMergeRequest,
 ): Promise<void> {
+  emit(input, {
+    type: "human_review_mr_merged",
+    issueIid,
+    runId: parsed.runId,
+    detail: mrDetail(parsed.branch, mr),
+  });
+
   const latest = await input.gitlab.getIssue(issueIid);
   if (latest.state !== "opened" || !hasLabel(latest, input.handoffLabel)) {
     emit(input, {
@@ -214,6 +227,8 @@ async function closeMergedIssue(
     return;
   }
 
+  // Task 2 keeps final note creation simple; a closeIssue failure may
+  // duplicate this note on retry.
   await input.gitlab.createIssueNote(issueIid, buildMergedFinalNote(parsed, mr));
   await input.gitlab.closeIssue(issueIid, {
     removeLabels: [input.handoffLabel],

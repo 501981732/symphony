@@ -50,6 +50,25 @@ function workpad(runId = "run-7", branch = "ai/7-add-x"): string {
   ].join("\n");
 }
 
+function expectIssueMrEvent(
+  events: ReturnType<typeof createMocks>["events"],
+  type: string,
+  mrState: string,
+): void {
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type,
+      issueIid: 7,
+      runId: "run-7",
+      detail: expect.objectContaining({
+        branch: "ai/7-add-x",
+        mrIid: 70,
+        mrState,
+      }),
+    }),
+  );
+}
+
 describe("parseIssuePilotWorkpad", () => {
   it("parses colon marker and backticked branch", () => {
     expect(parseIssuePilotWorkpad(workpad("run-7", "ai/7-add-x"))).toEqual({
@@ -162,7 +181,7 @@ describe("reconcileHumanReview", () => {
     });
   });
 
-  it("closes the issue when the matching MR is merged", async () => {
+  it("emits MR merged and closes the issue when the matching MR is merged", async () => {
     mocks.gitlab.listMergeRequestsBySourceBranch.mockResolvedValue([
       {
         iid: 70,
@@ -184,9 +203,8 @@ describe("reconcileHumanReview", () => {
       removeLabels: ["human-review"],
       requireCurrent: ["human-review"],
     });
-    expect(mocks.events.map((event) => event.type)).toContain(
-      "human_review_issue_closed",
-    );
+    expectIssueMrEvent(mocks.events, "human_review_mr_merged", "merged");
+    expectIssueMrEvent(mocks.events, "human_review_issue_closed", "merged");
   });
 
   it("keeps the issue unchanged when the matching MR is opened", async () => {
@@ -204,12 +222,14 @@ describe("reconcileHumanReview", () => {
     expect(mocks.gitlab.createIssueNote).not.toHaveBeenCalled();
     expect(mocks.gitlab.closeIssue).not.toHaveBeenCalled();
     expect(mocks.gitlab.transitionLabels).not.toHaveBeenCalled();
-    expect(mocks.events.map((event) => event.type)).toContain(
+    expectIssueMrEvent(
+      mocks.events,
       "human_review_mr_still_open",
+      "opened",
     );
   });
 
-  it("moves the issue to ai-rework when the matching MR is closed unmerged", async () => {
+  it("emits MR closed unmerged and moves the issue to ai-rework", async () => {
     mocks.gitlab.listMergeRequestsBySourceBranch.mockResolvedValue([
       {
         iid: 70,
@@ -227,9 +247,12 @@ describe("reconcileHumanReview", () => {
       requireCurrent: ["human-review"],
     });
     expect(mocks.gitlab.closeIssue).not.toHaveBeenCalled();
-    expect(mocks.events.map((event) => event.type)).toContain(
-      "human_review_rework_requested",
+    expectIssueMrEvent(
+      mocks.events,
+      "human_review_mr_closed_unmerged",
+      "closed",
     );
+    expectIssueMrEvent(mocks.events, "human_review_rework_requested", "closed");
   });
 
   it("does not close when no workpad note exists", async () => {
