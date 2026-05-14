@@ -65,7 +65,7 @@ describe("happy path E2E", () => {
     }
   });
 
-  it("claims an ai-ready issue, runs codex, pushes a branch, opens an MR, writes a note and hands off", async () => {
+  it("claims an ai-ready issue, hands off, then closes after the MR is merged", async () => {
     if (!ws) throw new Error("workspace not initialised");
 
     const startedAt = performance.now();
@@ -131,6 +131,35 @@ describe("happy path E2E", () => {
     // so anything other than that means the lifecycle stalled. Avoid the
     // overly broad accept-list which used to mask real regressions.
     await waitForCompletedRun(daemon.url, firstRun.runId);
+
+    // Step 6: a human merges the MR in GitLab. The next daemon poll should
+    // reconcile the `human-review` issue, remove the handoff label, and close
+    // the GitLab issue.
+    if (!mr) throw new Error("expected MR before merge mutation");
+    mr.state = "merged";
+    mr.updated_at = new Date().toISOString();
+
+    await ws.gitlabServer.waitFor(
+      (s) => {
+        const latest = s.issues.get(ISSUE_IID);
+        return latest?.state === "closed";
+      },
+      { timeoutMs: 10_000, intervalMs: 50 },
+    );
+
+    expect(issue.state).toBe("closed");
+    expect(issue.labels).not.toContain("human-review");
+    expect(issue.labels).not.toContain("ai-running");
+    expect(
+      (ws.gitlabState.notes.get(ISSUE_IID) ?? []).some((n) =>
+        n.body.includes("MR !"),
+      ),
+    ).toBe(true);
+    expect(
+      (ws.gitlabState.notes.get(ISSUE_IID) ?? []).some((n) =>
+        n.body.includes("was merged"),
+      ),
+    ).toBe(true);
 
     // Step 7: event store contains the spec §10 happy-path event types.
     const stateRes = await fetch(`${daemon.url}/api/state`);
