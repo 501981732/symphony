@@ -179,6 +179,11 @@ describe("reconcile", () => {
     expect(mocks.gitlab.updateNote).toHaveBeenCalledWith(
       42,
       7,
+      expect.stringContaining("## IssuePilot handoff"),
+    );
+    expect(mocks.gitlab.updateNote).toHaveBeenCalledWith(
+      42,
+      7,
       expect.stringContaining("issuepilot:run:run-1"),
     );
   });
