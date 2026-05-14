@@ -4,6 +4,7 @@ import * as path from "node:path";
 
 import type { GitLabAdapter } from "@issuepilot/tracker-gitlab";
 import type { WorkflowConfig } from "@issuepilot/workflow";
+import type { FastifyInstance } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
 import { hostnameFromBaseUrl, splitCommand } from "../daemon.js";
@@ -117,6 +118,76 @@ function createGitLabForHumanReviewScanPollution(): GitLabAdapter {
   };
 }
 
+function createGitLabForClosedUnmergedReview(): GitLabAdapter {
+  return {
+    listCandidateIssues: vi.fn(async () => [
+      {
+        id: "7",
+        iid: 7,
+        title: "Needs review",
+        url: "https://gitlab.example.com/group/project/-/issues/7",
+        projectId: "group/project",
+        labels: ["human-review"],
+      },
+    ]),
+    getIssue: vi.fn(async (iid: number) => ({
+      id: String(iid),
+      iid,
+      title: "Needs review",
+      url: `https://gitlab.example.com/group/project/-/issues/${iid}`,
+      projectId: "group/project",
+      labels: ["human-review"],
+      description: "",
+      state: "opened",
+    })),
+    findLatestIssuePilotWorkpadNote: vi.fn(async () => ({
+      id: 101,
+      body: [
+        "<!-- issuepilot:run:run-7 -->",
+        "- Branch: `issuepilot/7-needs-review`",
+      ].join("\n"),
+    })),
+    listMergeRequestsBySourceBranch: vi.fn(async () => [
+      {
+        iid: 3,
+        webUrl: "https://gitlab.example.com/group/project/-/merge_requests/3",
+        state: "closed",
+        sourceBranch: "issuepilot/7-needs-review",
+        updatedAt: "2026-05-14T00:00:00.000Z",
+      },
+    ]),
+    createIssueNote: vi.fn(async () => ({ id: 1 })),
+    closeIssue: vi.fn(async () => ({
+      labels: [],
+      state: "closed",
+    })),
+    transitionLabels: vi.fn(async () => ({
+      labels: ["needs-agent-rework"],
+    })),
+    updateIssueNote: vi.fn(async () => {}),
+    findWorkpadNote: vi.fn(async () => null),
+    createMergeRequest: vi.fn(async () => ({
+      id: 1,
+      iid: 1,
+      webUrl: "https://gitlab.example.com/group/project/-/merge_requests/1",
+    })),
+    updateMergeRequest: vi.fn(async () => {}),
+    getMergeRequest: vi.fn(async () => ({
+      iid: 1,
+      webUrl: "https://gitlab.example.com/group/project/-/merge_requests/1",
+      state: "opened",
+    })),
+    listMergeRequestNotes: vi.fn(async () => []),
+    getPipelineStatus: vi.fn(async () => "unknown"),
+  };
+}
+
+function createFakeServer(): FastifyInstance {
+  return {
+    close: vi.fn(async () => {}),
+  } as unknown as FastifyInstance;
+}
+
 describe("hostnameFromBaseUrl", () => {
   it("returns the bare hostname for an https URL", () => {
     expect(hostnameFromBaseUrl("https://gitlab.example.com")).toBe(
@@ -218,12 +289,7 @@ describe("startDaemon human-review event publishing", () => {
         createGitLab: vi.fn(async () =>
           createGitLabForHumanReviewScanPollution(),
         ),
-        createServer: vi.fn(
-          async () =>
-            ({
-              close: vi.fn(async () => {}),
-            }) as never,
-        ),
+        createServer: vi.fn(async () => createFakeServer()),
         startLoop: vi.fn((deps) => {
           loopDeps = deps;
           return {
@@ -252,6 +318,53 @@ describe("startDaemon human-review event publishing", () => {
         .filter(Boolean)
         .map((line) => (JSON.parse(line) as { type: string }).type);
       expect(eventTypes).toEqual(["human_review_mr_missing"]);
+    } finally {
+      await daemon.stop();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the configured rework label for closed unmerged merge requests", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "issuepilot-daemon-rework-label-"),
+    );
+    const workflow = createWorkflow(root);
+    workflow.tracker.activeLabels = ["ai-ready", "needs-agent-rework"];
+    workflow.tracker.reworkLabel = "needs-agent-rework";
+    const gitlab = createGitLabForClosedUnmergedReview();
+    let loopDeps: LoopDeps | undefined;
+
+    const daemon = await startDaemon(
+      { workflowPath: workflow.source.path },
+      {
+        workflowLoader: {
+          loadOnce: vi.fn(async () => workflow),
+          start: vi.fn(async () => ({
+            stop: vi.fn(async () => {}),
+          })),
+          render: vi.fn(() => "prompt"),
+        },
+        createGitLab: vi.fn(async () => gitlab),
+        createServer: vi.fn(async () => createFakeServer()),
+        startLoop: vi.fn((deps) => {
+          loopDeps = deps;
+          return {
+            tick: vi.fn(async () => {}),
+            stop: vi.fn(async () => {}),
+          };
+        }),
+        state: createRuntimeState(),
+      },
+    );
+
+    try {
+      await loopDeps?.reconcileRunning();
+
+      expect(gitlab.transitionLabels).toHaveBeenCalledWith(7, {
+        add: ["needs-agent-rework"],
+        remove: ["human-review"],
+        requireCurrent: ["human-review"],
+      });
     } finally {
       await daemon.stop();
       await fs.rm(root, { recursive: true, force: true });

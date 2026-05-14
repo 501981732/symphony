@@ -713,9 +713,7 @@ export async function startDaemon(
       const blockedLabel = workflow.tracker.blockedLabel;
       await reconcileHumanReview({
         handoffLabel: workflow.tracker.handoffLabel,
-        reworkLabel:
-          workflow.tracker.activeLabels.find((l) => l === "ai-rework") ??
-          "ai-rework",
+        reworkLabel: workflow.tracker.reworkLabel,
         gitlab: {
           listHumanReviewIssues: async () => {
             const issues = await gitlab.listCandidateIssues({
