@@ -32,6 +32,11 @@ trail, and hands the result back as a merge request for human review.
 - **Trustworthy handoff boundary** — failures and blocks fall back to
   `ai-failed` / `ai-blocked` while the workspace and logs are preserved for
   forensics; secrets never leak into logs, events, API responses, or prompts.
+- **Zero hand-rolled token management** — built-in `issuepilot auth login`
+  runs the GitLab OAuth 2.0 Device Flow, persists the token at
+  `~/.issuepilot/credentials` (mode `0600`), and auto-refreshes it; on a 401
+  the daemon silently rotates and retries once. PAT / Group Token via
+  `tracker.token_env` still works for CI / shared envs.
 - **Local single-machine loop** — `~/.issuepilot` keeps the worktrees, JSONL
   event store, and run records on disk; the daemon recovers reconciliation on
   restart without requiring an external database.

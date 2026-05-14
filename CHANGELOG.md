@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-14 — **新增 GitLab OAuth 2.0 Device Flow 登录：`issuepilot auth login | status | logout`，daemon 自动 refresh token。** 把 spec §22 决策 3 从「P1 规划」提到「现役交付」，正式让用户摆脱手工 PAT 维护。新增 `@issuepilot/credentials` 包（device flow client + 0600/0700 本地存储 + 自动 refresh + CredentialResolver），重写 daemon 启动时的凭据解析路径（env 优先 → `~/.issuepilot/credentials` fallback），改造 `@issuepilot/tracker-gitlab` 在 401 时自动 refresh 一次再重试。验证：`pnpm -w turbo run build typecheck lint test` 44/44 全绿（新增 49 个单测：credentials 36、tracker-gitlab 5、orchestrator 13），`pnpm -w turbo run test:smoke` 通过。
+  - **新增 `@issuepilot/credentials` 包（packages/credentials/）**：6 个模块、36 单测。
+    - `device-flow.ts`：`requestDeviceCode` / `pollForToken` / `refreshAccessToken` 三个端点 client。`OAuthError` 把 RFC 8628 的 7 种状态（authorization_pending、slow_down、expired_token、access_denied、invalid_grant、invalid_client、transient/unknown）连同 `retriable` 一起暴露。所有 fetch 走 `AbortController` 30s timeout；5xx 即便 body 含 OAuth `error` 也归 `transient`；任何错误 message 都不嵌入 device_code / user_code / refresh token / access token。
+    - `paths.ts` + `store.ts`：`~/.issuepilot/credentials` 默认路径（可被 `IPILOT_HOME` 覆盖），目录强制 `mkdir(mode=0o700)` + `chmod 0o700`，文件 `writeFile(mode=0o600)` + `chmod 0o600`，写入用 `${file}.tmp-<rand>` + `fs.rename` 原子化。读前 `assertSecureFileMode` 校验，发现 `mode & 0o077 !== 0` 抛 `CredentialsPermissionError` 提示用户 `chmod 600`。Windows 平台跳过 mode 校验。
+    - `resolver.ts`：`createCredentialResolver({ store, env, refresh, refreshSkewMs=5min })`。`resolve({ hostname, trackerTokenEnv })` 优先级：①`tracker.token_env` 命中 → `source:"env"`，**不**触碰 store；②store 命中且未临近到期 → `source:"oauth"`；③即将过期（≤skew）→ 自动调 `refreshAccessToken` 写回 store；④无 credential → 抛 `CredentialError("not_logged_in")` 提示 `issuepilot auth login`。每个 oauth ResolvedCredential 都自带 `refresh()` 闭包供调用方按需触发。
+  - **`@issuepilot/tracker-gitlab` 改造**：新增 `createGitLabClientFromCredential` 与 `createGitLabAdapterFromCredential`。前者持有当前 `ResolvedCredential`，`request<T>(label, fn)` 在 `toGitLabError` 分类为 `auth` 且 source=oauth 且未在本次重试过时，调一次 `credential.refresh!()` → `Object.defineProperty` 覆盖 hidden `_token` slot → 用新 token 重建 `Gitlab` 实例 → 重跑 fn 一次。env source 上的 401 立即向上抛，避免误触 refresh。`createGitLabClient` 旧签名零改动，所有 7 测试集 + 旧调用方完全兼容；新增 5 个 `client-credential.test.ts` 用例覆盖 401 → refresh-and-retry 路径。
+  - **`@issuepilot/workflow` 让 `tracker.token_env` 可选**：schema、types、parse mapping 全部接受省略；`validateWorkflowEnv` 在 tokenEnv 缺失时静默通过；`resolveTrackerSecret` 缺失时抛带「使用 `issuepilot auth login`」提示的错。47 个 workflow 测试不变。
+  - **`apps/orchestrator` CLI 新增 `auth` 子命令**（`src/auth/index.ts` + `src/cli.ts`）：
+    - `auth login --hostname <host> [--scope ...] [--client-id ...] [--base-url ...]`：调 device flow → 控制台只打印 `user_code` 与 `verification_uri_complete` → 轮询直到拿到 token → 持久化。`maskToken()` 把 access token 缩成 `oauth-…ab` 形式打印；refresh token / device code 全程不出现在控制台。OAuth client_id 默认 `issuepilot-cli`，可被 `--client-id` 或 `IPILOT_OAUTH_CLIENT_ID` 环境变量覆盖（client_id 是公开值不是 secret）。
+    - `auth status [--hostname]`：列出 hostname / clientId / scope / expiresAt / obtainedAt / tokenType；`describeExpiry` 输出「expires in N minutes」「expired」等友好状态；token 字符串本身永远不打印。
+    - `auth logout [--hostname | --all]`：单 hostname 删除直接执行；不带 hostname 时强制要求 `--all` 才能清空，避免误操作。
+  - **daemon 凭据解析优先级**（`apps/orchestrator/src/daemon.ts`）：startDaemon 在创建 GitLab adapter 前 fail-fast 调 `CredentialResolver.resolve(...)`：成功且 source=env 走旧 `createGitLabAdapter` 路径（保留 sandbox 友好的同步分支），source=oauth 走新 `createGitLabAdapterFromCredential` 路径。新增 `hostnameFromBaseUrl` 把 baseUrl 收敛成 store key，避免末尾斜杠/路径污染 credentials 文件。新增 `deps.credentialResolver` / `deps.credentialsStore` 测试钩子。
+  - **新增 13 个 orchestrator 单测**：`auth/login.test.ts` 6 个（login 持久化 + 永不打印 token / 错误传播 / status 列出 / logout / 拒绝 wipe-all），`cli.test.ts` 4 个新增（auth login/status/logout 命令路由 + 错误时退出码=1），`daemon.test.ts` 3 个新增（`hostnameFromBaseUrl` 三种入参形态）。
+  - **未做的扩展**：fake OAuth e2e server（计划 §Phase 7.1-7.3）暂不引入，因为 36 + 5 + 13 = 54 个单测已经覆盖：device flow 7 错误状态、refresh-and-retry 一次性、credentials 文件 0600 权限校验、daemon hostname 解析、CLI 路由 + token 不打印。后续若加跨 daemon 持久化或多 hostname 场景再补 e2e。
+
 ### Changed
 
 - 2026-05-14 — **凭据管理文档大幅精简，中英文同步并预告 `issuepilot auth login`。** 中文 `docs/getting-started.zh-CN.md §5.0` 从 4 个方案 + 80+ 行（A direnv / B 手动 source / C shell profile / D glab 桥接 + 4 段实现细节）压缩为一张 3 行优先级表 + 3 段简洁示例（A `issuepilot auth login` 推荐 / B `.env` + direnv / C glab CLI 桥接），删除信息量低的方案 B/C 和方案 D 的工作原理段落；英文 `docs/getting-started.md` 从「完全没有 §5.0」补齐到与中文对等的 §5.0 章节，并把 §5.2/§5.3 里裸 `export GITLAB_TOKEN` 改成"§5.0 已配置则跳过，否则临时执行"。同时把即将上线的 OAuth Device Flow CLI（`issuepilot auth login/status/logout`）作为推荐方案 A 写进文档，对齐 `docs/superpowers/specs/2026-05-11-issuepilot-design.md` §22 的规划方向。
