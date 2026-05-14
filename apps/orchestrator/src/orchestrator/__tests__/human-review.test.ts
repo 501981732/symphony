@@ -218,8 +218,14 @@ describe("reconcileHumanReview", () => {
     expect(mocks.gitlab.getIssue).toHaveBeenCalledWith(7);
     expect(mocks.gitlab.createIssueNote).toHaveBeenCalledWith(
       7,
-      expect.stringContaining("MR !70 was merged"),
+      expect.stringContaining("## IssuePilot closed this issue"),
     );
+    const note = mocks.gitlab.createIssueNote.mock.calls[0]![1];
+    expect(note).toContain("- Status: closed");
+    expect(note).toContain("- Run: `run-7`");
+    expect(note).toContain("- Branch: `ai/7-add-x`");
+    expect(note).toContain("- MR: !70 https://gitlab.example.com/mr/70");
+    expect(note).toContain("removed `human-review` and closed this Issue");
     expect(mocks.gitlab.closeIssue).toHaveBeenCalledWith(7, {
       removeLabels: ["human-review"],
       requireCurrent: ["human-review"],

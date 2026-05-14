@@ -239,7 +239,10 @@ async function closeMergedIssue(
 
   // Task 2 keeps final note creation simple; a closeIssue failure may
   // duplicate this note on retry.
-  await input.gitlab.createIssueNote(issueIid, buildMergedFinalNote(parsed, mr));
+  await input.gitlab.createIssueNote(
+    issueIid,
+    buildMergedFinalNote(parsed, mr, input.handoffLabel),
+  );
   const closed = await input.gitlab.closeIssue(issueIid, {
     removeLabels: [input.handoffLabel],
     requireCurrent: [input.handoffLabel],
@@ -259,11 +262,18 @@ async function closeMergedIssue(
 function buildMergedFinalNote(
   parsed: IssuePilotWorkpadRef,
   mr: HumanReviewMergeRequest,
+  handoffLabel: string,
 ): string {
   return [
-    `IssuePilot closing note: MR !${mr.iid} was merged.`,
+    "## IssuePilot closed this issue",
+    "",
+    "- Status: closed",
+    `- Run: \`${parsed.runId}\``,
     `- Branch: \`${parsed.branch}\``,
-    `- MR: ${mr.webUrl}`,
+    `- MR: !${mr.iid} ${mr.webUrl}`,
+    "",
+    "### Result",
+    `The linked MR was merged by a human reviewer, so IssuePilot removed \`${handoffLabel}\` and closed this Issue.`,
   ].join("\n");
 }
 
