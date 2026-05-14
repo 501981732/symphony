@@ -274,7 +274,42 @@ describe("closeIssue", () => {
       }),
     ).resolves.toEqual({ labels: ["team"], state: "closed" });
     expect(edit).toHaveBeenCalledWith("group/project", 42, {
-      labels: "team",
+      removeLabels: "human-review",
+      stateEvent: "close",
+    });
+  });
+
+  it("returns reloaded labels so unrelated concurrent labels are preserved", async () => {
+    const show = vi
+      .fn()
+      .mockResolvedValueOnce(
+        issue({ iid: 42, labels: ["human-review", "team"], state: "opened" }),
+      )
+      .mockResolvedValueOnce(
+        issue({
+          iid: 42,
+          labels: ["team", "concurrent-label"],
+          state: "closed",
+        }),
+      );
+    const edit = vi.fn(async () =>
+      issue({ iid: 42, labels: ["team"], state: "closed" }),
+    );
+    const client = makeClient({
+      Issues: { all: vi.fn(), show, edit },
+    });
+
+    await expect(
+      closeIssue(client, 42, {
+        requireCurrent: ["human-review"],
+        removeLabels: ["human-review"],
+      }),
+    ).resolves.toEqual({
+      labels: ["team", "concurrent-label"],
+      state: "closed",
+    });
+    expect(edit).toHaveBeenCalledWith("group/project", 42, {
+      removeLabels: "human-review",
       stateEvent: "close",
     });
   });

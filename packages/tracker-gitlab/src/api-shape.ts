@@ -55,7 +55,11 @@ export interface IssuesApi {
   edit(
     projectId: string | number,
     iid: number,
-    opts: { labels?: string; stateEvent?: "close" | "reopen" },
+    opts: {
+      labels?: string;
+      removeLabels?: string;
+      stateEvent?: "close" | "reopen";
+    },
   ): Promise<RawIssue>;
 }
 

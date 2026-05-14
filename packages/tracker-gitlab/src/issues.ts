@@ -110,12 +110,16 @@ export async function closeIssue(
       );
     }
 
-    const removeSet = new Set(opts.removeLabels);
-    const nextLabels = currentLabels.filter((l) => !removeSet.has(l));
-    await api.Issues.edit(client.projectId, iid, {
-      labels: nextLabels.join(","),
+    const editOpts: {
+      removeLabels?: string;
+      stateEvent: "close";
+    } = {
       stateEvent: "close",
-    });
+    };
+    if (opts.removeLabels.length > 0) {
+      editOpts.removeLabels = opts.removeLabels.join(",");
+    }
+    await api.Issues.edit(client.projectId, iid, editOpts);
 
     const after = await api.Issues.show(iid, { projectId: client.projectId });
     return { labels: [...(after.labels ?? [])], state: after.state };

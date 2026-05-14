@@ -243,7 +243,7 @@ describe("createGitLabAdapter", () => {
       }),
     ).resolves.toEqual({ labels: [], state: "closed" });
     expect(edit).toHaveBeenCalledWith("group/project", 10, {
-      labels: "",
+      removeLabels: "human-review",
       stateEvent: "close",
     });
   });
