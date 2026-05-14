@@ -225,8 +225,19 @@ describe("reconcileHumanReview", () => {
       requireCurrent: ["human-review"],
     });
     expectScanEvent(mocks.events);
+    expectIssueMrEvent(mocks.events, "human_review_mr_found", "merged");
     expectIssueMrEvent(mocks.events, "human_review_mr_merged", "merged");
     expectIssueMrEvent(mocks.events, "human_review_issue_closed", "merged");
+    expect(
+      mocks.events.find((event) => event.type === "human_review_issue_closed"),
+    ).toEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          labels: [],
+          state: "closed",
+        }),
+      }),
+    );
   });
 
   it("keeps the issue unchanged when the matching MR is opened", async () => {
@@ -245,6 +256,7 @@ describe("reconcileHumanReview", () => {
     expect(mocks.gitlab.closeIssue).not.toHaveBeenCalled();
     expect(mocks.gitlab.transitionLabels).not.toHaveBeenCalled();
     expectScanEvent(mocks.events);
+    expectIssueMrEvent(mocks.events, "human_review_mr_found", "opened");
     expectIssueMrEvent(
       mocks.events,
       "human_review_mr_still_open",
@@ -271,12 +283,24 @@ describe("reconcileHumanReview", () => {
     });
     expect(mocks.gitlab.closeIssue).not.toHaveBeenCalled();
     expectScanEvent(mocks.events);
+    expectIssueMrEvent(mocks.events, "human_review_mr_found", "closed");
     expectIssueMrEvent(
       mocks.events,
       "human_review_mr_closed_unmerged",
       "closed",
     );
     expectIssueMrEvent(mocks.events, "human_review_rework_requested", "closed");
+    expect(
+      mocks.events.find(
+        (event) => event.type === "human_review_rework_requested",
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          labels: ["ai-rework"],
+        }),
+      }),
+    );
   });
 
   it("does not close when no workpad note exists", async () => {

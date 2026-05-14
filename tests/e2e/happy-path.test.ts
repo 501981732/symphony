@@ -166,8 +166,10 @@ describe("happy path E2E", () => {
     expect(stateRes.ok).toBe(true);
     const stateBody = (await stateRes.json()) as {
       service: { status: string };
+      summary: Record<string, number>;
     };
     expect(stateBody.service.status === "ready").toBe(true);
+    expect(stateBody.summary["human-review"]).toBe(0);
 
     const eventsRes = await fetch(
       `${daemon.url}/api/events?runId=${encodeURIComponent(firstRun.runId)}&limit=200`,

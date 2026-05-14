@@ -144,6 +144,44 @@ function toEventRecord(event: {
   };
 }
 
+function syncHumanReviewFinalLabels(
+  state: RuntimeState,
+  event: HumanReviewEvent,
+): void {
+  if (
+    event.type !== "human_review_issue_closed" &&
+    event.type !== "human_review_rework_requested"
+  ) {
+    return;
+  }
+  if (event.issueIid <= 0 || !Array.isArray(event.detail["labels"])) return;
+
+  const labels = event.detail["labels"];
+  if (!labels.every((label): label is string => typeof label === "string")) {
+    return;
+  }
+
+  for (const run of state.allRuns()) {
+    const issue = run["issue"];
+    if (
+      typeof issue !== "object" ||
+      issue === null ||
+      !("iid" in issue) ||
+      Number((issue as { iid: unknown }).iid) !== event.issueIid
+    ) {
+      continue;
+    }
+
+    state.setRun(run.runId, {
+      ...run,
+      issue: {
+        ...issue,
+        labels: [...labels],
+      },
+    });
+  }
+}
+
 /**
  * Tokenize a `codex.command` string into `{ command, args[] }`. Supports
  * single + double quoted segments so paths containing spaces survive the
@@ -362,6 +400,7 @@ export async function startDaemon(
   };
 
   const publishHumanReviewEvent = (event: HumanReviewEvent): void => {
+    syncHumanReviewFinalLabels(state, event);
     if (event.issueIid > 0) {
       const key = runKey(workflow, event.issueIid);
       if (event.runId === HUMAN_REVIEW_SCAN_RUN_ID) {

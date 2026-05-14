@@ -333,6 +333,20 @@ describe("startDaemon human-review event publishing", () => {
     workflow.tracker.reworkLabel = "needs-agent-rework";
     const gitlab = createGitLabForClosedUnmergedReview();
     let loopDeps: LoopDeps | undefined;
+    const state = createRuntimeState();
+    state.setRun("run-7", {
+      runId: "run-7",
+      status: "completed",
+      attempt: 1,
+      issue: {
+        id: "7",
+        iid: 7,
+        title: "Needs review",
+        url: "https://gitlab.example.com/group/project/-/issues/7",
+        projectId: "group/project",
+        labels: ["human-review"],
+      },
+    });
 
     const daemon = await startDaemon(
       { workflowPath: workflow.source.path },
@@ -353,7 +367,7 @@ describe("startDaemon human-review event publishing", () => {
             stop: vi.fn(async () => {}),
           };
         }),
-        state: createRuntimeState(),
+        state,
       },
     );
 
@@ -365,6 +379,9 @@ describe("startDaemon human-review event publishing", () => {
         remove: ["human-review"],
         requireCurrent: ["human-review"],
       });
+      expect(
+        (state.getRun("run-7")?.["issue"] as { labels?: string[] }).labels,
+      ).toEqual(["needs-agent-rework"]);
     } finally {
       await daemon.stop();
       await fs.rm(root, { recursive: true, force: true });
