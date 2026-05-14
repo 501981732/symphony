@@ -603,6 +603,7 @@ export async function startDaemon(
           baseBranch: workflow.git.baseBranch,
           runningLabel: workflow.tracker.runningLabel,
           handoffLabel: workflow.tracker.handoffLabel,
+          reworkLabel: workflow.tracker.reworkLabel,
           promptTemplate: workflow.promptTemplate,
           hooks: workflow.hooks,
         },

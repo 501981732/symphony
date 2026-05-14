@@ -9,7 +9,10 @@ function createMocks() {
     },
     gitlab: {
       findMergeRequest: vi.fn(async () => null),
-      createMergeRequest: vi.fn(async () => ({ iid: 100 })),
+      createMergeRequest: vi.fn(async () => ({
+        iid: 100,
+        webUrl: "https://gitlab.example.com/group/project/-/merge_requests/100",
+      })),
       updateMergeRequest: vi.fn(async () => {}),
       findWorkpadNote: vi.fn(async () => null),
       createNote: vi.fn(async () => ({ id: 1 })),
@@ -34,6 +37,7 @@ function baseInput(
     issueIdentifier: "#42",
     runningLabel: "ai-running",
     handoffLabel: "human-review",
+    reworkLabel: "ai-rework",
     git: mocks.git,
     gitlab: mocks.gitlab,
     onEvent: (e) => mocks.events.push(e),
@@ -62,6 +66,35 @@ describe("reconcile", () => {
     expect(types).toContain("gitlab_push");
     expect(types).toContain("gitlab_mr_created");
     expect(types).toContain("gitlab_labels_transitioned");
+  });
+
+  it("creates a structured handoff note before moving to human-review", async () => {
+    const input = baseInput(mocks);
+    input.agentSummary = "Fixed the null check";
+    input.agentValidation = "pnpm --filter @issuepilot/orchestrator test passed";
+    input.agentRisks = "None identified";
+
+    await reconcile(input);
+
+    expect(mocks.gitlab.createNote).toHaveBeenCalledWith(
+      42,
+      expect.stringContaining("## IssuePilot handoff"),
+    );
+    const note = mocks.gitlab.createNote.mock.calls[0]![1];
+    expect(note).toContain("<!-- issuepilot:run:run-1 -->");
+    expect(note).toContain("- Status: human-review");
+    expect(note).toContain("- Run: `run-1`");
+    expect(note).toContain("- Attempt: 1");
+    expect(note).toContain("- Branch: `ai/42-fix-bug`");
+    expect(note).toContain(
+      "- MR: !100 https://gitlab.example.com/group/project/-/merge_requests/100",
+    );
+    expect(note).toContain("### What changed\nFixed the null check");
+    expect(note).toContain(
+      "### Validation\npnpm --filter @issuepilot/orchestrator test passed",
+    );
+    expect(note).toContain("### Risks / follow-ups\nNone identified");
+    expect(note).toContain("move this Issue to `ai-rework`");
   });
 
   it("fails without side effects when no new commits and no explicit no-code-change reason", async () => {
@@ -96,18 +129,17 @@ describe("reconcile", () => {
     expect(mocks.gitlab.findMergeRequest).not.toHaveBeenCalled();
     expect(mocks.gitlab.createMergeRequest).not.toHaveBeenCalled();
     expect(mocks.gitlab.updateMergeRequest).not.toHaveBeenCalled();
-    expect(mocks.gitlab.createNote).toHaveBeenCalledWith(
-      42,
-      expect.stringContaining("No code changes: Existing implementation already satisfies the issue."),
+    const note = mocks.gitlab.createNote.mock.calls[0]![1];
+    expect(note).toContain("## IssuePilot handoff");
+    expect(note).toContain("- Branch: `ai/42-fix-bug`");
+    expect(note).toContain("- MR: not created");
+    expect(note).toContain(
+      "### What changed\nReviewed issue and confirmed config already matches request.",
     );
-    expect(mocks.gitlab.createNote).toHaveBeenCalledWith(
-      42,
-      expect.stringContaining("Branch: `ai/42-fix-bug`"),
+    expect(note).toContain(
+      "### Validation\nRan inspection; no files required updates.",
     );
-    expect(mocks.gitlab.createNote).toHaveBeenCalledWith(
-      42,
-      expect.stringContaining("Validation: Ran inspection; no files required updates."),
-    );
+    expect(note).toContain("move this Issue to `ai-rework`");
     expect(mocks.gitlab.transitionLabels).toHaveBeenCalledWith(42, {
       add: ["human-review"],
       remove: ["ai-running"],

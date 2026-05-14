@@ -54,6 +54,7 @@ const baseInput: DispatchInput = {
   baseBranch: "main",
   runningLabel: "ai-running",
   handoffLabel: "human-review",
+  reworkLabel: "ai-rework",
   promptTemplate: "Fix {{ issue.title }}",
   hooks: {
     afterCreate: "echo afterCreate",
