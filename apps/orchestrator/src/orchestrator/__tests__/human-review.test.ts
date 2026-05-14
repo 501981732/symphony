@@ -55,7 +55,8 @@ function expectIssueMrEvent(
   type: string,
   mrState: string,
 ): void {
-  expect(events).toContainEqual(
+  const event = events.find((candidate) => candidate.type === type);
+  expect(event).toEqual(
     expect.objectContaining({
       type,
       issueIid: 7,
@@ -67,6 +68,26 @@ function expectIssueMrEvent(
       }),
     }),
   );
+  expectParseableTimestamp(event?.ts);
+}
+
+function expectParseableTimestamp(ts: unknown): void {
+  expect(typeof ts).toBe("string");
+  expect(Number.isNaN(Date.parse(ts as string))).toBe(false);
+}
+
+function expectScanEvent(events: ReturnType<typeof createMocks>["events"]): void {
+  const event = events.find(
+    (candidate) => candidate.type === "human_review_scan_started",
+  );
+  expect(event).toEqual(
+    expect.objectContaining({
+      issueIid: 0,
+      runId: "human-review-scan",
+      detail: { count: 1 },
+    }),
+  );
+  expectParseableTimestamp(event?.ts);
 }
 
 describe("parseIssuePilotWorkpad", () => {
@@ -203,6 +224,7 @@ describe("reconcileHumanReview", () => {
       removeLabels: ["human-review"],
       requireCurrent: ["human-review"],
     });
+    expectScanEvent(mocks.events);
     expectIssueMrEvent(mocks.events, "human_review_mr_merged", "merged");
     expectIssueMrEvent(mocks.events, "human_review_issue_closed", "merged");
   });
@@ -222,6 +244,7 @@ describe("reconcileHumanReview", () => {
     expect(mocks.gitlab.createIssueNote).not.toHaveBeenCalled();
     expect(mocks.gitlab.closeIssue).not.toHaveBeenCalled();
     expect(mocks.gitlab.transitionLabels).not.toHaveBeenCalled();
+    expectScanEvent(mocks.events);
     expectIssueMrEvent(
       mocks.events,
       "human_review_mr_still_open",
@@ -247,6 +270,7 @@ describe("reconcileHumanReview", () => {
       requireCurrent: ["human-review"],
     });
     expect(mocks.gitlab.closeIssue).not.toHaveBeenCalled();
+    expectScanEvent(mocks.events);
     expectIssueMrEvent(
       mocks.events,
       "human_review_mr_closed_unmerged",
@@ -270,6 +294,34 @@ describe("reconcileHumanReview", () => {
         detail: expect.objectContaining({ reason: "missing_workpad" }),
       }),
     );
+    expectParseableTimestamp(
+      mocks.events.find((event) => event.type === "human_review_mr_missing")
+        ?.ts,
+    );
+  });
+
+  it("does not mutate when workpad branch has no matching MR candidates", async () => {
+    mocks.gitlab.listMergeRequestsBySourceBranch.mockResolvedValue([]);
+
+    await reconcileHumanReview(baseInput(mocks));
+
+    expect(mocks.gitlab.listMergeRequestsBySourceBranch).toHaveBeenCalledWith(
+      "ai/7-add-x",
+    );
+    expect(mocks.gitlab.createIssueNote).not.toHaveBeenCalled();
+    expect(mocks.gitlab.closeIssue).not.toHaveBeenCalled();
+    expect(mocks.gitlab.transitionLabels).not.toHaveBeenCalled();
+    const event = mocks.events.find(
+      (candidate) => candidate.type === "human_review_mr_missing",
+    );
+    expect(event).toEqual(
+      expect.objectContaining({
+        issueIid: 7,
+        runId: "run-7",
+        detail: expect.objectContaining({ branch: "ai/7-add-x" }),
+      }),
+    );
+    expectParseableTimestamp(event?.ts);
   });
 
   it("does not close when the issue lost human-review before close", async () => {
