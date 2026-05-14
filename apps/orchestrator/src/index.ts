@@ -27,6 +27,17 @@ export {
   type ReconcileEvent,
 } from "./orchestrator/reconcile.js";
 export {
+  reconcileHumanReview,
+  parseIssuePilotWorkpad,
+  chooseMergeRequest,
+  type HumanReviewEvent,
+  type HumanReviewGitLabSlice,
+  type HumanReviewInput,
+  type HumanReviewIssue,
+  type HumanReviewMergeRequest,
+  type IssuePilotWorkpadRef,
+} from "./orchestrator/human-review.js";
+export {
   dispatch,
   type DispatchDeps,
   type DispatchInput,

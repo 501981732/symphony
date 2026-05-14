@@ -42,6 +42,10 @@ import { execa } from "execa";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
+import {
+  reconcileHumanReview,
+  type HumanReviewEvent,
+} from "./orchestrator/human-review.js";
 import { startLoop } from "./orchestrator/loop.js";
 import { reconcile } from "./orchestrator/reconcile.js";
 import { createConcurrencySlots } from "./runtime/slots.js";
@@ -356,6 +360,21 @@ export async function startDaemon(
       });
   };
 
+  const publishHumanReviewEvent = (event: HumanReviewEvent): void => {
+    if (event.issueIid > 0) {
+      runIndex.set(event.runId, runKey(workflow, event.issueIid));
+    }
+    publishEvent({
+      type: event.type,
+      runId: event.runId,
+      ts: event.ts,
+      detail: {
+        issueIid: event.issueIid,
+        ...event.detail,
+      },
+    });
+  };
+
   const serverFactory = deps.createServer ?? createServer;
   const app = await serverFactory(
     {
@@ -666,7 +685,49 @@ export async function startDaemon(
         },
       );
     },
-    reconcileRunning: async () => undefined,
+    reconcileRunning: async () => {
+      const runningLabel = workflow.tracker.runningLabel;
+      const failedLabel = workflow.tracker.failedLabel;
+      const blockedLabel = workflow.tracker.blockedLabel;
+      await reconcileHumanReview({
+        handoffLabel: workflow.tracker.handoffLabel,
+        reworkLabel:
+          workflow.tracker.activeLabels.find((l) => l === "ai-rework") ??
+          "ai-rework",
+        gitlab: {
+          listHumanReviewIssues: async () => {
+            const issues = await gitlab.listCandidateIssues({
+              activeLabels: [workflow.tracker.handoffLabel],
+              excludeLabels: [runningLabel, failedLabel, blockedLabel],
+            });
+            return Promise.all(
+              issues.map(async (issue) => {
+                const fullIssue = await gitlab.getIssue(issue.iid);
+                return {
+                  ...fullIssue,
+                  labels: [...fullIssue.labels],
+                };
+              }),
+            );
+          },
+          findLatestIssuePilotWorkpadNote:
+            gitlab.findLatestIssuePilotWorkpadNote,
+          listMergeRequestsBySourceBranch:
+            gitlab.listMergeRequestsBySourceBranch,
+          getIssue: async (iid) => {
+            const fullIssue = await gitlab.getIssue(iid);
+            return {
+              ...fullIssue,
+              labels: [...fullIssue.labels],
+            };
+          },
+          createIssueNote: gitlab.createIssueNote,
+          closeIssue: gitlab.closeIssue,
+          transitionLabels: gitlab.transitionLabels,
+        },
+        onEvent: publishHumanReviewEvent,
+      });
+    },
     logError: (err) => {
       console.error(err);
     },

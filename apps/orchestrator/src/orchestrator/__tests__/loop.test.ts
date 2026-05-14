@@ -92,11 +92,14 @@ describe("startLoop", () => {
     await loop.stop();
   });
 
-  it("dispatches due retrying runs before claiming new candidates", async () => {
+  it("reconciles running runs before due retries and claiming new candidates", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-11T03:00:00.000Z"));
     const sequence: string[] = [];
     const deps = createFakeLoopDeps({
+      reconcileRunning: vi.fn(async () => {
+        sequence.push("reconcileRunning");
+      }),
       claim: vi.fn(async () => {
         sequence.push("claim");
         const claimed = [{ runId: "r1" }, { runId: "r2" }].filter((run) =>
@@ -122,7 +125,12 @@ describe("startLoop", () => {
     expect(deps.dispatch).toHaveBeenCalledWith("r1");
     expect(deps.dispatch).toHaveBeenCalledTimes(2);
     expect(deps.claim).toHaveBeenCalled();
-    expect(sequence).toEqual(["dispatch:retry-1", "claim", "dispatch:r1"]);
+    expect(sequence).toEqual([
+      "reconcileRunning",
+      "dispatch:retry-1",
+      "claim",
+      "dispatch:r1",
+    ]);
 
     await loop.stop();
   });
