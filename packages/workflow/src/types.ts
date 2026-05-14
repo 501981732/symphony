@@ -2,7 +2,13 @@ export interface TrackerConfig {
   kind: "gitlab";
   baseUrl: string;
   projectId: string;
-  tokenEnv: string;
+  /**
+   * Name of the env var that supplies a static GitLab access token (PAT,
+   * Group Access Token, etc.). Optional — when omitted the orchestrator
+   * falls back to OAuth credentials stored in `~/.issuepilot/credentials`
+   * (see spec §22 decision 3).
+   */
+  tokenEnv?: string;
   activeLabels: string[];
   runningLabel: string;
   handoffLabel: string;

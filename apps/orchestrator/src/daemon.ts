@@ -3,6 +3,12 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import {
+  createCredentialResolver,
+  createCredentialsStore,
+  type CredentialResolver,
+  type CredentialsStore,
+} from "@issuepilot/credentials";
+import {
   createEventBus,
   createEventStore,
   redact,
@@ -15,6 +21,7 @@ import {
 } from "@issuepilot/runner-codex-app-server";
 import {
   createGitLabAdapter,
+  createGitLabAdapterFromCredential,
   type GitLabAdapter,
 } from "@issuepilot/tracker-gitlab";
 import {
@@ -30,7 +37,7 @@ import {
   runHook,
   slugify,
 } from "@issuepilot/workspace";
-import { execa, execaCommand } from "execa";
+import { execa } from "execa";
 
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
@@ -71,7 +78,18 @@ export interface StartDaemonOptions {
 
 export interface StartDaemonDeps {
   workflowLoader?: WorkflowLoader | undefined;
-  createGitLab?: ((cfg: WorkflowConfig) => GitLabAdapter) | undefined;
+  createGitLab?:
+    | ((cfg: WorkflowConfig) => GitLabAdapter | Promise<GitLabAdapter>)
+    | undefined;
+  /**
+   * Override credential resolution. When omitted, the daemon assembles its
+   * own resolver backed by the on-disk credentials store and the env var
+   * named in `tracker.token_env` (if any). Tests inject a fake resolver to
+   * skip both fs and HTTP.
+   */
+  credentialResolver?: CredentialResolver | undefined;
+  /** Override the on-disk credentials store (mostly useful for tests). */
+  credentialsStore?: CredentialsStore | undefined;
   createServer?: typeof createServer | undefined;
   startLoop?: typeof startLoop | undefined;
   state?: RuntimeState | undefined;
@@ -89,6 +107,20 @@ function runKey(
     projectSlug: slugify(cfg.tracker.projectId),
     issueIid,
   };
+}
+
+/**
+ * Extract a bare hostname from `tracker.baseUrl`. The credentials store
+ * keys entries by hostname, so reusing the URL parser keeps that mapping
+ * deterministic instead of leaking trailing slashes / paths into the
+ * credentials file.
+ */
+export function hostnameFromBaseUrl(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return baseUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  }
 }
 
 function toEventRecord(event: {
@@ -235,13 +267,62 @@ export async function startDaemon(
     path.join(workflow.workspace.root, ".issuepilot", "events"),
   );
   const runIndex = new Map<string, { projectSlug: string; issueIid: number }>();
-  const gitlab = deps.createGitLab
-    ? deps.createGitLab(workflow)
-    : createGitLabAdapter({
-      baseUrl: workflow.tracker.baseUrl,
-      projectId: workflow.tracker.projectId,
-      tokenEnv: workflow.tracker.tokenEnv,
-    });
+
+  /**
+   * Resolve GitLab credentials before the server starts taking traffic. The
+   * order is:
+   *
+   *   1. Test seam (`deps.createGitLab`) — kept for the existing in-memory
+   *      e2e tests that drive the daemon entirely with fakes.
+   *   2. Credential resolver (env var or `~/.issuepilot/credentials`) →
+   *      adapter that knows how to refresh on 401.
+   *
+   * Failing fast here is intentional: spec §17 says the daemon should
+   * refuse to start when neither credential source is available, with a
+   * pointer at `issuepilot auth login`.
+   */
+  let gitlab: GitLabAdapter;
+  if (deps.createGitLab) {
+    gitlab = await deps.createGitLab(workflow);
+  } else {
+    const hostname = hostnameFromBaseUrl(workflow.tracker.baseUrl);
+    const resolver =
+      deps.credentialResolver ??
+      createCredentialResolver({
+        store: deps.credentialsStore ?? createCredentialsStore(),
+      });
+    let credential;
+    try {
+      const resolveInput: { hostname: string; trackerTokenEnv?: string } = {
+        hostname,
+      };
+      if (workflow.tracker.tokenEnv) {
+        resolveInput.trackerTokenEnv = workflow.tracker.tokenEnv;
+      }
+      credential = await resolver.resolve(resolveInput);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Failed to resolve GitLab credentials for ${hostname}: ${message}`,
+      );
+    }
+    if (credential.source === "env" && workflow.tracker.tokenEnv) {
+      // Preserve the existing fast path so the synchronous sandbox-friendly
+      // adapter is used when callers still rely on `tracker.token_env`.
+      gitlab = createGitLabAdapter({
+        baseUrl: workflow.tracker.baseUrl,
+        projectId: workflow.tracker.projectId,
+        tokenEnv: workflow.tracker.tokenEnv,
+      });
+    } else {
+      gitlab = createGitLabAdapterFromCredential({
+        baseUrl: workflow.tracker.baseUrl,
+        projectId: workflow.tracker.projectId,
+        credential,
+      });
+    }
+  }
 
   const publishEvent = (event: {
     type: string;

@@ -8,6 +8,8 @@ export {
 } from "./errors.js";
 export {
   createGitLabClient,
+  createGitLabClientFromCredential,
+  type CreateGitLabClientFromCredentialInput,
   type CreateGitLabClientInput,
   type GitLabClient,
   type GitlabCtor,
@@ -32,6 +34,8 @@ export {
 } from "./issues.js";
 export {
   createGitLabAdapter,
+  createGitLabAdapterFromCredential,
+  type CreateGitLabAdapterFromCredentialInput,
   type CreateGitLabAdapterInput,
   type GitLabAdapterHandle,
 } from "./adapter.js";

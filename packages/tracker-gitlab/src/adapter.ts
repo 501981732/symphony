@@ -1,6 +1,8 @@
 import type { GitLabApi } from "./api-shape.js";
 import {
   createGitLabClient,
+  createGitLabClientFromCredential,
+  type CreateGitLabClientFromCredentialInput,
   type CreateGitLabClientInput,
   type GitLabClient,
 } from "./client.js";
@@ -21,6 +23,8 @@ import { getPipelineStatus } from "./pipelines.js";
 import type { GitLabAdapter } from "./types.js";
 
 export type CreateGitLabAdapterInput = CreateGitLabClientInput;
+export type CreateGitLabAdapterFromCredentialInput =
+  CreateGitLabClientFromCredentialInput;
 
 /**
  * Concrete `GitLabAdapter` plus the underlying client. The client is exposed
@@ -32,16 +36,9 @@ export interface GitLabAdapterHandle extends GitLabAdapter {
   readonly client: GitLabClient<GitLabApi>;
 }
 
-/**
- * Compose the adapter from the per-capability helpers. Each method is a thin
- * binding so the adapter stays stateless and trivially testable — the
- * heavy-lifting tests live next to the helpers themselves.
- */
-export function createGitLabAdapter(
-  input: CreateGitLabAdapterInput,
+function bindAdapter(
+  client: GitLabClient<GitLabApi>,
 ): GitLabAdapterHandle {
-  const client = createGitLabClient<GitLabApi>(input);
-
   return {
     client,
     listCandidateIssues: (opts) => listCandidateIssues(client, opts),
@@ -58,4 +55,26 @@ export function createGitLabAdapter(
     listMergeRequestNotes: (mrIid) => listMergeRequestNotes(client, mrIid),
     getPipelineStatus: (ref) => getPipelineStatus(client, ref),
   };
+}
+
+/**
+ * Compose the adapter from the per-capability helpers. Each method is a thin
+ * binding so the adapter stays stateless and trivially testable — the
+ * heavy-lifting tests live next to the helpers themselves.
+ */
+export function createGitLabAdapter(
+  input: CreateGitLabAdapterInput,
+): GitLabAdapterHandle {
+  return bindAdapter(createGitLabClient<GitLabApi>(input));
+}
+
+/**
+ * Credential-aware variant. Use this when the caller has already resolved a
+ * `ResolvedCredential` via `@issuepilot/credentials` — for OAuth-sourced
+ * credentials the underlying client will refresh + retry once on a 401.
+ */
+export function createGitLabAdapterFromCredential(
+  input: CreateGitLabAdapterFromCredentialInput,
+): GitLabAdapterHandle {
+  return bindAdapter(createGitLabClientFromCredential<GitLabApi>(input));
 }
