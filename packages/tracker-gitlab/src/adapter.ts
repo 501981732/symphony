@@ -6,16 +6,18 @@ import {
   type CreateGitLabClientInput,
   type GitLabClient,
 } from "./client.js";
-import { getIssue, listCandidateIssues } from "./issues.js";
+import { closeIssue, getIssue, listCandidateIssues } from "./issues.js";
 import { transitionLabels } from "./labels.js";
 import {
   createMergeRequest,
   getMergeRequest,
+  listMergeRequestsBySourceBranch,
   listMergeRequestNotes,
   updateMergeRequest,
 } from "./merge-requests.js";
 import {
   createIssueNote,
+  findLatestIssuePilotWorkpadNote,
   findWorkpadNote,
   updateIssueNote,
 } from "./notes.js";
@@ -36,22 +38,25 @@ export interface GitLabAdapterHandle extends GitLabAdapter {
   readonly client: GitLabClient<GitLabApi>;
 }
 
-function bindAdapter(
-  client: GitLabClient<GitLabApi>,
-): GitLabAdapterHandle {
+function bindAdapter(client: GitLabClient<GitLabApi>): GitLabAdapterHandle {
   return {
     client,
     listCandidateIssues: (opts) => listCandidateIssues(client, opts),
     getIssue: (iid) => getIssue(client, iid),
+    closeIssue: (iid, opts) => closeIssue(client, iid, opts),
     transitionLabels: (iid, opts) => transitionLabels(client, iid, opts),
     createIssueNote: (iid, body) => createIssueNote(client, iid, body),
     updateIssueNote: (iid, noteId, body) =>
       updateIssueNote(client, iid, noteId, body),
     findWorkpadNote: (iid, marker) => findWorkpadNote(client, iid, marker),
+    findLatestIssuePilotWorkpadNote: (iid) =>
+      findLatestIssuePilotWorkpadNote(client, iid),
     createMergeRequest: (mrInput) => createMergeRequest(client, mrInput),
     updateMergeRequest: (mrIid, updates) =>
       updateMergeRequest(client, mrIid, updates),
     getMergeRequest: (mrIid) => getMergeRequest(client, mrIid),
+    listMergeRequestsBySourceBranch: (sourceBranch) =>
+      listMergeRequestsBySourceBranch(client, sourceBranch),
     listMergeRequestNotes: (mrIid) => listMergeRequestNotes(client, mrIid),
     getPipelineStatus: (ref) => getPipelineStatus(client, ref),
   };

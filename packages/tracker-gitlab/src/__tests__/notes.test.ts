@@ -4,6 +4,7 @@ import type { GitLabApi, RawIssueNote } from "../api-shape.js";
 import { createGitLabClient, type GitLabClient } from "../client.js";
 import {
   createIssueNote,
+  findLatestIssuePilotWorkpadNote,
   findWorkpadNote,
   updateIssueNote,
 } from "../notes.js";
@@ -102,9 +103,7 @@ describe("findWorkpadNote", () => {
     const client = makeClient({
       IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
     });
-    expect(
-      await findWorkpadNote(client, 42, marker("missing")),
-    ).toBeNull();
+    expect(await findWorkpadNote(client, 42, marker("missing"))).toBeNull();
   });
 
   it("handles empty / undefined body gracefully", async () => {
@@ -116,5 +115,74 @@ describe("findWorkpadNote", () => {
       IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
     });
     expect(await findWorkpadNote(client, 42, marker("x"))).toBeNull();
+  });
+});
+
+describe("findLatestIssuePilotWorkpadNote", () => {
+  it("returns the first matching workpad note from newest-first GitLab rows", async () => {
+    const all = vi.fn(async () => [
+      note({
+        id: 5,
+        body: "<!-- issuepilot:run=latest -->\nlatest",
+        system: false,
+      }),
+      note({
+        id: 4,
+        body: "<!-- issuepilot:run:system -->\nsystem",
+        system: true,
+      }),
+      note({ id: 3, body: "unrelated", system: false }),
+      note({ id: 2, body: "<!-- issuepilot:run:older -->\nolder" }),
+      note({ id: 1, body: "<!-- issuepilot:run=oldest -->\noldest" }),
+    ]);
+    const client = makeClient({
+      IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
+    });
+
+    expect(await findLatestIssuePilotWorkpadNote(client, 42)).toEqual({
+      id: 5,
+      body: "<!-- issuepilot:run=latest -->\nlatest",
+    });
+    expect(all).toHaveBeenCalledWith("group/project", 42, {
+      perPage: 100,
+      orderBy: "updated_at",
+      sort: "desc",
+    });
+  });
+
+  it("supports colon markers after ignoring newer system notes", async () => {
+    const all = vi.fn(async () => [
+      note({
+        id: 3,
+        body: "<!-- issuepilot:run=system -->\nsystem",
+        system: true,
+      }),
+      note({ id: 2, body: "<!-- issuepilot:run:latest -->\nlatest" }),
+      note({ id: 1, body: "<!-- issuepilot:run=older -->\nolder" }),
+    ]);
+    const client = makeClient({
+      IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
+    });
+
+    expect(await findLatestIssuePilotWorkpadNote(client, 42)).toEqual({
+      id: 2,
+      body: "<!-- issuepilot:run:latest -->\nlatest",
+    });
+  });
+
+  it("returns null when no non-system IssuePilot workpad note exists", async () => {
+    const all = vi.fn(async () => [
+      note({ id: 1, body: "<!-- issuepilot:other=x -->\nbody" }),
+      note({
+        id: 2,
+        body: "<!-- issuepilot:run=system -->\nbody",
+        system: true,
+      }),
+    ]);
+    const client = makeClient({
+      IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
+    });
+
+    expect(await findLatestIssuePilotWorkpadNote(client, 42)).toBeNull();
   });
 });

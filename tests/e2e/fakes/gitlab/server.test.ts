@@ -94,6 +94,68 @@ describe("fake GitLab server", () => {
     expect(afterRow.updated_at > before).toBe(true);
   });
 
+  it("PUT /issues/:iid closes and reopens an issue via state_event", async () => {
+    const closeRes = await fetch(
+      `${server.baseUrl}/api/v4/projects/${encodeURIComponent(PROJECT_ID)}/issues/7`,
+      {
+        method: "PUT",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ state_event: "close" }),
+      },
+    );
+    expect(closeRes.status).toBe(200);
+    const closed = (await closeRes.json()) as { state: string };
+    expect(closed.state).toBe("closed");
+
+    const reopenRes = await fetch(
+      `${server.baseUrl}/api/v4/projects/${encodeURIComponent(PROJECT_ID)}/issues/7`,
+      {
+        method: "PUT",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ stateEvent: "reopen" }),
+      },
+    );
+    expect(reopenRes.status).toBe(200);
+    const reopened = (await reopenRes.json()) as { state: string };
+    expect(reopened.state).toBe("opened");
+  });
+
+  it("PUT /issues/:iid removes labels while preserving other labels", async () => {
+    const seeded = server.state.issues.get(7);
+    if (!seeded) throw new Error("seeded issue missing");
+    seeded.labels = ["ai-ready", "human-review", "triaged"];
+
+    const res = await fetch(
+      `${server.baseUrl}/api/v4/projects/${encodeURIComponent(PROJECT_ID)}/issues/7`,
+      {
+        method: "PUT",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ remove_labels: "human-review,missing" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { labels: string[] };
+    expect(body.labels).toEqual(["ai-ready", "triaged"]);
+  });
+
+  it("PUT /issues/:iid accepts camelCase removeLabels", async () => {
+    const seeded = server.state.issues.get(7);
+    if (!seeded) throw new Error("seeded issue missing");
+    seeded.labels = ["ai-ready", "human-review", "triaged"];
+
+    const res = await fetch(
+      `${server.baseUrl}/api/v4/projects/${encodeURIComponent(PROJECT_ID)}/issues/7`,
+      {
+        method: "PUT",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ removeLabels: ["ai-ready", "human-review"] }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { labels: string[] };
+    expect(body.labels).toEqual(["triaged"]);
+  });
+
   it("notes lifecycle: create -> list -> edit", async () => {
     const base = `${server.baseUrl}/api/v4/projects/${encodeURIComponent(PROJECT_ID)}/issues/7/notes`;
     const createRes = await fetch(base, {
@@ -217,7 +279,8 @@ describe("fake GitLab server", () => {
     // `/issues/77` does not exist in seed data — make sure we don't
     // accidentally trip the fault for it. Without the precise matcher this
     // request would have eaten the consume budget.
-    const sibling = await fetch(`${server.baseUrl}${issueUrl.replace(/7$/, "77")}`,
+    const sibling = await fetch(
+      `${server.baseUrl}${issueUrl.replace(/7$/, "77")}`,
       { headers: auth },
     );
     expect(sibling.status).toBe(404);

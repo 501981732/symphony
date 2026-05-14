@@ -51,4 +51,19 @@ describe("fake GitLab server vs @gitbeaker/rest", () => {
     });
     expect(updated.labels).toContain("ai-running");
   });
+
+  it("closes issues and removes labels through GitBeaker edit options", async () => {
+    const seeded = server.state.issues.get(7);
+    if (!seeded) throw new Error("seeded issue missing");
+    seeded.labels = ["ai-ready", "human-review"];
+
+    const gl = new Gitlab({ host: server.baseUrl, token: TOKEN });
+    const updated = await gl.Issues.edit(PROJECT_ID, 7, {
+      removeLabels: "human-review",
+      stateEvent: "close",
+    });
+
+    expect(updated.state).toBe("closed");
+    expect(updated.labels).toEqual(["ai-ready"]);
+  });
 });

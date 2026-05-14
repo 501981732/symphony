@@ -5,6 +5,7 @@ import { createGitLabClient, type GitLabClient } from "../client.js";
 import {
   createMergeRequest,
   getMergeRequest,
+  listMergeRequestsBySourceBranch,
   listMergeRequestNotes,
   updateMergeRequest,
 } from "../merge-requests.js";
@@ -177,6 +178,57 @@ describe("getMergeRequest", () => {
       iid: 6,
       webUrl: "https://gitlab.example.com/g/p/-/merge_requests/6",
       state: "opened",
+    });
+  });
+});
+
+describe("listMergeRequestsBySourceBranch", () => {
+  it("returns MR summaries for a source branch without filtering state", async () => {
+    const all = vi.fn(async () => [
+      mrRow({
+        iid: 6,
+        web_url: "https://gitlab.example.com/g/p/-/merge_requests/6",
+        state: "merged",
+        source_branch: "ai/42-add-x",
+        updated_at: "2026-05-14T01:02:03Z",
+      }),
+      mrRow({
+        iid: 7,
+        web_url: "https://gitlab.example.com/g/p/-/merge_requests/7",
+        state: "closed",
+        source_branch: "ai/42-add-x",
+      }),
+    ]);
+    const client = makeClient({
+      MergeRequests: {
+        all,
+        create: vi.fn(),
+        edit: vi.fn(),
+        show: vi.fn(),
+      },
+    });
+
+    expect(
+      await listMergeRequestsBySourceBranch(client, "ai/42-add-x"),
+    ).toEqual([
+      {
+        iid: 6,
+        webUrl: "https://gitlab.example.com/g/p/-/merge_requests/6",
+        state: "merged",
+        sourceBranch: "ai/42-add-x",
+        updatedAt: "2026-05-14T01:02:03Z",
+      },
+      {
+        iid: 7,
+        webUrl: "https://gitlab.example.com/g/p/-/merge_requests/7",
+        state: "closed",
+        sourceBranch: "ai/42-add-x",
+      },
+    ]);
+    expect(all).toHaveBeenCalledWith({
+      projectId: "group/project",
+      sourceBranch: "ai/42-add-x",
+      perPage: 20,
     });
   });
 });

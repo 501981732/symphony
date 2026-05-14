@@ -11,6 +11,7 @@ export interface WorkpadNote {
 }
 
 const NOTES_PER_PAGE = 100;
+const ISSUEPILOT_RUN_MARKER = /^<!--\s*issuepilot:run(?::|=)[^>]+-->\s*$/;
 
 export async function createIssueNote(
   client: GitLabClient<GitLabApi>,
@@ -60,6 +61,30 @@ export async function findWorkpadNote(
     }
     return null;
   });
+}
+
+export async function findLatestIssuePilotWorkpadNote(
+  client: GitLabClient<GitLabApi>,
+  iid: number,
+): Promise<WorkpadNote | null> {
+  return client.request(
+    "issueNotes.findLatestIssuePilotWorkpad",
+    async (api) => {
+      const notes = await api.IssueNotes.all(client.projectId, iid, {
+        perPage: NOTES_PER_PAGE,
+        orderBy: "updated_at",
+        sort: "desc",
+      });
+      for (const note of notes) {
+        if (!note || note.system) continue;
+        const body = typeof note.body === "string" ? note.body : "";
+        if (ISSUEPILOT_RUN_MARKER.test(firstLine(body))) {
+          return { id: note.id, body };
+        }
+      }
+      return null;
+    },
+  );
 }
 
 function firstLine(body: string): string {

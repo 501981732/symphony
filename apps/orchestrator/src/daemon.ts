@@ -42,6 +42,10 @@ import { execa } from "execa";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
+import {
+  reconcileHumanReview,
+  type HumanReviewEvent,
+} from "./orchestrator/human-review.js";
 import { startLoop } from "./orchestrator/loop.js";
 import { reconcile } from "./orchestrator/reconcile.js";
 import { createConcurrencySlots } from "./runtime/slots.js";
@@ -51,6 +55,7 @@ import { createServer } from "./server/index.js";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 4738;
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
+const HUMAN_REVIEW_SCAN_RUN_ID = "human-review-scan";
 
 type OrchestratorEvent = {
   id: string;
@@ -137,6 +142,44 @@ function toEventRecord(event: {
     ts: event.ts,
     ...event.detail,
   };
+}
+
+function syncHumanReviewFinalLabels(
+  state: RuntimeState,
+  event: HumanReviewEvent,
+): void {
+  if (
+    event.type !== "human_review_issue_closed" &&
+    event.type !== "human_review_rework_requested"
+  ) {
+    return;
+  }
+  if (event.issueIid <= 0 || !Array.isArray(event.detail["labels"])) return;
+
+  const labels = event.detail["labels"];
+  if (!labels.every((label): label is string => typeof label === "string")) {
+    return;
+  }
+
+  for (const run of state.allRuns()) {
+    const issue = run["issue"];
+    if (
+      typeof issue !== "object" ||
+      issue === null ||
+      !("iid" in issue) ||
+      Number((issue as { iid: unknown }).iid) !== event.issueIid
+    ) {
+      continue;
+    }
+
+    state.setRun(run.runId, {
+      ...run,
+      issue: {
+        ...issue,
+        labels: [...labels],
+      },
+    });
+  }
 }
 
 /**
@@ -354,6 +397,43 @@ export async function startDaemon(
         if (code === "ENOENT") return;
         console.error(err);
       });
+  };
+
+  const publishHumanReviewEvent = (event: HumanReviewEvent): void => {
+    syncHumanReviewFinalLabels(state, event);
+    if (event.issueIid > 0) {
+      const key = runKey(workflow, event.issueIid);
+      if (event.runId === HUMAN_REVIEW_SCAN_RUN_ID) {
+        const record = toEventRecord({
+          type: event.type,
+          runId: event.runId,
+          ts: event.ts,
+          detail: {
+            issueIid: event.issueIid,
+            ...event.detail,
+          },
+        });
+        eventBus.publish(record);
+        void eventStore
+          .append(key.projectSlug, key.issueIid, record)
+          .catch((err) => {
+            const code = (err as NodeJS.ErrnoException)?.code;
+            if (code === "ENOENT") return;
+            console.error(err);
+          });
+        return;
+      }
+      runIndex.set(event.runId, key);
+    }
+    publishEvent({
+      type: event.type,
+      runId: event.runId,
+      ts: event.ts,
+      detail: {
+        issueIid: event.issueIid,
+        ...event.detail,
+      },
+    });
   };
 
   const serverFactory = deps.createServer ?? createServer;
@@ -666,7 +746,47 @@ export async function startDaemon(
         },
       );
     },
-    reconcileRunning: async () => undefined,
+    reconcileRunning: async () => {
+      const runningLabel = workflow.tracker.runningLabel;
+      const failedLabel = workflow.tracker.failedLabel;
+      const blockedLabel = workflow.tracker.blockedLabel;
+      await reconcileHumanReview({
+        handoffLabel: workflow.tracker.handoffLabel,
+        reworkLabel: workflow.tracker.reworkLabel,
+        gitlab: {
+          listHumanReviewIssues: async () => {
+            const issues = await gitlab.listCandidateIssues({
+              activeLabels: [workflow.tracker.handoffLabel],
+              excludeLabels: [runningLabel, failedLabel, blockedLabel],
+            });
+            return Promise.all(
+              issues.map(async (issue) => {
+                const fullIssue = await gitlab.getIssue(issue.iid);
+                return {
+                  ...fullIssue,
+                  labels: [...fullIssue.labels],
+                };
+              }),
+            );
+          },
+          findLatestIssuePilotWorkpadNote:
+            gitlab.findLatestIssuePilotWorkpadNote,
+          listMergeRequestsBySourceBranch:
+            gitlab.listMergeRequestsBySourceBranch,
+          getIssue: async (iid) => {
+            const fullIssue = await gitlab.getIssue(iid);
+            return {
+              ...fullIssue,
+              labels: [...fullIssue.labels],
+            };
+          },
+          createIssueNote: gitlab.createIssueNote,
+          closeIssue: gitlab.closeIssue,
+          transitionLabels: gitlab.transitionLabels,
+        },
+        onEvent: publishHumanReviewEvent,
+      });
+    },
     logError: (err) => {
       console.error(err);
     },

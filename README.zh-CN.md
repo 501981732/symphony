@@ -15,7 +15,8 @@ IssuePilot 是一个开源的本地 AI 工程调度器，用 GitLab Issue 驱动
 
 它会监听 GitLab Issue，通过 label 认领任务，创建隔离的 git worktree，
 通过 app-server 协议运行 Codex，记录可审计事件轨迹，并把结果以 Merge
-Request 的形式交给人工 Review。
+Request 的形式交给人工 Review；人工 merge 该 MR 后，IssuePilot 会自动关闭
+对应的 GitLab Issue。
 
 ### 核心亮点
 
@@ -25,6 +26,8 @@ Request 的形式交给人工 Review。
   事件流、JSONL event store 与 dashboard timeline，关键节点可追溯、可回放。
 - **可信交付边界**：失败 / 阻塞自动落到 `ai-failed` / `ai-blocked`，workspace
   与日志原地保留供取证；secret 不会泄露到日志、事件、API 响应或 prompt。
+- **人工 Review 后自动收尾**：IssuePilot 不自动 merge 代码；人类 merge 生成的
+  MR 后，daemon 会写 final note、移除 `human-review`，并关闭 GitLab Issue。
 - **零手工 token 维护**：内置 `issuepilot auth login` 走 GitLab OAuth 2.0
   Device Flow，token 加密存放在 `~/.issuepilot/credentials`（`0600`）并自动
   refresh；遇到 401 daemon 静默换发新 token 并重试一次。仍兼容 PAT/Group Token
@@ -54,6 +57,7 @@ Issue Tracker 当作控制平面：
 - Codex 收到有边界的 prompt，并被限制在当前 workspace 内。
 - orchestrator 写入事件、日志、Issue note、分支和 Merge Request。
 - 人类 Review MR，而不是盯着每一轮 agent 会话。
+- MR 被人工 merge 后，IssuePilot 会把 GitLab Issue reconcile 到 closed 终态。
 
 P0 的目标是跑通本地单机闭环，不是提供托管的多租户服务。
 
@@ -99,13 +103,16 @@ GitLab + TypeScript 路线、并打算在内部团队范围内试运行，那么
 - observability 基础能力：redaction、event bus、event store、run store、logger。
 - orchestrator 模块：claim、dispatch、retry、reconcile、runtime state、HTTP API、
   SSE、CLI scaffold。
+- human-review reconciliation：MR 仍 open 时保持 Review，MR merged 后关闭
+  Issue，MR closed 但未 merge 时回流到配置的 rework label。
 - 只读 dashboard：overview、run detail、SSE 刷新、timeline、tool calls 和 log tail
   展示。
 - 端到端测试 harness（`tests/e2e`）：内置带状态的 fake GitLab + 可脚本化的 fake
   Codex app-server，覆盖 happy path、retry 路径（`turn/timeout` → ai-failed
   耗尽 `max_attempts`）、failure 路径（`turn/failed` → ai-failed + workpad
   failure note）、permission/escalation 路径（claim 401/403 → ai-blocked +
-  `claim_failed` 事件）和 approval 自动批准路径。34 个 e2e case ~10 秒跑完。
+  `claim_failed` 事件）和 approval 自动批准路径。happy path 同时覆盖人工
+  merge MR 后自动关闭 Issue。
 - 真实 GitLab smoke runbook + `pnpm smoke` wrapper：拉起 orchestrator、轮询
   `/api/state` 至 ready、打印 API + dashboard URL、转发 SIGINT/SIGTERM 并在 5s
   内升级 SIGKILL 兜底。
@@ -125,18 +132,20 @@ GitLab issue 带 ai-ready label
   -> GitLab Merge Request 被创建或更新
   -> Issue 收到 handoff note
   -> label 切换到 human-review、ai-failed 或 ai-blocked
+  -> 人工 Review 并手动 merge MR
+  -> IssuePilot 写 closing note，移除 human-review，并关闭 Issue
 ```
 
 P0 labels：
 
-| Label          | 含义                              |
-| -------------- | --------------------------------- |
-| `ai-ready`     | IssuePilot 可以拾取的候选 Issue。 |
-| `ai-running`   | 已认领，并且有活跃 run。          |
-| `human-review` | MR 已准备好等待人工 Review。      |
-| `ai-rework`    | 人工 Review 后要求 AI 再跑一轮。  |
-| `ai-failed`    | 运行失败，需要人工介入。          |
-| `ai-blocked`   | 缺少信息、权限或 secret。         |
+| Label          | 含义                                                     |
+| -------------- | -------------------------------------------------------- |
+| `ai-ready`     | IssuePilot 可以拾取的候选 Issue。                        |
+| `ai-running`   | 已认领，并且有活跃 run。                                 |
+| `human-review` | MR 已准备好等待人工 Review。                             |
+| `ai-rework`    | 人工 Review 后要求 AI 再跑一轮，或 MR 被关闭但未 merge。 |
+| `ai-failed`    | 运行失败，需要人工介入。                                 |
+| `ai-blocked`   | 缺少信息、权限或 secret。                                |
 
 ## 仓库结构
 
@@ -341,6 +350,8 @@ Request，不替代代码审查。
 - ✅ Codex app-server runner（thread/turn 生命周期 + 14 类标准化事件）。
 - ✅ bare mirror + git worktree workspace，失败 run 现场保留。
 - ✅ MR 自动创建/更新 + 持久 workpad note + fallback note 兜底。
+- ✅ human-review 自动收尾：人工 merge MR 后关闭 GitLab Issue；MR closed 但
+  未 merge 时回流到配置的 rework label。
 - ✅ 只读 Next.js dashboard（overview + run detail + SSE timeline）。
 - ✅ fake GitLab + fake Codex 全闭环 E2E + 真实 GitLab smoke runbook。
 - 🚧 公开 package、版本化 release、安装/升级路径。
@@ -355,6 +366,7 @@ Request，不替代代码审查。
 - dashboard 增加基础操作：`retry`、`stop`、`archive run`。
 - CI 状态读取 + CI 失败自动回流到 `ai-rework`。
 - PR / MR review feedback sweep（把人工 review 评论喂回下一轮 agent）。
+- 可选自动 merge 策略（满足 CI / approval 后）。P0 默认仍由人类控制 merge。
 - 更完整的运行报告：diff summary、测试结果、风险点、耗时分解。
 - workspace 清理与保留策略（按时间 / 大小 / 状态分级）。
 

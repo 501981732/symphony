@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { GitLabApi, RawIssue, RawIssueNote, RawMergeRequest, RawPipeline } from "../api-shape.js";
+import type {
+  GitLabApi,
+  RawIssue,
+  RawIssueNote,
+  RawMergeRequest,
+  RawPipeline,
+} from "../api-shape.js";
 import { createGitLabAdapter, type GitLabAdapterHandle } from "../adapter.js";
 
 function makeAdapter(api: Partial<GitLabApi>): GitLabAdapterHandle {
@@ -59,13 +65,16 @@ describe("createGitLabAdapter", () => {
     const methods: Array<keyof typeof adapter> = [
       "listCandidateIssues",
       "getIssue",
+      "closeIssue",
       "transitionLabels",
       "createIssueNote",
       "updateIssueNote",
+      "findLatestIssuePilotWorkpadNote",
       "findWorkpadNote",
       "createMergeRequest",
       "updateMergeRequest",
       "getMergeRequest",
+      "listMergeRequestsBySourceBranch",
       "listMergeRequestNotes",
       "getPipelineStatus",
     ];
@@ -145,10 +154,24 @@ describe("createGitLabAdapter", () => {
     expect(
       await adapter.findWorkpadNote(10, "<!-- issuepilot:run=run-x -->"),
     ).toEqual({ id: 99, body: "<!-- issuepilot:run=run-x -->\nbody" });
+    expect(await adapter.findLatestIssuePilotWorkpadNote(10)).toEqual({
+      id: 99,
+      body: "<!-- issuepilot:run=run-x -->\nbody",
+    });
   });
 
   it("merge request methods delegate to MergeRequests + MergeRequestNotes", async () => {
-    const all = vi.fn(async () => []);
+    const all = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        mrRow({
+          iid: 4,
+          state: "merged",
+          source_branch: "ai/10-add-x",
+          updated_at: "2026-05-14T01:02:03Z",
+        }),
+      ]);
     const create = vi.fn(async () =>
       mrRow({
         id: 5,
@@ -186,8 +209,43 @@ describe("createGitLabAdapter", () => {
       webUrl: "https://gitlab.example.com/g/p/-/merge_requests/3",
       state: "opened",
     });
+    expect(
+      await adapter.listMergeRequestsBySourceBranch("ai/10-add-x"),
+    ).toEqual([
+      {
+        iid: 4,
+        webUrl: "https://gitlab.example.com/g/p/-/merge_requests/1",
+        state: "merged",
+        sourceBranch: "ai/10-add-x",
+        updatedAt: "2026-05-14T01:02:03Z",
+      },
+    ]);
     const notes = await adapter.listMergeRequestNotes(3);
     expect(notes).toEqual([{ id: 1, body: "hi", author: "alice" }]);
+  });
+
+  it("closeIssue delegates to Issues.edit with stateEvent close", async () => {
+    const show = vi
+      .fn()
+      .mockResolvedValueOnce(
+        issueRow({ labels: ["human-review"], state: "opened" }),
+      )
+      .mockResolvedValueOnce(issueRow({ labels: [], state: "closed" }));
+    const edit = vi.fn(async () => issueRow({ labels: [], state: "closed" }));
+    const adapter = makeAdapter({
+      Issues: { all: vi.fn(), show, edit },
+    });
+
+    await expect(
+      adapter.closeIssue(10, {
+        requireCurrent: ["human-review"],
+        removeLabels: ["human-review"],
+      }),
+    ).resolves.toEqual({ labels: [], state: "closed" });
+    expect(edit).toHaveBeenCalledWith("group/project", 10, {
+      removeLabels: "human-review",
+      stateEvent: "close",
+    });
   });
 
   it("getPipelineStatus delegates to Pipelines.all and classifies", async () => {

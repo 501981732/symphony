@@ -106,6 +106,18 @@ interface PipelineQuery {
 
 interface UpdateIssueBody {
   labels?: string | string[];
+  remove_labels?: string | string[];
+  removeLabels?: string | string[];
+  state_event?: "close" | "reopen";
+  stateEvent?: "close" | "reopen";
+}
+
+interface UpdateIssueQuery {
+  labels?: string;
+  remove_labels?: string;
+  removeLabels?: string;
+  state_event?: "close" | "reopen";
+  stateEvent?: "close" | "reopen";
 }
 
 interface CreateNoteBody {
@@ -263,20 +275,42 @@ export async function startGitLabFakeServer(
   );
 
   // PUT /api/v4/projects/:id/issues/:iid
-  app.put<{ Params: Params; Body: UpdateIssueBody }>(
-    "/api/v4/projects/:id/issues/:iid",
-    async (req, reply) => {
-      if (!projectMatches(req.params.id ?? "")) return reply.code(404).send({});
-      const iid = Number.parseInt(req.params.iid ?? "0", 10);
-      const row = state.issues.get(iid);
-      if (!row) return reply.code(404).send({ message: "Not Found" });
-      if (req.body.labels !== undefined) {
-        row.labels = dedupe(toLabelArray(req.body.labels));
-      }
-      bumpIssueUpdatedAt(state, iid);
-      return reply.send(row);
-    },
-  );
+  app.put<{
+    Params: Params;
+    Body: UpdateIssueBody;
+    Querystring: UpdateIssueQuery;
+  }>("/api/v4/projects/:id/issues/:iid", async (req, reply) => {
+    if (!projectMatches(req.params.id ?? "")) return reply.code(404).send({});
+    const iid = Number.parseInt(req.params.iid ?? "0", 10);
+    const row = state.issues.get(iid);
+    if (!row) return reply.code(404).send({ message: "Not Found" });
+    const labels = req.body.labels ?? req.query.labels;
+    if (labels !== undefined) {
+      row.labels = dedupe(toLabelArray(labels));
+    }
+    const removeLabels =
+      req.body.remove_labels ??
+      req.body.removeLabels ??
+      req.query.remove_labels ??
+      req.query.removeLabels;
+    const labelsToRemove = toLabelArray(removeLabels);
+    if (labelsToRemove.length > 0) {
+      const removeSet = new Set(labelsToRemove);
+      row.labels = row.labels.filter((label) => !removeSet.has(label));
+    }
+    const stateEvent =
+      req.body.state_event ??
+      req.body.stateEvent ??
+      req.query.state_event ??
+      req.query.stateEvent;
+    if (stateEvent === "close") {
+      row.state = "closed";
+    } else if (stateEvent === "reopen") {
+      row.state = "opened";
+    }
+    bumpIssueUpdatedAt(state, iid);
+    return reply.send(row);
+  });
 
   // GET /api/v4/projects/:id/issues/:iid/notes
   app.get<{ Params: Params }>(
