@@ -22,6 +22,8 @@ GitLab Issue 带 ai-ready label
   -> 创建或更新 Merge Request
   -> 回写 Issue 评论
   -> Issue 进入 human-review
+  -> 人工 review 并手动 merge MR
+  -> IssuePilot 自动关闭 GitLab Issue
 ```
 
 ## 2. 与 Symphony 的关系
@@ -296,15 +298,16 @@ ai-blocked     缺少外部信息、权限或密钥，无法继续
 P0 支持的状态流转：
 
 ```text
-ai-ready -> ai-running -> human-review
+ai-ready -> ai-running -> human-review -> GitLab issue closed
 ai-ready -> ai-running -> ai-failed
 ai-ready -> ai-running -> ai-blocked
-ai-rework -> ai-running -> human-review
+ai-rework -> ai-running -> human-review -> GitLab issue closed
 ai-rework -> ai-running -> ai-failed
 ai-rework -> ai-running -> ai-blocked
+human-review + MR closed without merge -> ai-rework
 ```
 
-`ai-merging` 只作为 P1/P2 保留状态。P0 不自动合并。
+`human-review -> GitLab issue closed` 只在对应 MR 已被人工 merge 后由 orchestrator 自动收尾。`ai-merging` 只作为 P1/P2 保留状态。P0 不自动合并。
 
 与当前 Symphony 参考实现的映射：
 
@@ -337,7 +340,7 @@ orchestrator 独占调度状态。它不直接包含 GitLab API 细节、worktre
 
 ```text
 1. reload workflow。
-2. reconcile running issues。
+2. reconcile running issues and human-review issue closure。
 3. 拉取 GitLab candidate issues。
 4. 按 priority、updated_at、iid 排序。
 5. 检查并发槽位。
@@ -854,7 +857,8 @@ Dashboard/API：
 4. fake Codex 发出 tool calls 和 turn/completed。
 5. IssuePilot 通过 fake GitLab 完成 push/MR/comment/label。
 6. Issue 最终进入 human-review。
-7. event store 包含完整 timeline。
+7. fake MR 状态切为 merged 后，IssuePilot 自动关闭 issue。
+8. event store 包含完整 timeline。
 ```
 
 ### 18.3 真实 Smoke Test
@@ -873,7 +877,9 @@ Dashboard/API：
 7. 验证 MR 创建。
 8. 验证 Issue note。
 9. 验证 label human-review。
-10. 验证 dashboard timeline。
+10. 手动 merge MR。
+11. 验证 Issue 自动关闭。
+12. 验证 dashboard timeline。
 ```
 
 ## 19. V1/P0 实现里程碑
@@ -948,6 +954,7 @@ V1/P0：本地单机闭环
 - Codex app-server runner
 - git worktree workspace
 - 自动创建 MR 和持久 workpad note
+- 人工 merge MR 后自动关闭 GitLab issue
 - 只读 Next.js dashboard
 - fake E2E + real GitLab smoke test
 
@@ -999,9 +1006,10 @@ P0 完成标准：
 9. Merge Request 被创建或更新。
 10. Issue 收到 handoff note。
 11. 成功时 labels 进入 human-review。
-12. 失败或阻塞时 labels 进入 ai-failed 或 ai-blocked。
-13. Dashboard 展示 run timeline、app-server session、MR link 和 logs。
-14. failed runs 保留 workspace 和 event logs 供排障。
+12. MR 被人工 merge 后，IssuePilot 自动关闭 GitLab issue。
+13. 失败或阻塞时 labels 进入 ai-failed 或 ai-blocked。
+14. Dashboard 展示 run timeline、app-server session、MR link 和 logs。
+15. failed runs 保留 workspace 和 event logs 供排障。
 ```
 
 ## 22. 已确认决策
