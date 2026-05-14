@@ -19,7 +19,8 @@ engineering work.
 
 It watches GitLab issues, claims work through labels, creates isolated git
 worktrees, runs Codex through the app-server protocol, records an auditable event
-trail, and hands the result back as a merge request for human review.
+trail, hands the result back as a merge request for human review, and closes the
+issue after that MR is manually merged.
 
 ### Highlights
 
@@ -32,6 +33,9 @@ trail, and hands the result back as a merge request for human review.
 - **Trustworthy handoff boundary** — failures and blocks fall back to
   `ai-failed` / `ai-blocked` while the workspace and logs are preserved for
   forensics; secrets never leak into logs, events, API responses, or prompts.
+- **Human review closure** — IssuePilot does not auto-merge code, but after a
+  human merges the generated MR, the daemon writes a final note, removes
+  `human-review`, and closes the GitLab issue.
 - **Zero hand-rolled token management** — built-in `issuepilot auth login`
   runs the GitLab OAuth 2.0 Device Flow, persists the token at
   `~/.issuepilot/credentials` (mode `0600`), and auto-refreshes it; on a 401
@@ -68,6 +72,8 @@ plane:
 - The orchestrator writes events, logs, issue notes, branches, and merge
   requests.
 - Humans review the MR instead of supervising every agent turn.
+- After the MR is manually merged, IssuePilot reconciles the GitLab issue to a
+  closed terminal state.
 
 The P0 goal is a local single-machine loop, not a hosted multi-tenant service.
 
@@ -118,6 +124,8 @@ Implemented in this repository:
   logger.
 - Orchestrator modules for claim, dispatch, retry, reconcile, runtime state,
   HTTP API, SSE, and CLI scaffolding.
+- Human-review reconciliation: open MRs stay in review, merged MRs close the
+  issue, and closed-unmerged MRs return to the configured rework label.
 - Read-only dashboard with overview and run detail views, SSE refresh, timeline,
   tool calls, and log tail rendering.
 - End-to-end test harness (`tests/e2e`) with a stateful fake GitLab + scriptable
@@ -125,7 +133,8 @@ Implemented in this repository:
   (`turn/timeout` → ai-failed after `max_attempts`), failure path
   (`turn/failed` → ai-failed + workpad failure note), permission/escalation path
   (claim 401/403 → ai-blocked + `claim_failed` event), and approval auto-approve
-  path. 34 e2e cases run in ~10s.
+  path. The happy path also covers manual MR merge followed by automatic issue
+  closure.
 - Real GitLab smoke runbook + `pnpm smoke` wrapper that boots the orchestrator,
   polls `/api/state` until ready, prints API + dashboard URLs, and forwards
   SIGINT/SIGTERM with a hard 5s SIGKILL escalation.
@@ -145,6 +154,8 @@ GitLab issue has ai-ready label
   -> A GitLab merge request is created or updated
   -> The issue receives a handoff note
   -> Labels move to human-review, ai-failed, or ai-blocked
+  -> Human reviews and manually merges the MR
+  -> IssuePilot writes a closing note, removes human-review, and closes the issue
 ```
 
 P0 labels:
@@ -154,7 +165,7 @@ P0 labels:
 | `ai-ready` | Candidate issue that IssuePilot can pick up. |
 | `ai-running` | Claimed issue with an active run. |
 | `human-review` | MR is ready for human review. |
-| `ai-rework` | Human requested another AI pass after review. |
+| `ai-rework` | Human requested another AI pass after review, or the MR was closed without merge. |
 | `ai-failed` | Run failed and needs human intervention. |
 | `ai-blocked` | Missing information, permission, or secret. |
 
@@ -320,6 +331,8 @@ In active development; large parts are already usable in this repository:
   types).
 - ✅ Bare mirror + git worktree workspace; failed runs preserved in place.
 - ✅ Automatic MR create/update + persistent workpad note + fallback note.
+- ✅ Human-review closure: manually merged MRs close the GitLab issue; closed
+  unmerged MRs return to the configured rework label.
 - ✅ Read-only Next.js dashboard (overview + run detail + SSE timeline).
 - ✅ Fake GitLab + fake Codex end-to-end harness + real GitLab smoke runbook.
 - 🚧 Public packaging, versioned releases, install/upgrade paths.
@@ -336,6 +349,8 @@ run IssuePilot on its day-to-day work.
 - CI status ingestion + automatic flip of CI failures back to `ai-rework`.
 - MR / PR review feedback sweep (feed human review comments back into the
   next agent turn).
+- Optional automated merge policy after CI/approval checks. The P0 default
+  remains human-controlled merge.
 - Richer run reports: diff summary, test results, risk callouts, timing
   breakdown.
 - Workspace cleanup and retention policy (by age / size / status).
