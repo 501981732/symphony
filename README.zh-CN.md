@@ -109,10 +109,10 @@ GitLab + TypeScript 路线、并打算在内部团队范围内试运行，那么
   展示。
 - 端到端测试 harness（`tests/e2e`）：内置带状态的 fake GitLab + 可脚本化的 fake
   Codex app-server，覆盖 happy path、retry 路径（`turn/timeout` → ai-failed
-  耗尽 `max_attempts`）、failure 路径（`turn/failed` → ai-failed + workpad
+  耗尽 `max_attempts`）、failure 路径（`turn/failed` → ai-failed + 结构化
   failure note）、permission/escalation 路径（claim 401/403 → ai-blocked +
-  `claim_failed` 事件）和 approval 自动批准路径。happy path 同时覆盖人工
-  merge MR 后自动关闭 Issue。
+  结构化 blocked note + `claim_failed` 事件）和 approval 自动批准路径。
+  happy path 同时覆盖人工 merge MR 后写入结构化 closing note 并自动关闭 Issue。
 - 真实 GitLab smoke runbook + `pnpm smoke` wrapper：拉起 orchestrator、轮询
   `/api/state` 至 ready、打印 API + dashboard URL、转发 SIGINT/SIGTERM 并在 5s
   内升级 SIGKILL 兜底。
@@ -350,8 +350,10 @@ Request，不替代代码审查。
 - ✅ Codex app-server runner（thread/turn 生命周期 + 14 类标准化事件）。
 - ✅ bare mirror + git worktree workspace，失败 run 现场保留。
 - ✅ MR 自动创建/更新 + 带 marker 的结构化 handoff note 恢复机制。
+- ✅ 结构化 failure / blocked note：包含状态、run、branch、原因和下一步动作。
 - ✅ human-review 自动收尾：人工 merge MR 后关闭 GitLab Issue；MR closed 但
   未 merge 时回流到配置的 rework label。
+- ✅ 结构化 closing note：IssuePilot 移除 `human-review` 并关闭 Issue 时写入。
 - ✅ 只读 Next.js dashboard（overview + run detail + SSE timeline）。
 - ✅ fake GitLab + fake Codex 全闭环 E2E + 真实 GitLab smoke runbook。
 - 🚧 公开 package、版本化 release、安装/升级路径。
@@ -366,6 +368,8 @@ Request，不替代代码审查。
 - dashboard 增加基础操作：`retry`、`stop`、`archive run`。
 - CI 状态读取 + CI 失败自动回流到 `ai-rework`。
 - PR / MR review feedback sweep（把人工 review 评论喂回下一轮 agent）。
+- review 工作流打磨：在 dashboard 和生成报告中直接展示结构化 handoff /
+  failure / closing note 字段。
 - 可选自动 merge 策略（满足 CI / approval 后）。P0 默认仍由人类控制 merge。
 - 更完整的运行报告：diff summary、测试结果、风险点、耗时分解。
 - workspace 清理与保留策略（按时间 / 大小 / 状态分级）。

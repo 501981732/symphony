@@ -131,10 +131,11 @@ Implemented in this repository:
 - End-to-end test harness (`tests/e2e`) with a stateful fake GitLab + scriptable
   fake Codex app-server, covering the happy path, retry path
   (`turn/timeout` → ai-failed after `max_attempts`), failure path
-  (`turn/failed` → ai-failed + workpad failure note), permission/escalation path
-  (claim 401/403 → ai-blocked + `claim_failed` event), and approval auto-approve
-  path. The happy path also covers manual MR merge followed by automatic issue
-  closure.
+  (`turn/failed` → ai-failed + structured failure note),
+  permission/escalation path (claim 401/403 → ai-blocked + structured blocked
+  note + `claim_failed` event), and approval auto-approve path. The happy path
+  also covers manual MR merge followed by a structured closing note and
+  automatic issue closure.
 - Real GitLab smoke runbook + `pnpm smoke` wrapper that boots the orchestrator,
   polls `/api/state` until ready, prints API + dashboard URLs, and forwards
   SIGINT/SIGTERM with a hard 5s SIGKILL escalation.
@@ -330,9 +331,14 @@ In active development; large parts are already usable in this repository:
 - ✅ Codex app-server runner (thread/turn lifecycle + 14 normalized event
   types).
 - ✅ Bare mirror + git worktree workspace; failed runs preserved in place.
-- ✅ Automatic MR create/update + structured handoff note with marker-based recovery.
+- ✅ Automatic MR create/update + structured handoff note with marker-based
+  recovery.
+- ✅ Structured failure / blocked notes with status, run, branch, reason, and
+  next action.
 - ✅ Human-review closure: manually merged MRs close the GitLab issue; closed
   unmerged MRs return to the configured rework label.
+- ✅ Structured closing note when IssuePilot removes `human-review` and closes
+  the issue.
 - ✅ Read-only Next.js dashboard (overview + run detail + SSE timeline).
 - ✅ Fake GitLab + fake Codex end-to-end harness + real GitLab smoke runbook.
 - 🚧 Public packaging, versioned releases, install/upgrade paths.
@@ -349,6 +355,8 @@ run IssuePilot on its day-to-day work.
 - CI status ingestion + automatic flip of CI failures back to `ai-rework`.
 - MR / PR review feedback sweep (feed human review comments back into the
   next agent turn).
+- Review workflow polish: surface the structured handoff / failure / closing
+  note fields directly in the dashboard and generated reports.
 - Optional automated merge policy after CI/approval checks. The P0 default
   remains human-controlled merge.
 - Richer run reports: diff summary, test results, risk callouts, timing
