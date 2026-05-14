@@ -150,16 +150,14 @@ describe("happy path E2E", () => {
     expect(issue.state).toBe("closed");
     expect(issue.labels).not.toContain("human-review");
     expect(issue.labels).not.toContain("ai-running");
+    const closingNote = (ws.gitlabState.notes.get(ISSUE_IID) ?? []).find((n) =>
+      n.body.includes("## IssuePilot closed this issue"),
+    );
+    expect(closingNote).toBeDefined();
+    expect(closingNote?.body).toContain("- Status: closed");
     expect(
-      (ws.gitlabState.notes.get(ISSUE_IID) ?? []).some((n) =>
-        n.body.includes("MR !"),
-      ),
-    ).toBe(true);
-    expect(
-      (ws.gitlabState.notes.get(ISSUE_IID) ?? []).some((n) =>
-        n.body.includes("was merged"),
-      ),
-    ).toBe(true);
+      closingNote?.body,
+    ).toContain("The linked MR was merged by a human reviewer");
 
     // Step 7: event store contains the spec §10 happy-path event types.
     const stateRes = await fetch(`${daemon.url}/api/state`);
