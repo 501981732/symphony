@@ -190,6 +190,49 @@ git push origin main
 
 ## 5. Start IssuePilot
 
+### 5.0 Provide credentials
+
+IssuePilot accepts GitLab credentials from three sources, **resolved in this order of precedence**:
+
+| Source | When to use | Token origin |
+| --- | --- | --- |
+| `issuepilot auth login` (recommended) | Personal dev machine; don't want to manage PATs by hand | Built-in OAuth 2.0 Device Flow, auto-refresh, stored at `~/.issuepilot/credentials` (mode `0600`) |
+| `.env` + [direnv](https://direnv.net/) | Team or CI environments; already have a PAT/Group Token | `cd` into the dir auto-exports env vars, auto-unsets on exit |
+| `glab auth token` bridge | Already using [glab CLI](https://gitlab.com/gitlab-org/cli) | `export GITLAB_TOKEN=$(glab auth token -h <host>)` |
+
+> The daemon first reads the env var named in `tracker.token_env`; if unset it falls back to `~/.issuepilot/credentials`. Tokens are always redacted from events, logs, the dashboard, and prompts.
+
+#### A. `issuepilot auth login` (recommended)
+
+```bash
+pnpm exec issuepilot auth login --hostname gitlab.example.com
+# Follow the prompt to enter user_code in your browser. Token is persisted automatically.
+pnpm exec issuepilot auth status   # Show login state and token expiry
+pnpm exec issuepilot auth logout   # Remove local credentials
+```
+
+#### B. `.env` + direnv
+
+```bash
+brew install direnv     # macOS; other platforms: https://direnv.net/
+cp .env.example .env    # Edit .env, set GITLAB_TOKEN=glpat-xxx
+echo 'dotenv' > .envrc && direnv allow .
+echo $GITLAB_TOKEN      # Verify it's loaded
+```
+
+> Both `.env` and `.envrc` are listed in `.gitignore` — they will not be committed.
+
+#### C. glab CLI bridge
+
+```bash
+glab auth login --hostname gitlab.example.com   # Browser-based OAuth
+export GITLAB_TOKEN=$(glab auth token --hostname gitlab.example.com)
+```
+
+> glab issues `gloas-...` OAuth tokens; these and hand-rolled `glpat-...` PATs are equivalent at the GitLab API. IssuePilot passes them straight through `@gitbeaker/rest` — no distinction needed.
+
+---
+
 ### 5.1 Prepare the IssuePilot repo
 
 ```bash
@@ -205,7 +248,8 @@ You **must** build before the first run — `pnpm smoke` boots `apps/orchestrato
 Run a static + GitLab-connectivity check before starting the daemon:
 
 ```bash
-export GITLAB_TOKEN="<your token>"
+# Skip if §5.0 credentials are already in place; otherwise export ad-hoc:
+# export GITLAB_TOKEN="<your token>"
 pnpm exec issuepilot validate --workflow /path/to/target-project/.agents/workflow.md
 ```
 
@@ -229,7 +273,8 @@ Common failures:
 **Terminal A** (orchestrator):
 
 ```bash
-export GITLAB_TOKEN="<token>"
+# Skip if §5.0 credentials are already in place; otherwise export ad-hoc:
+# export GITLAB_TOKEN="<token>"
 pnpm smoke --workflow /path/to/target-project/.agents/workflow.md
 ```
 
