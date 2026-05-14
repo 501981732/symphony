@@ -27,9 +27,12 @@ export type {
   RawPipeline,
 } from "./api-shape.js";
 export {
+  closeIssue,
   getIssue,
   listCandidateIssues,
   toIssueRef,
+  type CloseIssueOpts,
+  type CloseIssueResult,
   type ListCandidateIssuesOpts,
 } from "./issues.js";
 export {
@@ -46,6 +49,7 @@ export {
 } from "./labels.js";
 export {
   createIssueNote,
+  findLatestIssuePilotWorkpadNote,
   findWorkpadNote,
   updateIssueNote,
   type CreateIssueNoteResult,
@@ -54,6 +58,7 @@ export {
 export {
   createMergeRequest,
   getMergeRequest,
+  listMergeRequestsBySourceBranch,
   listMergeRequestNotes,
   updateMergeRequest,
   type CreateMergeRequestInput,
@@ -61,17 +66,14 @@ export {
   type MergeRequestNote,
   type MergeRequestSummary,
   type MergeRequestUpdates,
+  type SourceBranchMergeRequestSummary,
 } from "./merge-requests.js";
 export {
   classifyPipelineStatus,
   getPipelineStatus,
   type PipelineStatus,
 } from "./pipelines.js";
-export type {
-  GitLabAdapter,
-  GitLabErrorCategory,
-  IssueRef,
-} from "./types.js";
+export type { GitLabAdapter, GitLabErrorCategory, IssueRef } from "./types.js";
 
 export const PACKAGE_NAME = "@issuepilot/tracker-gitlab";
 export const VERSION = "0.0.0";

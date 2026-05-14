@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { GitLabApi, RawIssue } from "../api-shape.js";
 import { createGitLabClient, type GitLabClient } from "../client.js";
-import { getIssue, listCandidateIssues, toIssueRef } from "../issues.js";
+import {
+  closeIssue,
+  getIssue,
+  listCandidateIssues,
+  toIssueRef,
+} from "../issues.js";
 
 function makeClient(api: Partial<GitLabApi>): GitLabClient<GitLabApi> {
   return createGitLabClient<GitLabApi>({
@@ -155,7 +160,11 @@ describe("listCandidateIssues", () => {
 
   it("treats issues with missing labels as empty (no exclusion match)", async () => {
     const all = vi.fn(async () => [
-      issue({ id: 1, iid: 1, labels: undefined as unknown as readonly string[] }),
+      issue({
+        id: 1,
+        iid: 1,
+        labels: undefined as unknown as readonly string[],
+      }),
     ]);
     const client = makeClient({
       Issues: { all, show: vi.fn(), edit: vi.fn() },
@@ -230,5 +239,79 @@ describe("getIssue", () => {
       Issues: { all: vi.fn(), show, edit: vi.fn() },
     });
     expect((await getIssue(client, 51)).description).toBe("");
+  });
+
+  it("preserves state when GitLab includes it", async () => {
+    const show = vi.fn(async () => issue({ id: 7, iid: 52, state: "opened" }));
+    const client = makeClient({
+      Issues: { all: vi.fn(), show, edit: vi.fn() },
+    });
+    expect((await getIssue(client, 52)).state).toBe("opened");
+  });
+});
+
+describe("closeIssue", () => {
+  it("closes an opened issue and removes handoff label in one edit", async () => {
+    const show = vi
+      .fn()
+      .mockResolvedValueOnce(
+        issue({ iid: 42, labels: ["human-review", "team"], state: "opened" }),
+      )
+      .mockResolvedValueOnce(
+        issue({ iid: 42, labels: ["team"], state: "closed" }),
+      );
+    const edit = vi.fn(async () =>
+      issue({ iid: 42, labels: ["team"], state: "closed" }),
+    );
+    const client = makeClient({
+      Issues: { all: vi.fn(), show, edit },
+    });
+
+    await expect(
+      closeIssue(client, 42, {
+        requireCurrent: ["human-review"],
+        removeLabels: ["human-review"],
+      }),
+    ).resolves.toEqual({ labels: ["team"], state: "closed" });
+    expect(edit).toHaveBeenCalledWith("group/project", 42, {
+      labels: "team",
+      stateEvent: "close",
+    });
+  });
+
+  it("rejects without editing when a required current label is missing", async () => {
+    const show = vi.fn(async () =>
+      issue({ iid: 42, labels: ["ai-ready"], state: "opened" }),
+    );
+    const edit = vi.fn();
+    const client = makeClient({
+      Issues: { all: vi.fn(), show, edit },
+    });
+
+    await expect(
+      closeIssue(client, 42, {
+        requireCurrent: ["human-review"],
+        removeLabels: ["human-review"],
+      }),
+    ).rejects.toMatchObject({ name: "GitLabError", category: "validation" });
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it("rejects without editing when the issue is not opened", async () => {
+    const show = vi.fn(async () =>
+      issue({ iid: 42, labels: ["human-review"], state: "closed" }),
+    );
+    const edit = vi.fn();
+    const client = makeClient({
+      Issues: { all: vi.fn(), show, edit },
+    });
+
+    await expect(
+      closeIssue(client, 42, {
+        requireCurrent: ["human-review"],
+        removeLabels: ["human-review"],
+      }),
+    ).rejects.toMatchObject({ name: "GitLabError", category: "validation" });
+    expect(edit).not.toHaveBeenCalled();
   });
 });

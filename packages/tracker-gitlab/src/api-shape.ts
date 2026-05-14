@@ -13,6 +13,7 @@ export interface RawIssue {
   web_url: string;
   project_id: number;
   labels?: readonly string[];
+  state?: string;
 }
 
 export interface RawIssueNote {
@@ -31,6 +32,7 @@ export interface RawMergeRequest {
   target_branch: string;
   title: string;
   description?: string | null;
+  updated_at?: string;
 }
 
 export interface RawPipeline {
@@ -53,7 +55,7 @@ export interface IssuesApi {
   edit(
     projectId: string | number,
     iid: number,
-    opts: { labels?: string },
+    opts: { labels?: string; stateEvent?: "close" | "reopen" },
   ): Promise<RawIssue>;
 }
 
@@ -101,10 +103,7 @@ export interface MergeRequestsApi {
       targetBranch: string;
     }>,
   ): Promise<RawMergeRequest>;
-  show(
-    projectId: string | number,
-    mrIid: number,
-  ): Promise<RawMergeRequest>;
+  show(projectId: string | number, mrIid: number): Promise<RawMergeRequest>;
 }
 
 export interface MergeRequestNotesApi {

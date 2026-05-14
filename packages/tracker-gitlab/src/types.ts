@@ -32,7 +32,17 @@ export interface GitLabAdapter {
     perPage?: number;
   }): Promise<IssueRef[]>;
 
-  getIssue(iid: number): Promise<IssueRef & { description: string }>;
+  getIssue(
+    iid: number,
+  ): Promise<IssueRef & { description: string; state?: string }>;
+
+  closeIssue(
+    iid: number,
+    opts: {
+      removeLabels: readonly string[];
+      requireCurrent?: readonly string[];
+    },
+  ): Promise<{ labels: string[]; state: string | undefined }>;
 
   transitionLabels(
     iid: number,
@@ -48,6 +58,9 @@ export interface GitLabAdapter {
   findWorkpadNote(
     iid: number,
     marker: string,
+  ): Promise<{ id: number; body: string } | null>;
+  findLatestIssuePilotWorkpadNote(
+    iid: number,
   ): Promise<{ id: number; body: string } | null>;
 
   createMergeRequest(input: {
@@ -68,6 +81,15 @@ export interface GitLabAdapter {
   getMergeRequest(
     mrIid: number,
   ): Promise<{ iid: number; webUrl: string; state: string }>;
+  listMergeRequestsBySourceBranch(sourceBranch: string): Promise<
+    Array<{
+      iid: number;
+      webUrl: string;
+      state: string;
+      sourceBranch: string;
+      updatedAt?: string;
+    }>
+  >;
   listMergeRequestNotes(
     mrIid: number,
   ): Promise<Array<{ id: number; body: string; author: string }>>;

@@ -4,6 +4,7 @@ import type { GitLabApi, RawIssueNote } from "../api-shape.js";
 import { createGitLabClient, type GitLabClient } from "../client.js";
 import {
   createIssueNote,
+  findLatestIssuePilotWorkpadNote,
   findWorkpadNote,
   updateIssueNote,
 } from "../notes.js";
@@ -102,9 +103,7 @@ describe("findWorkpadNote", () => {
     const client = makeClient({
       IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
     });
-    expect(
-      await findWorkpadNote(client, 42, marker("missing")),
-    ).toBeNull();
+    expect(await findWorkpadNote(client, 42, marker("missing"))).toBeNull();
   });
 
   it("handles empty / undefined body gracefully", async () => {
@@ -116,5 +115,45 @@ describe("findWorkpadNote", () => {
       IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
     });
     expect(await findWorkpadNote(client, 42, marker("x"))).toBeNull();
+  });
+});
+
+describe("findLatestIssuePilotWorkpadNote", () => {
+  it("returns the latest non-system IssuePilot workpad note with colon or equals marker", async () => {
+    const all = vi.fn(async () => [
+      note({ id: 1, body: "<!-- issuepilot:run=old -->\nold", system: false }),
+      note({
+        id: 2,
+        body: "<!-- issuepilot:run:system -->\nsystem",
+        system: true,
+      }),
+      note({ id: 3, body: "unrelated", system: false }),
+      note({ id: 4, body: "<!-- issuepilot:run:new -->\nnew", system: false }),
+    ]);
+    const client = makeClient({
+      IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
+    });
+
+    expect(await findLatestIssuePilotWorkpadNote(client, 42)).toEqual({
+      id: 4,
+      body: "<!-- issuepilot:run:new -->\nnew",
+    });
+    expect(all).toHaveBeenCalledWith("group/project", 42, { perPage: 100 });
+  });
+
+  it("returns null when no non-system IssuePilot workpad note exists", async () => {
+    const all = vi.fn(async () => [
+      note({ id: 1, body: "<!-- issuepilot:other=x -->\nbody" }),
+      note({
+        id: 2,
+        body: "<!-- issuepilot:run=system -->\nbody",
+        system: true,
+      }),
+    ]);
+    const client = makeClient({
+      IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
+    });
+
+    expect(await findLatestIssuePilotWorkpadNote(client, 42)).toBeNull();
   });
 });
