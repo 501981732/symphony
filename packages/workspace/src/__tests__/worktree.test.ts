@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { execaSync } from "execa";
+import { ensureMirror } from "../mirror.js";
 import { ensureWorktree } from "../worktree.js";
 
 function setupOriginAndMirror(tmpDir: string) {
@@ -75,6 +76,94 @@ describe("ensureWorktree", () => {
         issueIid: 42,
         titleSlug: "fix-login",
         baseBranch: "develop",
+        branchPrefix: "ai",
+        workspaceRoot,
+      }),
+    ).rejects.toMatchObject({
+      name: "WorkspaceBaseBranchError",
+      message: expect.stringContaining("Available branches: main"),
+    });
+  });
+
+  it("creates worktrees from the remote-tracking base branch after mirror migration", async () => {
+    const repoCacheRoot = path.join(tmpDir, "cache");
+    const { mirrorPath: migratedMirrorPath } = await ensureMirror({
+      repoUrl: `file://${path.join(tmpDir, "origin")}`,
+      projectSlug: "remote-base",
+      repoCacheRoot,
+    });
+
+    const staleLocalHead = execaSync("git", [
+      "--git-dir",
+      migratedMirrorPath,
+      "rev-parse",
+      "refs/heads/main",
+    ]).stdout.trim();
+
+    const workDir = path.join(tmpDir, "advance-origin");
+    execaSync("git", ["clone", path.join(tmpDir, "origin"), workDir]);
+    execaSync("git", ["config", "user.email", "test@test.com"], {
+      cwd: workDir,
+    });
+    execaSync("git", ["config", "user.name", "Test"], { cwd: workDir });
+    fs.writeFileSync(path.join(workDir, "new-base.txt"), "new base\n");
+    execaSync("git", ["add", "new-base.txt"], { cwd: workDir });
+    execaSync("git", ["commit", "-m", "advance base"], { cwd: workDir });
+    execaSync("git", ["push", "origin", "main"], { cwd: workDir });
+
+    await ensureMirror({
+      repoUrl: `file://${path.join(tmpDir, "origin")}`,
+      projectSlug: "remote-base",
+      repoCacheRoot,
+    });
+
+    const remoteHead = execaSync("git", [
+      "--git-dir",
+      migratedMirrorPath,
+      "rev-parse",
+      "refs/remotes/origin/main",
+    ]).stdout.trim();
+    expect(remoteHead).not.toBe(staleLocalHead);
+
+    const result = await ensureWorktree({
+      mirrorPath: migratedMirrorPath,
+      projectSlug: "myproject",
+      issueIid: 43,
+      titleSlug: "remote-base",
+      baseBranch: "main",
+      branchPrefix: "ai",
+      workspaceRoot,
+    });
+
+    const worktreeHead = execaSync("git", ["rev-parse", "HEAD"], {
+      cwd: result.workspacePath,
+    }).stdout.trim();
+    expect(worktreeHead).toBe(remoteHead);
+  });
+
+  it("rejects stale local base branches after mirror migration", async () => {
+    const repoCacheRoot = path.join(tmpDir, "cache-stale");
+    const { mirrorPath: migratedMirrorPath } = await ensureMirror({
+      repoUrl: `file://${path.join(tmpDir, "origin")}`,
+      projectSlug: "stale-base",
+      repoCacheRoot,
+    });
+
+    execaSync("git", [
+      "--git-dir",
+      migratedMirrorPath,
+      "branch",
+      "stale-local-base",
+      "refs/heads/main",
+    ]);
+
+    await expect(
+      ensureWorktree({
+        mirrorPath: migratedMirrorPath,
+        projectSlug: "myproject",
+        issueIid: 44,
+        titleSlug: "stale-base",
+        baseBranch: "stale-local-base",
         branchPrefix: "ai",
         workspaceRoot,
       }),

@@ -5,6 +5,8 @@ import { execa } from "execa";
 
 import { assertWithinRoot, branchName } from "./paths.js";
 
+const REMOTE_TRACKING_FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*";
+
 export class WorkspaceDirtyError extends Error {
   override name = "WorkspaceDirtyError" as const;
   constructor(message: string) {
@@ -74,7 +76,26 @@ async function hasValidHead(dir: string): Promise<boolean> {
   }
 }
 
-async function listBranches(mirrorPath: string): Promise<string[]> {
+async function listRemoteBranches(mirrorPath: string): Promise<string[]> {
+  const result = await execa("git", [
+    "--git-dir",
+    mirrorPath,
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/remotes/origin",
+  ]);
+
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) =>
+      line.startsWith("origin/") ? line.slice("origin/".length) : line,
+    )
+    .sort();
+}
+
+async function listLocalBranches(mirrorPath: string): Promise<string[]> {
   const result = await execa("git", [
     "--git-dir",
     mirrorPath,
@@ -86,13 +107,29 @@ async function listBranches(mirrorPath: string): Promise<string[]> {
   return result.stdout
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort();
 }
 
-async function assertBaseBranchExists(
+async function usesRemoteTrackingFetchRefspec(
+  mirrorPath: string,
+): Promise<boolean> {
+  const result = await execa(
+    "git",
+    ["--git-dir", mirrorPath, "config", "--get-all", "remote.origin.fetch"],
+    { reject: false },
+  );
+
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .includes(REMOTE_TRACKING_FETCH_REFSPEC);
+}
+
+async function resolveBaseRef(
   mirrorPath: string,
   baseBranch: string,
-): Promise<void> {
+): Promise<string> {
   try {
     await execa("git", [
       "--git-dir",
@@ -100,15 +137,37 @@ async function assertBaseBranchExists(
       "rev-parse",
       "--verify",
       "--quiet",
-      `refs/heads/${baseBranch}^{commit}`,
+      `refs/remotes/origin/${baseBranch}^{commit}`,
     ]);
+    return `origin/${baseBranch}`;
   } catch {
-    const branches = await listBranches(mirrorPath);
-    const available =
-      branches.length > 0 ? branches.join(", ") : "(no local branches)";
-    throw new WorkspaceBaseBranchError(
-      `Base branch '${baseBranch}' does not exist in mirror ${mirrorPath}. Available branches: ${available}. Update git.base_branch in .agents/workflow.md or push the branch to the repository.`,
-    );
+    if (await usesRemoteTrackingFetchRefspec(mirrorPath)) {
+      const branches = await listRemoteBranches(mirrorPath);
+      const available =
+        branches.length > 0 ? branches.join(", ") : "(no remote branches)";
+      throw new WorkspaceBaseBranchError(
+        `Base branch '${baseBranch}' does not exist in mirror ${mirrorPath}. Available branches: ${available}. Update git.base_branch in .agents/workflow.md or push the branch to the repository.`,
+      );
+    }
+
+    try {
+      await execa("git", [
+        "--git-dir",
+        mirrorPath,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        `refs/heads/${baseBranch}^{commit}`,
+      ]);
+      return baseBranch;
+    } catch {
+      const branches = await listLocalBranches(mirrorPath);
+      const available =
+        branches.length > 0 ? branches.join(", ") : "(no branches)";
+      throw new WorkspaceBaseBranchError(
+        `Base branch '${baseBranch}' does not exist in mirror ${mirrorPath}. Available branches: ${available}. Update git.base_branch in .agents/workflow.md or push the branch to the repository.`,
+      );
+    }
   }
 }
 
@@ -119,7 +178,7 @@ async function createWorktree(input: {
   baseBranch: string;
 }): Promise<void> {
   await fs.mkdir(path.dirname(input.workspacePath), { recursive: true });
-  await assertBaseBranchExists(input.mirrorPath, input.baseBranch);
+  const baseRef = await resolveBaseRef(input.mirrorPath, input.baseBranch);
 
   await execa("git", [
     "--git-dir",
@@ -129,7 +188,7 @@ async function createWorktree(input: {
     input.workspacePath,
     "-B",
     input.branch,
-    input.baseBranch,
+    baseRef,
   ]);
 }
 

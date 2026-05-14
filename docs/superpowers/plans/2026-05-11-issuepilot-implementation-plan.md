@@ -961,14 +961,23 @@ async ensureMirror({ repoUrl, projectSlug, repoCacheRoot }) {
   const exists = await stat(mirrorPath).catch(() => null);
   if (!exists) {
     await execa("git", ["clone", "--mirror", repoUrl, mirrorPath]);
-  } else {
-    await execa("git", ["--git-dir", mirrorPath, "fetch", "--prune", "origin"]);
   }
+  await migrateMirrorClone(mirrorPath);
+  await execa("git", ["--git-dir", mirrorPath, "fetch", "--prune", "origin"]);
   return { mirrorPath };
 }
 ```
 
-**测试：** 用本地 `git init --bare` + `git daemon` 不现实，使用临时目录里另一个普通 repo 作为 `repoUrl=file://...`；覆盖 first clone、第二次 fetch、网络失败抛错。
+**迁移约束（2026-05-14 real-run 修正）：**
+
+- `git clone --mirror` 会把远端 heads 导入本地 `refs/heads/*`。IssuePilot worktree 也会 checkout `refs/heads/ai/...`，因此 mirror fetch 不能继续写入本地 heads。
+- `migrateMirrorClone(mirrorPath)` 必须：
+  - unset `remote.origin.mirror`，避免后续 worktree push refspec 触发 `--mirror cannot be used with refspecs`；
+  - 设置 `remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*`；
+  - 对新旧 cache 都幂等执行。
+- `fetch --prune origin` 只更新 `refs/remotes/origin/*`。本地 `refs/heads/*` 只保留给 worktree 分支，不能作为 migrated mirror 的远端同步目标。
+
+**测试：** 用本地 `git init --bare` + `git daemon` 不现实，使用临时目录里另一个普通 repo 作为 `repoUrl=file://...`；覆盖 first clone、第二次 fetch、网络失败抛错、legacy `remote.origin.mirror=true` cache 迁移、worktree 已 checkout `ai/<issue>` 时再次 `fetch --prune origin` 不触碰本地 branch。
 
 **commit：** `feat(workspace): ensure bare mirror via execa`。
 
@@ -979,14 +988,19 @@ async ensureMirror({ repoUrl, projectSlug, repoCacheRoot }) {
 
 **实现要点：**
 - 路径 `path.join(workspaceRoot, projectSlug, String(issueIid))`，先 `assertWithinRoot`。
-- 不存在：`git --git-dir <mirror> worktree add <ws> -B <branch> origin/<baseBranch>`。
+- 不存在：
+  1. 优先校验 `refs/remotes/origin/<baseBranch>` 存在；
+  2. 仅当 mirror 尚未迁移到 `+refs/heads/*:refs/remotes/origin/*` fetch refspec 时，才允许临时 fallback 到 `refs/heads/<baseBranch>`；
+  3. `git --git-dir <mirror> worktree add <ws> -B <branch> <baseRef>`。
 - 存在：
   1. `git -C <ws> rev-parse --is-inside-work-tree` 必须为 `true`。
   2. `git -C <ws> remote get-url origin` 与 mirror 一致（或为 alternates）。
   3. `git -C <ws> symbolic-ref --short HEAD` 必须等于预期 branch。
-  4. `git -C <ws> fetch origin` + `git -C <ws> reset --hard origin/<branch>` 仅在状态干净时执行；脏工作区 → 抛 `WorkspaceDirtyError`，caller 触发 reconciliation 失败。
+  4. 若 `git -C <ws> rev-parse --verify HEAD` 失败，说明旧失败留下了 unborn/invalid worktree；可 `git --git-dir <mirror> worktree remove --force <ws>` + `worktree prune` 后重建。
+  5. 工作区不干净 → 抛 `WorkspaceDirtyError`，caller 触发失败保留；不要 reset 用户改动。
+  6. clean worktree 可以复用，并执行 `git -C <ws> fetch origin` 更新远端跟踪信息。
 
-**测试：** first run reused=false；second run reused=true；脏 worktree 抛错；不一致 origin 抛错。
+**测试：** first run reused=false；second run reused=true；脏 worktree 抛错；不一致 origin 抛错；invalid unborn worktree 自动重建；migrated mirror 从更新后的 `refs/remotes/origin/<base>` 创建 worktree；migrated mirror 拒绝 stale local-only base branch。
 
 **commit：** `feat(workspace): worktree create-or-reuse with safety checks`。
 
@@ -1022,6 +1036,9 @@ async ensureMirror({ repoUrl, projectSlug, repoCacheRoot }) {
 **Phase 4 验收：**
 
 - [ ] bare mirror + worktree 在 tmp 仓库的集成测试可重复跑通 ≥ 5 次。
+- [ ] legacy mirror cache 会迁移到 `refs/remotes/origin/*` fetch refspec，且 `fetch --prune origin` 不会写入已 checkout 的 issue branch。
+- [ ] migrated mirror 不允许从 stale local-only base branch 创建新 worktree。
+- [ ] invalid/unborn issue worktree 可自动重建；真实 dirty worktree 仍失败保留。
 - [ ] 所有路径强制 canonicalize；越界写入抛错。
 - [ ] hook 失败、超时、空脚本三种 case 均有测试。
 - [ ] 失败 workspace 不被删除，会留下 `.issuepilot/failed-at-*`。
@@ -1089,14 +1106,21 @@ export interface CodexRunner {
 
 **实现 Step：**
 
-1. `request("initialize", { client: { name, version }, capabilities: {...} })`。
+1. `request("initialize", { clientInfo: { name, version }, capabilities: {...} })`。
 2. `notify("initialized")`。
-3. `request("thread/start", { name, cwd, sandbox: { type: codex.threadSandbox }, approvalPolicy: codex.approvalPolicy, tools: tools.map(toSchema) })` → 取 `threadId`。
+3. `request("thread/start", { name, cwd, sandbox: normalizeThreadSandbox(codex.threadSandbox), approvalPolicy: codex.approvalPolicy, tools: tools.map(toSchema) })` → 取 `thread.id`。
 4. 循环 `maxTurns` 次：
-   - `request("turn/start", { threadId, prompt, title, cwd, sandboxPolicy: codex.turnSandboxPolicy })` → 取 `turnId`。
-   - 阻塞直到收到该 `turnId` 对应的 `turn/completed | turn/failed | turn/cancelled | turn/timeout` 通知（用 `p-timeout` 包裹 `codex.turnTimeoutMs`；需在 `packages/runner-codex-app-server/package.json` 中声明 `"p-timeout": "^6"` 依赖）。
+   - `request("turn/start", { threadId, input: prompt, title, cwd, sandboxPolicy: normalizeTurnSandbox(codex.turnSandboxPolicy) })` → 取 `turn.id`。
+   - 阻塞直到收到该 `turn.id` 对应的 `turn/completed | turn/failed | turn/cancelled | turn/timeout` 通知（用 `p-timeout` 包裹 `codex.turnTimeoutMs`；需在 `packages/runner-codex-app-server/package.json` 中声明 `"p-timeout": "^6"` 依赖）。
    - 如果 agent 通过工具调用更新了状态且 `turn/completed` 中标明 stop，则跳出循环。
 5. 任何阶段抛错或子进程退出 → 收集 `RunnerOutcome` 并触发 `port_exit` 事件。
+
+**协议校准（2026-05-14 real-run 修正）：**
+
+- Codex app-server 当前 `initialize` 必须带 `clientInfo`，不是旧草案里的 `client`。
+- `thread/start.sandbox` 使用 app-server 接收的 sandbox 形态；简写策略必须先 normalize。
+- `turn/start` 的用户输入字段是 `input`，不是 `prompt`。
+- 响应中的 thread/turn id 按 nested object 读取：`thread.id`、`turn.id`。
 
 **测试：** 用脚本驱动 fake server，覆盖 spec §10 列出的 14 个事件类型逐一发出，断言 `onEvent` 顺序正确；超时与 cancel 路径独立测试。
 
@@ -1149,6 +1173,7 @@ export interface CodexRunner {
 
 - [ ] 完整生命周期 + 14 个标准化事件全部测试通过。
 - [ ] approval/input/超时/port exit 都有覆盖。
+- [ ] 真实 Codex app-server 协议 smoke 覆盖 `initialize.clientInfo`、`thread/start.sandbox`、`turn/start.input`、nested `thread.id/turn.id`。
 - [ ] 不支持的 tool 触发 `unsupported_tool_call` 且 runner 继续，无静默卡顿。
 - [ ] token redact 在 fake adapter 测试中验证。
 
@@ -1182,9 +1207,11 @@ export interface CodexRunner {
 1. `gitlab.listCandidateIssues({ activeLabels, excludeLabels: [running, handoff, failed, blocked] })`。
 2. 按 `priority desc → updatedAt asc → iid asc` 稳定排序。
 3. 槽位足够时取 N 个；逐个调用 `gitlab.transitionLabels(iid, { add: [running], remove: activeLabels, requireCurrent: [matchedActiveLabel] })`。
-4. 冲突或失败 → 跳过；成功 → 创建 `RunRecord(status="claimed", attempt=1)` 写入 state。
+4. 冲突或失败 → 跳过；成功后必须调用 `gitlab.getIssue(iid)` 拉完整 Issue 详情，再创建 `RunRecord(status="claimed", attempt=1)` 写入 state。
 
-**测试：** 并发 claim 冲突；空候选；只用部分槽位。
+**real-run 修正：** GitLab list API 返回的候选 Issue 可能不含完整 `description`。RunRecord 和 prompt 渲染必须使用 `getIssue(iid)` 的完整 issue，否则 `Description:` 会为空，agent 会拿不到任务正文。
+
+**测试：** 并发 claim 冲突；空候选；只用部分槽位；list candidate 缺 description 时会补 `getIssue` 并把完整 description 写入 RunRecord/prompt。
 
 **commit：** `feat(orchestrator): claim candidates with optimistic labels`。
 
@@ -1571,7 +1598,11 @@ issuepilot doctor     --workflow <path>
 
 - **Codex app-server 协议字段变动**：所有 RPC payload 集中在 `packages/runner-codex-app-server/src/{rpc,lifecycle,events}.ts`；遇到协议升级时只改这三个文件 + 重跑 Phase 8 fakes。
 - **GitLab 速率限制**：所有写操作都通过 `tracker-gitlab` 调用，统一指数退避；Phase 6.5 重试机制兜底。
-- **worktree 状态污染**：Phase 4 任何不一致直接抛 `WorkspaceDirtyError`，run 进入 `ai-failed` 保留现场，不尝试自动修复。
+- **mirror fetch 写入已 checkout branch**：mirror cache 只允许 fetch 到 `refs/remotes/origin/*`；issue/local heads 留给 worktree 使用。回归测试必须覆盖 `ai/<issue>` 已 checkout 时的 `fetch --prune origin`。
+- **stale base branch**：迁移后的 mirror 必须拒绝本地 stale `refs/heads/<base>`，只从 `refs/remotes/origin/<base>` 创建新 worktree。
+- **worktree 状态污染**：真实 dirty worktree 直接抛 `WorkspaceDirtyError`，run 进入 `ai-failed` 保留现场；invalid/unborn worktree 可安全 remove/prune/recreate。
+- **Codex app-server 协议漂移**：Phase 5 必须保留真实 app-server probe 或 smoke，覆盖 initialize/thread/turn 的字段名和返回结构，避免 fake server 与真实协议脱节。
+- **Issue description 缺失**：候选列表只用于排序和认领，认领成功后必须补 `getIssue(iid)` 再渲染 prompt。
 - **dashboard 误展示 secret**：所有 API response 经过 redact，并在 Phase 6.7 / 7.4 都加测试；新增字段需走 review。
 
 ---
