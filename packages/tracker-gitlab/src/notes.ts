@@ -72,9 +72,10 @@ export async function findLatestIssuePilotWorkpadNote(
     async (api) => {
       const notes = await api.IssueNotes.all(client.projectId, iid, {
         perPage: NOTES_PER_PAGE,
+        orderBy: "updated_at",
+        sort: "desc",
       });
-      for (let index = notes.length - 1; index >= 0; index -= 1) {
-        const note = notes[index];
+      for (const note of notes) {
         if (!note || note.system) continue;
         const body = typeof note.body === "string" ? note.body : "";
         if (ISSUEPILOT_RUN_MARKER.test(firstLine(body))) {

@@ -119,26 +119,55 @@ describe("findWorkpadNote", () => {
 });
 
 describe("findLatestIssuePilotWorkpadNote", () => {
-  it("returns the latest non-system IssuePilot workpad note with colon or equals marker", async () => {
+  it("returns the first matching workpad note from newest-first GitLab rows", async () => {
     const all = vi.fn(async () => [
-      note({ id: 1, body: "<!-- issuepilot:run=old -->\nold", system: false }),
       note({
-        id: 2,
+        id: 5,
+        body: "<!-- issuepilot:run=latest -->\nlatest",
+        system: false,
+      }),
+      note({
+        id: 4,
         body: "<!-- issuepilot:run:system -->\nsystem",
         system: true,
       }),
       note({ id: 3, body: "unrelated", system: false }),
-      note({ id: 4, body: "<!-- issuepilot:run:new -->\nnew", system: false }),
+      note({ id: 2, body: "<!-- issuepilot:run:older -->\nolder" }),
+      note({ id: 1, body: "<!-- issuepilot:run=oldest -->\noldest" }),
     ]);
     const client = makeClient({
       IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
     });
 
     expect(await findLatestIssuePilotWorkpadNote(client, 42)).toEqual({
-      id: 4,
-      body: "<!-- issuepilot:run:new -->\nnew",
+      id: 5,
+      body: "<!-- issuepilot:run=latest -->\nlatest",
     });
-    expect(all).toHaveBeenCalledWith("group/project", 42, { perPage: 100 });
+    expect(all).toHaveBeenCalledWith("group/project", 42, {
+      perPage: 100,
+      orderBy: "updated_at",
+      sort: "desc",
+    });
+  });
+
+  it("supports colon markers after ignoring newer system notes", async () => {
+    const all = vi.fn(async () => [
+      note({
+        id: 3,
+        body: "<!-- issuepilot:run=system -->\nsystem",
+        system: true,
+      }),
+      note({ id: 2, body: "<!-- issuepilot:run:latest -->\nlatest" }),
+      note({ id: 1, body: "<!-- issuepilot:run=older -->\nolder" }),
+    ]);
+    const client = makeClient({
+      IssueNotes: { all, create: vi.fn(), edit: vi.fn() },
+    });
+
+    expect(await findLatestIssuePilotWorkpadNote(client, 42)).toEqual({
+      id: 2,
+      body: "<!-- issuepilot:run:latest -->\nlatest",
+    });
   });
 
   it("returns null when no non-system IssuePilot workpad note exists", async () => {

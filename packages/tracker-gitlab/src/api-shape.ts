@@ -63,7 +63,7 @@ export interface IssueNotesApi {
   all(
     projectId: string | number,
     iid: number,
-    opts?: { perPage?: number },
+    opts?: { perPage?: number; orderBy?: string; sort?: "asc" | "desc" },
   ): Promise<readonly RawIssueNote[]>;
   create(
     projectId: string | number,
