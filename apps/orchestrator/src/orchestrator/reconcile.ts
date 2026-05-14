@@ -13,6 +13,7 @@ export interface ReconcileInput {
   issueIdentifier: string;
   runningLabel: string;
   handoffLabel: string;
+  reworkLabel: string;
   git: GitSlice;
   gitlab: GitLabReconcileSlice;
   onEvent: (event: ReconcileEvent) => void;
@@ -31,13 +32,20 @@ interface GitSlice {
 }
 
 interface GitLabReconcileSlice {
-  findMergeRequest(sourceBranch: string): Promise<{ iid: number; title: string; description: string } | null>;
+  findMergeRequest(
+    sourceBranch: string,
+  ): Promise<{
+    iid: number;
+    title: string;
+    description: string;
+    webUrl?: string;
+  } | null>;
   createMergeRequest(opts: {
     sourceBranch: string;
     targetBranch: string;
     title: string;
     description: string;
-  }): Promise<{ iid: number }>;
+  }): Promise<{ iid: number; webUrl?: string }>;
   updateMergeRequest(mrIid: number, opts: { title?: string; description?: string }): Promise<void>;
   findWorkpadNote(issueIid: number, marker: string): Promise<{ id: number; body: string } | null>;
   createNote(issueIid: number, body: string): Promise<{ id: number }>;
@@ -72,20 +80,55 @@ function buildMrBody(input: ReconcileInput): string {
   ].join("\n");
 }
 
-function buildWorkpadNote(input: ReconcileInput): string {
-  const marker = `<!-- issuepilot:run:${input.runId} -->`;
+function fallbackText(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+function mrLine(mr: { iid: number; webUrl?: string } | null): string {
+  if (!mr) return "not created";
+  return mr.webUrl ? `!${mr.iid} ${mr.webUrl}` : `!${mr.iid}`;
+}
+
+function buildHandoffNote(
+  input: ReconcileInput,
+  mr: { iid: number; webUrl?: string } | null,
+): string {
+  const summary = fallbackText(
+    input.agentSummary,
+    input.noCodeChangeReason
+      ? `No code changes: ${input.noCodeChangeReason}`
+      : "Codex completed without a structured summary; see commits.",
+  );
+  const validation = fallbackText(
+    input.agentValidation,
+    input.noCodeChangeReason
+      ? "No validation command was reported for this no-code-change run."
+      : "(no validation summary)",
+  );
+  const risks = fallbackText(input.agentRisks, "None reported.");
+
   return [
-    marker,
-    `**IssuePilot run** \`${input.runId}\` — attempt ${input.attempt}`,
+    `<!-- issuepilot:run:${input.runId} -->`,
+    "## IssuePilot handoff",
     "",
+    `- Status: ${input.handoffLabel}`,
+    `- Run: \`${input.runId}\``,
+    `- Attempt: ${input.attempt}`,
     `- Branch: \`${input.branch}\``,
-    `- Status: completed`,
-    `- Summary: ${input.agentSummary || "(no summary)"}`,
-    `- Validation: ${input.agentValidation || "(none)"}`,
-    `- Risks: ${input.agentRisks || "(none)"}`,
-    ...(input.noCodeChangeReason
-      ? [`- No code changes: ${input.noCodeChangeReason}`]
-      : []),
+    `- MR: ${mrLine(mr)}`,
+    "",
+    "### What changed",
+    summary,
+    "",
+    "### Validation",
+    validation,
+    "",
+    "### Risks / follow-ups",
+    risks,
+    "",
+    "### Next action",
+    `Review and merge the MR, or move this Issue to \`${input.reworkLabel}\` if changes are required.`,
   ].join("\n");
 }
 
@@ -119,10 +162,7 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
       input.iid,
       marker,
     );
-    const noteBody = buildWorkpadNote({
-      ...input,
-      noCodeChangeReason,
-    });
+    const noteBody = buildHandoffNote({ ...input, noCodeChangeReason }, null);
 
     if (!existingNote) {
       const note = await input.gitlab.createNote(input.iid, noteBody);
@@ -157,6 +197,7 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
   const existingMr = await input.gitlab.findMergeRequest(input.branch);
   const mrBody = buildMrBody(input);
 
+  let handoffMr: { iid: number; webUrl?: string };
   if (!existingMr) {
     const mr = await input.gitlab.createMergeRequest({
       sourceBranch: input.branch,
@@ -164,6 +205,7 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
       title: `[IssuePilot] ${input.issueIdentifier}`,
       description: mrBody,
     });
+    handoffMr = mr;
     input.onEvent({
       type: "gitlab_mr_created",
       runId: input.runId,
@@ -174,6 +216,7 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
     await input.gitlab.updateMergeRequest(existingMr.iid, {
       description: mrBody,
     });
+    handoffMr = existingMr;
     input.onEvent({
       type: "gitlab_mr_updated",
       runId: input.runId,
@@ -187,7 +230,7 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
     input.iid,
     marker,
   );
-  const noteBody = buildWorkpadNote(input);
+  const noteBody = buildHandoffNote(input, handoffMr);
 
   if (!existingNote) {
     await input.gitlab.createNote(input.iid, noteBody);

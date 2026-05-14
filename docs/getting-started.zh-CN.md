@@ -481,6 +481,9 @@ Issue note 第一行有 marker：
 <!-- issuepilot:run:<runId> -->
 ```
 
+最终 handoff note 会以 `## IssuePilot handoff` 开头，并包含 branch、MR、
+实现摘要、验证结果、风险 / 后续事项，以及给人工 reviewer 的下一步动作。
+
 ---
 
 ## 12. 下一步

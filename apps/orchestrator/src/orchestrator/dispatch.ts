@@ -60,6 +60,7 @@ export interface DispatchDeps {
     issueIdentifier: string;
     runningLabel: string;
     handoffLabel: string;
+    reworkLabel: string;
   }): Promise<void>;
 
   onEvent(event: {
@@ -95,6 +96,7 @@ export interface DispatchInput {
   baseBranch: string;
   runningLabel: string;
   handoffLabel: string;
+  reworkLabel: string;
   promptTemplate: string;
   hooks?:
     | {
@@ -258,6 +260,7 @@ export async function dispatch(
       issueIdentifier: `${input.issue.projectId}#${input.issue.iid}`,
       runningLabel: input.runningLabel,
       handoffLabel: input.handoffLabel,
+      reworkLabel: input.reworkLabel,
     });
 
     deps.state.setRun(runId, {
