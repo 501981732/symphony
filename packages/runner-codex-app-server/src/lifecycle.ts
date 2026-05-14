@@ -44,6 +44,67 @@ type TurnOutcome =
   | { kind: "cancelled" }
   | { kind: "timeout" };
 
+function nestedId(
+  params: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const nested = params?.[key];
+  if (!nested || typeof nested !== "object") return undefined;
+  const id = (nested as Record<string, unknown>)["id"];
+  return typeof id === "string" ? id : undefined;
+}
+
+function eventTurnId(
+  params: Record<string, unknown> | undefined,
+): string | undefined {
+  const direct = params?.["turnId"];
+  return typeof direct === "string" ? direct : nestedId(params, "turn");
+}
+
+function resultThreadId(result: unknown): string {
+  const direct = (result as { threadId?: unknown }).threadId;
+  if (typeof direct === "string") return direct;
+
+  const nested = (result as { thread?: { id?: unknown } }).thread?.id;
+  if (typeof nested === "string") return nested;
+
+  throw new Error("thread/start response did not include a thread id");
+}
+
+function resultTurnId(result: unknown): string {
+  const direct = (result as { turnId?: unknown }).turnId;
+  if (typeof direct === "string") return direct;
+
+  const nested = (result as { turn?: { id?: unknown } }).turn?.id;
+  if (typeof nested === "string") return nested;
+
+  throw new Error("turn/start response did not include a turn id");
+}
+
+function normalizeSandboxPolicy(
+  policy: { type: string } & Record<string, unknown>,
+  cwd: string,
+): Record<string, unknown> {
+  if (policy.type === "workspaceWrite") {
+    return {
+      writableRoots: [cwd],
+      networkAccess: false,
+      excludeTmpdirEnvVar: false,
+      excludeSlashTmp: false,
+      ...policy,
+    };
+  }
+
+  if (policy.type === "readOnly") {
+    return {
+      networkAccess: false,
+      ...policy,
+    };
+  }
+
+  return policy;
+}
+
 function waitForTurn(
   rpc: RpcClient,
   turnId: string,
@@ -57,23 +118,24 @@ function waitForTurn(
 
     rpc.onNotification((method, params) => {
       const p = params as Record<string, unknown> | undefined;
+      const currentTurnId = eventTurnId(p);
 
-      if (method === "turn/completed" && p?.["turnId"] === turnId) {
+      if (method === "turn/completed" && currentTurnId === turnId) {
         clearTimeout(timer);
         onEvent("turn_completed", params);
-        resolve({ kind: "completed", stop: !!p["stop"] });
-      } else if (method === "turn/failed" && p?.["turnId"] === turnId) {
+        resolve({ kind: "completed", stop: p?.["stop"] !== false });
+      } else if (method === "turn/failed" && currentTurnId === turnId) {
         clearTimeout(timer);
         onEvent("turn_failed", params);
         resolve({
           kind: "failed",
-          error: String(p["error"] ?? "unknown"),
+          error: String(p?.["error"] ?? "unknown"),
         });
-      } else if (method === "turn/cancelled" && p?.["turnId"] === turnId) {
+      } else if (method === "turn/cancelled" && currentTurnId === turnId) {
         clearTimeout(timer);
         onEvent("turn_cancelled", params);
         resolve({ kind: "cancelled" });
-      } else if (method === "turn/timeout" && p?.["turnId"] === turnId) {
+      } else if (method === "turn/timeout" && currentTurnId === turnId) {
         clearTimeout(timer);
         onEvent("turn_timeout", params);
         resolve({ kind: "timeout" });
@@ -131,9 +193,7 @@ export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
       onEvent("tool_call_completed", { ...call, result });
       return {
         success: true,
-        contentItems: [
-          { type: "inputText", text: JSON.stringify(result) },
-        ],
+        contentItems: [{ type: "inputText", text: JSON.stringify(result) }],
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -146,38 +206,36 @@ export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
   });
 
   await rpc.request("initialize", {
-    client: { name: "issuepilot", version: "0.0.0" },
+    clientInfo: { name: "issuepilot", version: "0.0.0" },
     capabilities: {},
   });
   rpc.notify("initialized", {});
   onEvent("session_started");
 
   const threadResult = (await rpc.request("thread/start", {
-    name: input.threadName,
     cwd: input.cwd,
-    sandbox: { type: input.sandboxType },
+    sandbox: input.sandboxType,
     approvalPolicy: input.approvalPolicy,
     tools: input.tools.map((t) => ({
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
     })),
-  })) as { threadId: string };
+  })) as unknown;
 
-  const threadId = threadResult.threadId;
+  const threadId = resultThreadId(threadResult);
   let turnsUsed = 0;
   let lastTurnId: string | undefined;
 
   for (let i = 0; i < input.maxTurns; i++) {
     const turnResult = (await rpc.request("turn/start", {
       threadId,
-      prompt: input.prompt,
-      title: input.title,
+      input: [{ type: "text", text: input.prompt, text_elements: [] }],
       cwd: input.cwd,
-      sandboxPolicy: input.turnSandboxPolicy,
-    })) as { turnId: string };
+      sandboxPolicy: normalizeSandboxPolicy(input.turnSandboxPolicy, input.cwd),
+    })) as unknown;
 
-    const turnId = turnResult.turnId;
+    const turnId = resultTurnId(turnResult);
     lastTurnId = turnId;
     turnsUsed++;
     onEvent("turn_started", { turnId });
@@ -214,7 +272,11 @@ export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
       };
     }
 
-    if (outcome.kind === "completed" && !outcome.stop && i === input.maxTurns - 1) {
+    if (
+      outcome.kind === "completed" &&
+      !outcome.stop &&
+      i === input.maxTurns - 1
+    ) {
       return { status: "completed", turnsUsed, lastTurnId, threadId };
     }
   }

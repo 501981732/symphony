@@ -1,7 +1,16 @@
-export { slugify, assertWithinRoot, branchName, WorkspacePathError } from "./paths.js";
+export {
+  slugify,
+  assertWithinRoot,
+  branchName,
+  WorkspacePathError,
+} from "./paths.js";
 export { ensureMirror } from "./mirror.js";
 export type { EnsureMirrorInput, EnsureMirrorResult } from "./mirror.js";
-export { ensureWorktree, WorkspaceDirtyError } from "./worktree.js";
+export {
+  ensureWorktree,
+  WorkspaceBaseBranchError,
+  WorkspaceDirtyError,
+} from "./worktree.js";
 export type { EnsureWorktreeInput, EnsureWorktreeResult } from "./worktree.js";
 export { runHook, HookFailedError } from "./hooks.js";
 export type { RunHookInput, RunHookResult } from "./hooks.js";

@@ -410,6 +410,7 @@ Worktree 流程：
 ```text
 ensureWorktree(issue)
   branch = ai/<issue-iid>-<title-slug>
+  校验 refs/heads/<base_branch> 在 mirror 中存在，否则 blocked 并报告可用分支
   git --git-dir=<mirror> worktree add <workspace> -B <branch> origin/<base_branch>
 ```
 
@@ -441,14 +442,15 @@ P0 使用 Codex app-server，不使用 Codex CLI 作为主 runner。
 
 runner 职责：
 
-> 字段格式说明：`thread/start` 的 sandbox 参数传 `{ type: <thread_sandbox> }`（kebab-case 值，如 `"workspace-write"`）；`turn/start` 的 sandboxPolicy 参数传 `turn_sandbox_policy` 对象（camelCase 值，如 `{ type: "workspaceWrite" }`）。两者对应 Codex app-server 不同层级的 RPC 字段，不可互换。
+> 字段格式说明：`thread/start` 的 sandbox 参数直接传 `<thread_sandbox>` 字符串（kebab-case 值，如 `"workspace-write"`）；`turn/start` 的 sandboxPolicy 参数传 `turn_sandbox_policy` 对象（camelCase 值，如 `{ type: "workspaceWrite" }`）。两者对应 Codex app-server 不同层级的 RPC 字段，不可互换。
+> runner 发送 `turn/start` 前会把简写策略补成 Codex app-server 需要的完整对象：`workspaceWrite` 默认 writable root 为当前 issue worktree，network access 关闭；`readOnly` 默认 network access 关闭。
 
 ```text
 1. 在 issue workspace 内启动 `codex app-server`。
-2. 发送 initialize。
+2. 发送 initialize，包含 `{ clientInfo: { name, version }, capabilities }`。
 3. 发送 initialized。
 4. 发送 thread/start，包含 cwd、sandbox（使用 thread_sandbox kebab-case 值）、approval policy、dynamic tools。
-5. 发送 turn/start，包含渲染后的 prompt、title、cwd、sandboxPolicy（使用 turn_sandbox_policy camelCase 对象）。
+5. 发送 turn/start，包含渲染后的 input text、cwd、sandboxPolicy（使用 turn_sandbox_policy camelCase 对象）。
 6. 从 stdout/stderr stream 读取 newline-delimited JSON-RPC 消息。
 7. 处理 completed、failed、cancelled、timeout、port exit。
 8. 处理 approval requests。
@@ -578,6 +580,7 @@ Blocked：
 GitLab token 缺失
 GitLab 403 permission denied
 repo clone 或 push 权限缺失
+workflow git.base_branch 在 mirror 中不存在
 Codex auth 不可用
 必要 secret 缺失
 Issue 信息不足，且 agent 明确报告 blocker

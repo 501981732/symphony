@@ -67,6 +67,23 @@ describe("ensureWorktree", () => {
     expect(fs.existsSync(readme)).toBe(true);
   });
 
+  it("reports available branches when the configured base branch is missing", async () => {
+    await expect(
+      ensureWorktree({
+        mirrorPath,
+        projectSlug: "myproject",
+        issueIid: 42,
+        titleSlug: "fix-login",
+        baseBranch: "develop",
+        branchPrefix: "ai",
+        workspaceRoot,
+      }),
+    ).rejects.toMatchObject({
+      name: "WorkspaceBaseBranchError",
+      message: expect.stringContaining("Available branches: main"),
+    });
+  });
+
   it("reuses an existing clean worktree (reused=true)", async () => {
     const first = await ensureWorktree({
       mirrorPath,

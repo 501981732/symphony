@@ -10,38 +10,40 @@ function createFakeRpc(
   requestHandler: (m: string, p: unknown) => Promise<unknown> | unknown;
 } {
   let notifHandler: (m: string, p: unknown) => void = () => {};
-  let requestHandler: (m: string, p: unknown) => Promise<unknown> | unknown =
-    () => {
-      throw new Error("No request handler registered");
-    };
+  let requestHandler: (
+    m: string,
+    p: unknown,
+  ) => Promise<unknown> | unknown = () => {
+    throw new Error("No request handler registered");
+  };
 
   const client: RpcClient & {
     notifHandler: (m: string, p: unknown) => void;
     requestHandler: (m: string, p: unknown) => Promise<unknown> | unknown;
   } = {
-      get notifHandler() {
-        return notifHandler;
-      },
-      get requestHandler() {
-        return requestHandler;
-      },
-      request: vi.fn(async (method: string) => {
-        if (responses.has(method)) {
-          return responses.get(method);
-        }
-        throw new Error(`Unexpected method: ${method}`);
-      }),
-      notify: vi.fn(),
-      onNotification: vi.fn((handler) => {
-        notifHandler = handler;
-      }),
-      onMalformed: vi.fn(),
-      onRequest: vi.fn((handler) => {
-        requestHandler = handler;
-      }),
-      close: vi.fn(async () => {}),
-      waitExit: vi.fn(async () => ({ code: 0, signal: null })),
-    };
+    get notifHandler() {
+      return notifHandler;
+    },
+    get requestHandler() {
+      return requestHandler;
+    },
+    request: vi.fn(async (method: string) => {
+      if (responses.has(method)) {
+        return responses.get(method);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    }),
+    notify: vi.fn(),
+    onNotification: vi.fn((handler) => {
+      notifHandler = handler;
+    }),
+    onMalformed: vi.fn(),
+    onRequest: vi.fn((handler) => {
+      requestHandler = handler;
+    }),
+    close: vi.fn(async () => {}),
+    waitExit: vi.fn(async () => ({ code: 0, signal: null })),
+  };
 
   setTimeout(() => {
     for (const n of notifications) {
@@ -53,13 +55,106 @@ function createFakeRpc(
 }
 
 describe("driveLifecycle", () => {
+  it("initializes Codex app-server with clientInfo", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+        ["turn/start", { turnId: "u1" }],
+      ]),
+      [
+        {
+          method: "turn/completed",
+          params: { turnId: "u1", stop: true },
+        },
+      ],
+    );
+
+    await driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: () => {},
+    });
+
+    expect(rpc.request).toHaveBeenCalledWith("initialize", {
+      clientInfo: { name: "issuepilot", version: "0.0.0" },
+      capabilities: {},
+    });
+  });
+
+  it("uses the Codex 0.129 thread and turn payload shapes", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { thread: { id: "t1" } }],
+        ["turn/start", { turn: { id: "u1" } }],
+      ]),
+      [
+        {
+          method: "turn/completed",
+          params: { threadId: "t1", turn: { id: "u1" } },
+        },
+      ],
+    );
+
+    const result = await driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix the bug",
+      title: "Fix bug",
+      cwd: "/tmp/ws",
+      threadName: "test",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: () => {},
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      threadId: "t1",
+      lastTurnId: "u1",
+    });
+    expect(rpc.request).toHaveBeenCalledWith(
+      "thread/start",
+      expect.objectContaining({
+        cwd: "/tmp/ws",
+        sandbox: "workspace-write",
+        approvalPolicy: "never",
+      }),
+    );
+    expect(rpc.request).toHaveBeenCalledWith(
+      "turn/start",
+      expect.objectContaining({
+        threadId: "t1",
+        input: [{ type: "text", text: "Fix the bug", text_elements: [] }],
+        cwd: "/tmp/ws",
+        sandboxPolicy: {
+          type: "workspaceWrite",
+          writableRoots: ["/tmp/ws"],
+          networkAccess: false,
+          excludeTmpdirEnvVar: false,
+          excludeSlashTmp: false,
+        },
+      }),
+    );
+  });
+
   it("completes a single-turn lifecycle", async () => {
     const rpc = createFakeRpc(
       new Map([
-        [
-          "initialize",
-          { serverInfo: { name: "codex", version: "1.0" } },
-        ],
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
         ["thread/start", { threadId: "t1" }],
         ["turn/start", { turnId: "u1" }],
       ]),
@@ -133,10 +228,12 @@ describe("driveLifecycle", () => {
 
   it("stops after maxTurns if no stop signal", async () => {
     let turnCount = 0;
-    const rpc = createFakeRpc(new Map([
-      ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
-      ["thread/start", { threadId: "t1" }],
-    ]));
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+      ]),
+    );
 
     (rpc.request as ReturnType<typeof vi.fn>).mockImplementation(
       async (method: string) => {
@@ -227,9 +324,7 @@ describe("driveLifecycle", () => {
 
     expect(response).toMatchObject({
       success: true,
-      contentItems: [
-        { type: "inputText", text: JSON.stringify({ ok: true }) },
-      ],
+      contentItems: [{ type: "inputText", text: JSON.stringify({ ok: true }) }],
     });
     expect(events).toContain("tool_call_started");
     expect(events).toContain("tool_call_completed");
@@ -276,6 +371,8 @@ describe("driveLifecycle", () => {
     ).resolves.toEqual({ decision: "accept" });
     await resultPromise;
 
-    expect(events.filter((e) => e === "approval_auto_approved")).toHaveLength(2);
+    expect(events.filter((e) => e === "approval_auto_approved")).toHaveLength(
+      2,
+    );
   });
 });
