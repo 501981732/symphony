@@ -46,8 +46,15 @@ export default async function HomePage() {
         </p>
         <p className="text-sm text-slate-500">
           Start the orchestrator with{" "}
-          <code className="font-mono">pnpm dev:orchestrator</code> and reload
-          this page.
+          <code className="font-mono">
+            pnpm smoke --workflow /path/to/target-project/.agents/workflow.md
+          </code>{" "}
+          or{" "}
+          <code className="font-mono">
+            pnpm exec issuepilot run --workflow
+            /path/to/target-project/.agents/workflow.md
+          </code>
+          , then reload this page.
         </p>
       </main>
     );

@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { splitCommand } from "../daemon.js";
+import { hostnameFromBaseUrl, splitCommand } from "../daemon.js";
+
+describe("hostnameFromBaseUrl", () => {
+  it("returns the bare hostname for an https URL", () => {
+    expect(hostnameFromBaseUrl("https://gitlab.example.com")).toBe(
+      "gitlab.example.com",
+    );
+  });
+
+  it("strips a trailing path", () => {
+    expect(hostnameFromBaseUrl("https://gitlab.example.com/")).toBe(
+      "gitlab.example.com",
+    );
+    expect(hostnameFromBaseUrl("http://gitlab.local:8080/api/v4")).toBe(
+      "gitlab.local",
+    );
+  });
+
+  it("returns the input verbatim when it is not a URL", () => {
+    expect(hostnameFromBaseUrl("gitlab.example.com")).toBe(
+      "gitlab.example.com",
+    );
+  });
+});
 
 describe("splitCommand", () => {
   it("splits a simple command on whitespace", () => {

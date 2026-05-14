@@ -6,6 +6,15 @@ import { Command } from "commander";
 import { execaCommand } from "execa";
 
 import {
+  authLogin,
+  authLogout,
+  authStatus,
+  type AuthLoginDeps,
+  type AuthLoginOptions,
+  type AuthLogoutOptions,
+  type AuthStatusOptions,
+} from "./auth/index.js";
+import {
   checkCodexAppServer,
   startDaemon,
   validateWorkflow,
@@ -17,6 +26,11 @@ export interface CliDeps {
   validateWorkflow?: typeof validateWorkflow | undefined;
   checkCodexAppServer?: typeof checkCodexAppServer | undefined;
   execaCommand?: typeof execaCommand | undefined;
+  authLogin?:
+    | ((opts: AuthLoginOptions, deps?: AuthLoginDeps) => Promise<unknown>)
+    | undefined;
+  authStatus?: ((opts: AuthStatusOptions) => Promise<unknown>) | undefined;
+  authLogout?: ((opts: AuthLogoutOptions) => Promise<unknown>) | undefined;
 }
 
 function parsePort(value: string): number | null {
@@ -31,6 +45,9 @@ export function buildCli(deps: CliDeps = {}): Command {
   const workflowValidator = deps.validateWorkflow ?? validateWorkflow;
   const codexCheck = deps.checkCodexAppServer ?? checkCodexAppServer;
   const runExecaCommand = deps.execaCommand ?? execaCommand;
+  const authLoginImpl = deps.authLogin ?? authLogin;
+  const authStatusImpl = deps.authStatus ?? authStatus;
+  const authLogoutImpl = deps.authLogout ?? authLogout;
 
   const program = new Command("issuepilot")
     .description("IssuePilot — AI-driven GitLab issue orchestrator")
@@ -155,6 +172,89 @@ export function buildCli(deps: CliDeps = {}): Command {
       }
 
       if (!allOk) {
+        process.exitCode = 1;
+      }
+    });
+
+  const authCommand = program
+    .command("auth")
+    .description(
+      "Manage GitLab credentials via OAuth 2.0 Device Authorization Grant",
+    );
+
+  authCommand
+    .command("login")
+    .description("Run the OAuth Device Flow and persist the resulting token")
+    .requiredOption(
+      "--hostname <host>",
+      "GitLab hostname, e.g. gitlab.example.com",
+    )
+    .option(
+      "--scope <scopes>",
+      "Space-separated OAuth scopes (default: api read_repository write_repository)",
+    )
+    .option(
+      "--client-id <id>",
+      "GitLab OAuth Application ID / client_id (default: issuepilot-cli)",
+    )
+    .option(
+      "--base-url <url>",
+      "Override base URL (default: https://<hostname>)",
+    )
+    .action(async (opts) => {
+      const loginOpts: AuthLoginOptions = { hostname: String(opts.hostname) };
+      if (typeof opts.scope === "string" && opts.scope.length > 0) {
+        loginOpts.scope = opts.scope.split(/\s+/).filter(Boolean);
+      }
+      if (typeof opts.clientId === "string" && opts.clientId.length > 0) {
+        loginOpts.clientId = opts.clientId;
+      }
+      if (typeof opts.baseUrl === "string" && opts.baseUrl.length > 0) {
+        loginOpts.baseUrl = opts.baseUrl;
+      }
+      try {
+        await authLoginImpl(loginOpts);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`auth login failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  authCommand
+    .command("status")
+    .description("Show stored credentials and their token expiry")
+    .option("--hostname <host>", "Filter by hostname")
+    .action(async (opts) => {
+      const statusOpts: AuthStatusOptions = {};
+      if (typeof opts.hostname === "string" && opts.hostname.length > 0) {
+        statusOpts.hostname = opts.hostname;
+      }
+      try {
+        await authStatusImpl(statusOpts);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`auth status failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  authCommand
+    .command("logout")
+    .description("Remove stored credentials")
+    .option("--hostname <host>", "Hostname to remove")
+    .option("--all", "Wipe credentials for every host")
+    .action(async (opts) => {
+      const logoutOpts: AuthLogoutOptions = {};
+      if (typeof opts.hostname === "string" && opts.hostname.length > 0) {
+        logoutOpts.hostname = opts.hostname;
+      }
+      if (opts.all === true) logoutOpts.all = true;
+      try {
+        await authLogoutImpl(logoutOpts);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`auth logout failed: ${message}`);
         process.exitCode = 1;
       }
     });

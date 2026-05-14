@@ -25,6 +25,10 @@ Request 的形式交给人工 Review。
   事件流、JSONL event store 与 dashboard timeline，关键节点可追溯、可回放。
 - **可信交付边界**：失败 / 阻塞自动落到 `ai-failed` / `ai-blocked`，workspace
   与日志原地保留供取证；secret 不会泄露到日志、事件、API 响应或 prompt。
+- **零手工 token 维护**：内置 `issuepilot auth login` 走 GitLab OAuth 2.0
+  Device Flow，token 加密存放在 `~/.issuepilot/credentials`（`0600`）并自动
+  refresh；遇到 401 daemon 静默换发新 token 并重试一次。仍兼容 PAT/Group Token
+  via `tracker.token_env` 的环境变量路径。
 - **本地单机闭环**:`~/.issuepilot` 下落盘的 worktree + JSONL + run record，
   daemon 重启可恢复 reconciliation，不依赖外部数据库。
 - **与 harness engineering 互补**：面向已经做好 agent harness 的成熟项目使用

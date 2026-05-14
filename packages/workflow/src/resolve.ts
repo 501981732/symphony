@@ -60,9 +60,10 @@ export function expandWorkflowPaths(cfg: WorkflowConfig): WorkflowConfig {
 
 /**
  * Confirm that the environment variable named by `tracker.tokenEnv` is set
- * to a non-empty value. Throws {@link WorkflowConfigError} with
- * `path = "tracker.token_env"` when the env var is missing or empty so the
- * orchestrator can surface a precise diagnostic.
+ * to a non-empty value, *if* `tracker.tokenEnv` is configured. With OAuth
+ * credentials available (spec §22 decision 3) `tokenEnv` may be omitted —
+ * we treat that as "no env-var contract to validate" and let the daemon's
+ * credential resolver decide whether the OAuth fallback is usable.
  *
  * `env` defaults to `process.env`. Callers in tests should pass an explicit
  * shape to keep the global process env clean.
@@ -71,7 +72,9 @@ export function validateWorkflowEnv(
   cfg: WorkflowConfig,
   env: EnvLike = process.env,
 ): void {
-  const value = env[cfg.tracker.tokenEnv];
+  const tokenEnv = cfg.tracker.tokenEnv;
+  if (typeof tokenEnv !== "string" || tokenEnv.length === 0) return;
+  const value = env[tokenEnv];
   if (typeof value !== "string" || value.length === 0) {
     throw new WorkflowConfigError(
       "environment variable configured by tracker.token_env is not set",
@@ -89,12 +92,23 @@ export interface TrackerSecret {
  * Look up the tracker token at runtime without mutating the config. Used by
  * the GitLab adapter when it actually needs to authenticate; every other
  * layer should keep operating on the secret-free {@link WorkflowConfig}.
+ *
+ * Throws when `tracker.tokenEnv` is not configured — callers that have
+ * OAuth credentials available should not reach this function; they go
+ * through `@issuepilot/credentials` instead.
  */
 export function resolveTrackerSecret(
   cfg: WorkflowConfig,
   env: EnvLike = process.env,
 ): TrackerSecret {
-  const value = env[cfg.tracker.tokenEnv];
+  const tokenEnv = cfg.tracker.tokenEnv;
+  if (typeof tokenEnv !== "string" || tokenEnv.length === 0) {
+    throw new WorkflowConfigError(
+      "tracker.token_env is not configured; use `issuepilot auth login` for OAuth credentials",
+      "tracker.token_env",
+    );
+  }
+  const value = env[tokenEnv];
   if (typeof value !== "string" || value.length === 0) {
     throw new WorkflowConfigError(
       "environment variable configured by tracker.token_env is not set",

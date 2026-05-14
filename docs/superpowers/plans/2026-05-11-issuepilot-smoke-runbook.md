@@ -176,7 +176,9 @@ WORKFLOW_PATH="$HOME/issuepilot-smoke/.agents/workflow.md"
 终端 A：
 
 ```bash
-export GITLAB_TOKEN="<token>"
+# 选择一种方式提供 GitLab 凭据（详见 docs/getting-started.zh-CN.md §5.0）：
+#   A) export GITLAB_TOKEN="<token>"            # PAT/Group Token
+#   B) pnpm exec issuepilot auth login --hostname <host>   # OAuth Device Flow
 pnpm smoke --workflow "$WORKFLOW_PATH"
 ```
 
@@ -312,8 +314,9 @@ rm -rf ~/.issuepilot/repos/group__issuepilot-smoke
   `remote.origin.mirror=false` + 配置 fetch refspec。如果还有问题，
   手动 `rm -rf ~/.issuepilot/repos/<slug>` 让 IssuePilot 重新拉。
 
-- **403 / 401**：`GITLAB_TOKEN` 没 export，或者 token 没 `api` scope，
-  或 sandbox 项目对该 token 不可见。
+- **403 / 401**：`GITLAB_TOKEN` 没 export 也没跑 `issuepilot auth login`；
+  或 token 没 `api` scope；或 sandbox 项目对该 token 不可见。OAuth 凭据可
+  用 `pnpm exec issuepilot auth status` 查看到期时间与 scope。
 
 - **dashboard 401 / CORS**：dashboard 走的是 `http://127.0.0.1:4738`，
   和 `--host` 必须一致。如果你跑在容器/远程机器上，临时让

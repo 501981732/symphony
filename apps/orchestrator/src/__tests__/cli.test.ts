@@ -152,4 +152,76 @@ describe("CLI", () => {
     );
     mockLog.mockRestore();
   });
+
+  describe("auth subcommands", () => {
+    it("auth login forwards hostname/scope/client-id to authLogin", async () => {
+      const authLogin = vi.fn(async () => ({}));
+      const cli = buildCli({ authLogin });
+      await cli.parseAsync(
+        [
+          "auth",
+          "login",
+          "--hostname",
+          "gitlab.example.com",
+          "--scope",
+          "api read_repository",
+          "--client-id",
+          "test-client",
+        ],
+        { from: "user" },
+      );
+      expect(authLogin).toHaveBeenCalledWith({
+        hostname: "gitlab.example.com",
+        scope: ["api", "read_repository"],
+        clientId: "test-client",
+      });
+    });
+
+    it("auth status forwards hostname filter to authStatus", async () => {
+      const authStatus = vi.fn(async () => ({}));
+      const cli = buildCli({ authStatus });
+      await cli.parseAsync(
+        ["auth", "status", "--hostname", "gitlab.example.com"],
+        { from: "user" },
+      );
+      expect(authStatus).toHaveBeenCalledWith({
+        hostname: "gitlab.example.com",
+      });
+    });
+
+    it("auth logout forwards hostname or --all", async () => {
+      const authLogout = vi.fn(async () => ({}));
+      const cli = buildCli({ authLogout });
+      await cli.parseAsync(
+        ["auth", "logout", "--hostname", "gitlab.example.com"],
+        { from: "user" },
+      );
+      expect(authLogout).toHaveBeenCalledWith({
+        hostname: "gitlab.example.com",
+      });
+
+      authLogout.mockClear();
+      const cli2 = buildCli({ authLogout });
+      await cli2.parseAsync(["auth", "logout", "--all"], { from: "user" });
+      expect(authLogout).toHaveBeenCalledWith({ all: true });
+    });
+
+    it("auth login surfaces non-zero exit code on failure", async () => {
+      const authLogin = vi.fn(async () => {
+        throw new Error("boom");
+      });
+      const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const cli = buildCli({ authLogin });
+      await cli.parseAsync(
+        ["auth", "login", "--hostname", "gitlab.example.com"],
+        { from: "user" },
+      );
+      expect(process.exitCode).toBe(1);
+      expect(mockError).toHaveBeenCalledWith(
+        expect.stringContaining("auth login failed"),
+      );
+      mockError.mockRestore();
+      process.exitCode = 0;
+    });
+  });
 });

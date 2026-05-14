@@ -107,6 +107,9 @@ packages/
   tracker-gitlab/
     GitLab Issue、label、note、Merge Request、pipeline adapter。
 
+  credentials/
+    GitLab OAuth 2.0 Device Authorization Grant 客户端、本地 credentials 文件存储（`~/.issuepilot/credentials`，`0600`）、access token 自动 refresh、daemon/CLI 共享的 credential resolver。
+
   workspace/
     bare mirror、git worktree 生命周期、分支准备、路径安全、hooks。
 
@@ -266,8 +269,8 @@ Description:
 - 运行中 reload 失败，继续使用 last-known-good workflow
 - reload 错误展示在 dashboard 和日志中
 - `workspace.root` 和 `workspace.repo_cache_root` 在加载阶段展开 `~` / `$HOME`
-- `tracker.token_env` 必须是合法环境变量名；对应环境变量缺失时，workflow 加载失败，但错误不能回显 secret 或疑似 secret
-- 环境变量中的 secret 只在运行时解析，不写入事件日志和 dashboard
+- `tracker.token_env` **可选**。若提供则必须是合法环境变量名（`[A-Za-z_][A-Za-z0-9_]*`），运行时该环境变量缺失会按 `auth` 类错误报告但**不**让 workflow 加载失败；缺失或未提供时 daemon 会回退到 `~/.issuepilot/credentials`（OAuth credentials 文件，由 `issuepilot auth login` 颁发）；如果两条来源都没有，daemon 拒绝启动并提示运行 `issuepilot auth login`
+- 环境变量与 credentials 文件中的 secret 只在运行时解析，不写入事件日志、dashboard、prompt
 - prompt 渲染只允许上面列出的白名单变量；运行时 context 中的额外字段渲染为空并记录 warn
 - workflow 文件不能把 Codex sandbox 提升到 `danger-full-access`（`thread_sandbox` 层）或 `dangerFullAccess`（`turn_sandbox_policy.type` 层）；两个字段使用不同格式是因为它们对应 Codex app-server 的不同 RPC 参数，前者作用于 thread 级别使用 kebab-case，后者作用于 turn 级别使用 camelCase
 - `poll_interval_ms`：orchestrator 主循环拉取 GitLab 候选 issue 的间隔，单位毫秒，默认 `10000`（10 秒）
@@ -752,8 +755,8 @@ P0 面向可信本地或内网环境。
 - Codex 只在 issue worktree 内运行
 - workspace path canonicalize，并校验在 configured root 下
 - app-server turn sandbox 限定在 workspace
-- GitLab token 从环境变量读取
-- token 不进入 prompt、event data、dashboard 或 logs
+- GitLab token 从下列来源解析（按优先级）：①`tracker.token_env` 指向的环境变量；② `~/.issuepilot/credentials` 中的 OAuth access token（`issuepilot auth login` 颁发）。文件权限强制 `0600`，目录权限 `0700`；权限不符时 daemon 拒绝读取并提示用户修复
+- token、refresh token、authorization device code、verification URL 都不进入 prompt、event data、dashboard、logs；redact 单元测试覆盖三种 GitLab token 模式（`glpat-`、`gloas-`、自定义 OAuth）
 - dashboard 默认绑定 localhost
 - GitLab dynamic tools 使用窄 allowlist
 - hooks 只在 workspace 内执行
@@ -996,7 +999,27 @@ P0 完成标准：
 
 1. Dashboard UI kit：Tailwind/shadcn。
 2. orchestrator HTTP server：Fastify。
-3. GitLab 认证方式：优先使用 Group Access Token，通过 `tracker.token_env` 指定环境变量；本地 PoC 可临时使用 personal token 验证。
+3. GitLab 认证方式：支持三种凭据来源，**daemon 启动时按下面顺序解析**，第一个可用即采用，后续来源不再读取。
+   - **来源 A — 静态 token（`tracker.token_env`）**：从环境变量读取 PAT / Group / Project Access Token（`glpat-...`）或手工保管的 OAuth token（`gloas-...`）。GitLab API 不区分两者，`@gitbeaker/rest` 透传即可。`tracker.token_env` **可选**，缺失时落到来源 B。
+   - **来源 B — 本地 credentials 文件（`issuepilot auth login` 颁发）**：内置 OAuth 2.0 Device Authorization Grant（GitLab 15.x+），无需浏览器重定向。Token 持久化到 `~/.issuepilot/credentials`（文件权限 `0600`），daemon 与 CLI 共用。Access token 在剩余有效期 < 5 分钟时自动通过 refresh token 刷新；refresh 失败按 `auth` 类错误升级，提示用户重新 `issuepilot auth login`。
+   - **来源 C — `glab` CLI 桥接（不需要 IssuePilot 代码改动）**：开发者可继续用 `export GITLAB_TOKEN=$(glab auth token --hostname <host>)` 把 glab keyring 里的 OAuth token 注入环境变量，等价于来源 A。
+   - 凭据 redact：所有来源得到的 token 字符串只在 `@issuepilot/credentials` 与 `@issuepilot/tracker-gitlab` 内部传递；事件、日志、dashboard、prompt 全部走 `observability/redact`。
+   - OAuth client_id：默认硬编码 IssuePilot 公开 client_id，允许通过 `IPILOT_OAUTH_CLIENT_ID` 环境变量覆盖以便公司私有部署可指向自建 OAuth Application。client_id 是公开值不是 secret。
+   - credentials 文件格式（JSON）：
+     ```json
+     {
+       "version": 1,
+       "hostname": "gitlab.example.com",
+       "clientId": "issuepilot-cli",
+       "accessToken": "<oauth-access-token>",
+       "refreshToken": "<oauth-refresh-token>",
+       "tokenType": "Bearer",
+       "scope": "api read_repository write_repository",
+       "expiresAt": "2026-05-21T10:00:00.000Z",
+       "obtainedAt": "2026-05-14T10:00:00.000Z"
+     }
+     ```
+   - CLI 子命令（在 §23 列出）：`issuepilot auth login | status | logout`。
 4. MR target branch 策略：优先使用 workflow `git.base_branch`，缺省时 fallback 到 GitLab project default branch。
 5. Issue note 策略：P0 维护两类 note，语义不同：
    - **workpad note**（持久进度记录）：每次 run 开始时创建，持续追加/更新进度，标记 `<!-- issuepilot:run=<runId> -->`。agent 可以通过 `gitlab_update_issue_note` 工具主动更新它。
@@ -1010,7 +1033,19 @@ P0 完成标准：
 issuepilot run --workflow .agents/workflow.md --port 4738
 issuepilot validate --workflow .agents/workflow.md
 issuepilot doctor
+issuepilot auth login --hostname gitlab.example.com   # OAuth Device Flow，token 存入 ~/.issuepilot/credentials
+issuepilot auth status [--hostname <host>]            # 显示当前登录状态、scope、token 到期时间
+issuepilot auth logout [--hostname <host>]            # 清除本地 credentials（不带 hostname 时清除全部）
 ```
+
+`auth login` 行为：
+
+1. 调用 `POST {baseUrl}/oauth/authorize_device`，参数包含 `client_id`、`scope`（默认 `api read_repository write_repository`）。
+2. 控制台输出 `verification_uri_complete` 与 `user_code`，提示用户在浏览器完成授权（不写入日志、不发送给 dashboard）。
+3. 按返回的 `interval` 轮询 `POST {baseUrl}/oauth/token`（`grant_type=urn:ietf:params:oauth:grant-type:device_code`），处理 `authorization_pending`、`slow_down`、`expired_token`、`access_denied` 几种标准状态。
+4. 拿到 `access_token` + `refresh_token` 后写入 `~/.issuepilot/credentials`（文件权限设置为 `0600`；目录如缺失则以 `0700` 创建），并提示用户「Logged in to <hostname> as <token-prefix>...」。
+
+`auth status` 行为：读取 credentials 文件，输出 hostname、client_id、scope、access token 到期时间，以及 「token expires in X minutes」「expired，请重新登录」等友好状态；token 字符串本身永远不打印。
 
 建议本地开发命令：
 

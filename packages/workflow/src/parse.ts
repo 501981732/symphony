@@ -42,12 +42,13 @@ const TrackerSchema = z.object({
   kind: z.literal("gitlab"),
   base_url: z.string().url(),
   project_id: z.string().min(1),
+  // Optional: omitted means "rely on `issuepilot auth login` OAuth
+  // credentials". When provided it must be a syntactically valid env var
+  // name; the value is resolved at runtime.
   token_env: z
     .string()
-    .regex(
-      ENV_VAR_NAME_REGEX,
-      "must be a valid environment variable name",
-    ),
+    .regex(ENV_VAR_NAME_REGEX, "must be a valid environment variable name")
+    .optional(),
   active_labels: z
     .array(z.string().min(1))
     .min(1)
@@ -145,7 +146,7 @@ export async function parseWorkflowFile(
     kind: fm.tracker.kind,
     baseUrl: fm.tracker.base_url,
     projectId: fm.tracker.project_id,
-    tokenEnv: fm.tracker.token_env,
+    ...(fm.tracker.token_env ? { tokenEnv: fm.tracker.token_env } : {}),
     activeLabels: fm.tracker.active_labels,
     runningLabel: fm.tracker.running_label,
     handoffLabel: fm.tracker.handoff_label,
