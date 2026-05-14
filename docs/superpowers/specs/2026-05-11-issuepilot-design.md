@@ -401,7 +401,10 @@ Mirror 流程：
 ensureMirror()
   如果 mirror 不存在：
     git clone --mirror <repo_url> <repo-cache-path>
+    将 remote.origin.fetch 迁移为 +refs/heads/*:refs/remotes/origin/*
+    git --git-dir=<repo-cache-path> fetch --prune origin
   如果 mirror 已存在：
+    将 remote.origin.fetch 迁移为 +refs/heads/*:refs/remotes/origin/*
     git --git-dir=<repo-cache-path> fetch --prune origin
 ```
 
@@ -410,9 +413,14 @@ Worktree 流程：
 ```text
 ensureWorktree(issue)
   branch = ai/<issue-iid>-<title-slug>
-  校验 refs/heads/<base_branch> 在 mirror 中存在，否则 blocked 并报告可用分支
+  校验 refs/remotes/origin/<base_branch> 在 mirror 中存在；仅未迁移旧缓存可 fallback 到 refs/heads/<base_branch>；否则 blocked 并报告可用分支
   git --git-dir=<mirror> worktree add <workspace> -B <branch> origin/<base_branch>
 ```
+
+base branch 优先从 `refs/remotes/origin/<base_branch>` 解析。只有尚未迁移到
+remote-tracking fetch refspec 的旧缓存，才允许临时 fallback 到
+`refs/heads/<base_branch>`；迁移后的 mirror 不再把本地 `refs/heads/*` 作为 base
+branch 来源，避免使用已被远端删除或重命名的 stale branch。
 
 如果 workspace 已存在：
 

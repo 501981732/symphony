@@ -51,7 +51,7 @@ async function migrateMirrorClone(mirrorPath: string): Promise<void> {
     mirrorPath,
     "config",
     "remote.origin.fetch",
-    "+refs/heads/*:refs/heads/*",
+    "+refs/heads/*:refs/remotes/origin/*",
   ]);
 }
 
@@ -82,6 +82,7 @@ export async function ensureMirror(
   if (!exists) {
     await execa("git", ["clone", "--mirror", input.repoUrl, mirrorPath]);
     await migrateMirrorClone(mirrorPath);
+    await execa("git", ["--git-dir", mirrorPath, "fetch", "--prune", "origin"]);
   } else {
     // The pre-fix cache has `remote.origin.mirror=true`. If we leave that in
     // place, the next `git push origin <refspec>` from a worktree will fail

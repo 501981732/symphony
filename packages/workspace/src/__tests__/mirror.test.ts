@@ -49,7 +49,12 @@ describe("ensureMirror", () => {
     );
     expect(fs.existsSync(result.mirrorPath)).toBe(true);
 
-    const headRef = execaSync("git", ["--git-dir", result.mirrorPath, "rev-parse", "HEAD"]);
+    const headRef = execaSync("git", [
+      "--git-dir",
+      result.mirrorPath,
+      "rev-parse",
+      "HEAD",
+    ]);
     expect(headRef.exitCode).toBe(0);
     expect(headRef.stdout.trim()).toHaveLength(40);
   });
@@ -99,6 +104,7 @@ describe("ensureMirror", () => {
       result.mirrorPath,
       "log",
       "--oneline",
+      "refs/remotes/origin/main",
     ]);
     expect(log.stdout).toContain("second commit");
   });
@@ -129,7 +135,13 @@ describe("ensureMirror", () => {
 
     const mirrorFlag = execaSync(
       "git",
-      ["--git-dir", result.mirrorPath, "config", "--get", "remote.origin.mirror"],
+      [
+        "--git-dir",
+        result.mirrorPath,
+        "config",
+        "--get",
+        "remote.origin.mirror",
+      ],
       { reject: false },
     );
     expect(mirrorFlag.exitCode).not.toBe(0);
@@ -141,7 +153,9 @@ describe("ensureMirror", () => {
       "--get",
       "remote.origin.fetch",
     ]);
-    expect(fetchRefspec.stdout.trim()).toBe("+refs/heads/*:refs/heads/*");
+    expect(fetchRefspec.stdout.trim()).toBe(
+      "+refs/heads/*:refs/remotes/origin/*",
+    );
 
     // Set up a worktree off the migrated mirror, mutate it, and push the
     // change back via a refspec. This is the exact code path that used to
@@ -169,13 +183,64 @@ describe("ensureMirror", () => {
     execaSync("git", ["commit", "-m", "regression: refspec push"], {
       cwd: worktreeDir,
     });
-    const push = execaSync(
-      "git",
-      ["push", "origin", "feature/refspec-push"],
-      { cwd: worktreeDir, reject: false },
-    );
+    const push = execaSync("git", ["push", "origin", "feature/refspec-push"], {
+      cwd: worktreeDir,
+      reject: false,
+    });
     expect(push.exitCode).toBe(0);
-    expect(push.stderr ?? "").not.toMatch(/mirror cannot be used with refspecs/);
+    expect(push.stderr ?? "").not.toMatch(
+      /mirror cannot be used with refspecs/,
+    );
+  });
+
+  it("fetches while an issue branch is checked out in a worktree", async () => {
+    const result = await ensureMirror({
+      repoUrl: `file://${originRepoPath}`,
+      projectSlug: "checked-out-branch",
+      repoCacheRoot,
+    });
+
+    const worktreeDir = path.join(tmpDir, "checked-out-worktree");
+    fs.mkdirSync(worktreeDir);
+    execaSync("git", [
+      "--git-dir",
+      result.mirrorPath,
+      "worktree",
+      "add",
+      "-B",
+      "ai/1-test-1",
+      worktreeDir,
+      "origin/main",
+    ]);
+    execaSync("git", ["config", "user.email", "ci@issuepilot.local"], {
+      cwd: worktreeDir,
+    });
+    execaSync("git", ["config", "user.name", "issuepilot-ci"], {
+      cwd: worktreeDir,
+    });
+    fs.writeFileSync(path.join(worktreeDir, "issue.txt"), "done\n");
+    execaSync("git", ["add", "issue.txt"], { cwd: worktreeDir });
+    execaSync("git", ["commit", "-m", "issue: done"], { cwd: worktreeDir });
+    execaSync("git", ["push", "origin", "ai/1-test-1"], {
+      cwd: worktreeDir,
+    });
+
+    await expect(
+      ensureMirror({
+        repoUrl: `file://${originRepoPath}`,
+        projectSlug: "checked-out-branch",
+        repoCacheRoot,
+      }),
+    ).resolves.toEqual({ mirrorPath: result.mirrorPath });
+
+    const remoteIssueRef = execaSync("git", [
+      "--git-dir",
+      result.mirrorPath,
+      "rev-parse",
+      "--verify",
+      "refs/remotes/origin/ai/1-test-1",
+    ]);
+    expect(remoteIssueRef.exitCode).toBe(0);
   });
 
   // Regression for the upgrade path: an existing cache that was originally
@@ -224,6 +289,6 @@ describe("ensureMirror", () => {
       "--get",
       "remote.origin.fetch",
     ]);
-    expect(refspec.stdout.trim()).toBe("+refs/heads/*:refs/heads/*");
+    expect(refspec.stdout.trim()).toBe("+refs/heads/*:refs/remotes/origin/*");
   });
 });
