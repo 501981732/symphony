@@ -55,6 +55,7 @@ import { createServer } from "./server/index.js";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 4738;
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
+const HUMAN_REVIEW_SCAN_RUN_ID = "human-review-scan";
 
 type OrchestratorEvent = {
   id: string;
@@ -362,7 +363,28 @@ export async function startDaemon(
 
   const publishHumanReviewEvent = (event: HumanReviewEvent): void => {
     if (event.issueIid > 0) {
-      runIndex.set(event.runId, runKey(workflow, event.issueIid));
+      const key = runKey(workflow, event.issueIid);
+      if (event.runId === HUMAN_REVIEW_SCAN_RUN_ID) {
+        const record = toEventRecord({
+          type: event.type,
+          runId: event.runId,
+          ts: event.ts,
+          detail: {
+            issueIid: event.issueIid,
+            ...event.detail,
+          },
+        });
+        eventBus.publish(record);
+        void eventStore
+          .append(key.projectSlug, key.issueIid, record)
+          .catch((err) => {
+            const code = (err as NodeJS.ErrnoException)?.code;
+            if (code === "ENOENT") return;
+            console.error(err);
+          });
+        return;
+      }
+      runIndex.set(event.runId, key);
     }
     publishEvent({
       type: event.type,
