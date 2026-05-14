@@ -99,7 +99,7 @@ it**:
 | Workspace       | Per-issue workspace                                             | Bare mirror + git worktree under `~/.issuepilot/{repos,workspaces,state}`                          |
 | Events / logs   | Structured logs + optional status surface                       | JSONL event store + atomic run records + SSE live stream + pino structured logging                 |
 | MR / PR writes  | Performed by the agent through workflow-defined tools           | Adapter pushes / opens MRs directly, with orchestrator post-run reconciliation as a fallback       |
-| Restart recovery | Tracker + filesystem driven                                    | Driven by labels + workpad note marker (`<!-- issuepilot:run=<runId> -->`)                         |
+| Restart recovery | Tracker + filesystem driven                                    | Driven by labels + handoff note marker (`<!-- issuepilot:run:<runId> -->`)                         |
 | Security stance | Each implementation declares its own trust posture              | Rejects `danger-full-access` sandboxes, redacts tokens end-to-end, pins Codex cwd to the worktree  |
 | Open SPEC       | `SPEC.md` v1 (language-agnostic)                                | `SPEC.md` retained as reference; product spec lives in `docs/superpowers/specs/`                   |
 | Status          | Evaluation-only prototype; harden before production use         | P0 active development; fake E2E green and real GitLab smoke passing                                |
@@ -330,7 +330,7 @@ In active development; large parts are already usable in this repository:
 - ✅ Codex app-server runner (thread/turn lifecycle + 14 normalized event
   types).
 - ✅ Bare mirror + git worktree workspace; failed runs preserved in place.
-- ✅ Automatic MR create/update + persistent workpad note + fallback note.
+- ✅ Automatic MR create/update + structured handoff note with marker-based recovery.
 - ✅ Human-review closure: manually merged MRs close the GitLab issue; closed
   unmerged MRs return to the configured rework label.
 - ✅ Read-only Next.js dashboard (overview + run detail + SSE timeline).

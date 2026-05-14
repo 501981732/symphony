@@ -481,6 +481,10 @@ The first line of the note contains:
 <!-- issuepilot:run:<runId> -->
 ```
 
+The final handoff note starts with `## IssuePilot handoff` and includes the
+branch, MR, implementation summary, validation, risks / follow-ups, and the
+next action for the human reviewer.
+
 ---
 
 ## 12. Next Steps
