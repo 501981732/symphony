@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { EventBus } from "@issuepilot/observability";
+import { redact, type EventBus } from "@issuepilot/observability";
 import type {
   IssuePilotInternalEvent,
   PipelineStatus,
@@ -31,8 +31,18 @@ export interface CiFeedbackGitLabSlice {
       remove: readonly string[];
       requireCurrent?: readonly string[];
     },
-  ): Promise<{ labels: string[] }> | Promise<void>;
+  ): Promise<{ labels: string[] } | void>;
   createIssueNote(iid: number, body: string): Promise<{ id: number }>;
+  /**
+   * Locate an existing GitLab issue note that already carries the
+   * scanner's per-run marker (`<!-- issuepilot:ci-feedback:<runId> -->`),
+   * so we can skip writing the manual / rework note a second time.
+   * Returns `null` when no such note exists.
+   */
+  findWorkpadNote(
+    iid: number,
+    marker: string,
+  ): Promise<{ id: number; body: string } | null>;
 }
 
 export interface CiFeedbackWorkflowSlice {
@@ -129,12 +139,22 @@ function emit(
   data: Record<string, unknown>,
 ): void {
   const ts = nowIso(deps);
+  // The scanner publishes directly to the event bus rather than going
+  // through daemon.ts's `publishEvent` wrapper (which centralises
+  // redaction). Running the redactor here protects future contributors
+  // who may add tokens / pipeline log lines / job names into the event
+  // payload without realising those would otherwise bypass redaction.
+  const redactedData = redact(data);
+  const safeData =
+    redactedData && typeof redactedData === "object" && !Array.isArray(redactedData)
+      ? (redactedData as Record<string, unknown>)
+      : data;
   const event: IssuePilotInternalEvent = {
     id: randomUUID(),
     runId: run.runId,
     type,
-    message: `${type}:${data["status"] ?? data["reason"] ?? "unknown"}`,
-    data,
+    message: `${type}:${safeData["status"] ?? safeData["reason"] ?? "unknown"}`,
+    data: safeData,
     createdAt: ts,
     ts,
     issue: {
@@ -152,7 +172,12 @@ function markerForRun(runId: string): string {
   return `<!-- issuepilot:ci-feedback:${runId} -->`;
 }
 
-function buildFailureNote(run: ReviewRun): string {
+interface MergeRequestRef {
+  iid: number;
+  webUrl: string;
+}
+
+function buildFailureNote(run: ReviewRun, mr: MergeRequestRef): string {
   return [
     markerForRun(run.runId),
     "## IssuePilot detected a failing CI pipeline",
@@ -162,10 +187,15 @@ function buildFailureNote(run: ReviewRun): string {
     "",
     `- Run: \`${run.runId}\``,
     `- Branch: \`${run.branch}\``,
+    `- MR: !${mr.iid} ${mr.webUrl}`,
   ].join("\n");
 }
 
-function buildManualNote(run: ReviewRun, status: PipelineStatus): string {
+function buildManualNote(
+  run: ReviewRun,
+  status: PipelineStatus,
+  mr: MergeRequestRef,
+): string {
   return [
     markerForRun(run.runId),
     `## IssuePilot observed an unusual CI status: \`${status}\``,
@@ -176,7 +206,30 @@ function buildManualNote(run: ReviewRun, status: PipelineStatus): string {
     "",
     `- Run: \`${run.runId}\``,
     `- Branch: \`${run.branch}\``,
+    `- MR: !${mr.iid} ${mr.webUrl}`,
   ].join("\n");
+}
+
+/**
+ * Best-effort idempotency for marker-tagged notes. The caller already
+ * picks the action (rework / manual prompt); this helper just decides
+ * whether the GitLab note has been written for `runId` previously. We
+ * swallow lookup errors so an outage on the `notes` endpoint does not
+ * block label transitions — the next tick will retry.
+ */
+async function hasExistingCiNote(
+  deps: ScanCiFeedbackDeps,
+  run: ReviewRun,
+): Promise<boolean> {
+  try {
+    const existing = await deps.gitlab.findWorkpadNote(
+      run.issueIid,
+      markerForRun(run.runId),
+    );
+    return existing !== null;
+  } catch {
+    return false;
+  }
 }
 
 function setLatestCi(
@@ -238,6 +291,14 @@ export async function scanCiFeedbackOnce(
   const candidates: ReviewRun[] = [];
   for (const record of deps.state.allRuns()) {
     if (record["archivedAt"]) continue;
+    // I1: once human-review reconciliation observes the MR landing
+    // (merged → issue closed) or the MR getting closed without merge
+    // (run already escalated to `ai-rework`), the daemon stamps
+    // `endedAt` on the run. Skip those here so the scanner does not
+    // keep pinging GitLab for runs that have left the review loop.
+    if (typeof record["endedAt"] === "string" && record["endedAt"].length > 0) {
+      continue;
+    }
     const status = record["status"];
     if (typeof status !== "string" || !REVIEW_RUN_STATUSES.has(status)) {
       continue;
@@ -314,7 +375,16 @@ export async function scanCiFeedbackOnce(
           });
           continue;
         }
-        await deps.gitlab.createIssueNote(run.issueIid, buildFailureNote(run));
+        // C1: skip the note when a previous tick already wrote one for
+        // this `runId`. transitionLabels has its own `requireCurrent`
+        // safety net so labels stay consistent; we still emit the
+        // rework event for the audit log.
+        if (!(await hasExistingCiNote(deps, run))) {
+          await deps.gitlab.createIssueNote(
+            run.issueIid,
+            buildFailureNote(run, mr),
+          );
+        }
         emit(deps, run, "ci_status_rework_triggered", {
           status,
           action: "rework",
@@ -334,8 +404,16 @@ export async function scanCiFeedbackOnce(
       continue;
     }
 
-    // canceled / unknown
-    await deps.gitlab.createIssueNote(run.issueIid, buildManualNote(run, status));
+    // canceled / unknown: prompt a reviewer, but only once per run —
+    // GitLab pipelines often dwell in `unknown` (no pipeline yet) or
+    // `canceled` while the human investigates, and we must not spam
+    // the issue thread.
+    if (!(await hasExistingCiNote(deps, run))) {
+      await deps.gitlab.createIssueNote(
+        run.issueIid,
+        buildManualNote(run, status, mr),
+      );
+    }
     emit(deps, run, "ci_status_observed", {
       status,
       action: "manual",

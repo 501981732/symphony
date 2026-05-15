@@ -280,6 +280,150 @@ describe("ci feedback E2E", () => {
     );
   }, 35_000);
 
+  it("failed pipeline keeps labels when ci.on_failure is human-review (scenario D)", async () => {
+    const ISSUE_IID = 84;
+    ws = await createE2EWorkspace({
+      codexScriptFixture: "codex.happy.json",
+      ciEnabled: true,
+      ciOnFailure: "human-review",
+      issues: [
+        {
+          iid: ISSUE_IID,
+          title: "CI failed → manual review",
+          description:
+            "Pipeline failed but ci.on_failure=human-review, so labels must stay put.",
+          labels: ["ai-ready"],
+        },
+      ],
+    });
+    const port = await pickFreePort();
+    daemon = await startDaemon(
+      { workflowPath: ws.workflowPath, port },
+      { startLoop: withFastPoll },
+    );
+
+    await ws.gitlabServer.waitFor(
+      (s) => {
+        const issue = s.issues.get(ISSUE_IID);
+        return !!issue && issue.labels.includes("human-review");
+      },
+      { timeoutMs: 20_000, intervalMs: 50 },
+    );
+    const handoffRun = await waitForRun(
+      daemon.url,
+      (r) => r.status === "completed",
+    );
+
+    ensureOpenMr(ws, handoffRun.branch);
+    seedPipeline(ws, handoffRun.branch, "failed");
+
+    // The scanner observes the failure but, under
+    // `ci.on_failure: human-review`, must NOT touch labels or write a
+    // marker note. We assert on the `noop` audit event instead.
+    const observed = await waitForEvent(
+      daemon.url,
+      handoffRun.runId,
+      (e) => {
+        const data = (e.data ?? {}) as { status?: string; action?: string };
+        return (
+          e.type === "ci_status_observed" &&
+          data.status === "failed" &&
+          data.action === "noop"
+        );
+      },
+    );
+    const observedData = (observed.data ?? {}) as { mrUrl?: string };
+    expect(observedData.mrUrl).toMatch(/\/-\/merge_requests\//);
+
+    const issue = ws.gitlabState.issues.get(ISSUE_IID);
+    expect(issue?.labels).toContain("human-review");
+    expect(issue?.labels).not.toContain("ai-rework");
+
+    const notes = ws.gitlabState.notes.get(ISSUE_IID) ?? [];
+    const ciFeedbackNote = notes.find((n) =>
+      n.body.includes(`<!-- issuepilot:ci-feedback:${handoffRun.runId} -->`),
+    );
+    expect(ciFeedbackNote, "should not write a marker note on noop").toBeUndefined();
+
+    const refreshed = (await fetchRuns(daemon.url)).find(
+      (r) => r.runId === handoffRun.runId,
+    );
+    expect(refreshed?.latestCiStatus).toBe("failed");
+  }, 35_000);
+
+  it("canceled pipeline writes a single manual note across multiple poll cycles (scenario E, C1 dedup)", async () => {
+    const ISSUE_IID = 85;
+    ws = await createE2EWorkspace({
+      codexScriptFixture: "codex.happy.json",
+      ciEnabled: true,
+      issues: [
+        {
+          iid: ISSUE_IID,
+          title: "CI canceled → manual",
+          description: "Pipeline canceled; scanner should prompt once, not spam.",
+          labels: ["ai-ready"],
+        },
+      ],
+    });
+    const port = await pickFreePort();
+    daemon = await startDaemon(
+      { workflowPath: ws.workflowPath, port },
+      { startLoop: withFastPoll },
+    );
+
+    await ws.gitlabServer.waitFor(
+      (s) => {
+        const issue = s.issues.get(ISSUE_IID);
+        return !!issue && issue.labels.includes("human-review");
+      },
+      { timeoutMs: 20_000, intervalMs: 50 },
+    );
+    const handoffRun = await waitForRun(
+      daemon.url,
+      (r) => r.status === "completed",
+    );
+
+    ensureOpenMr(ws, handoffRun.branch);
+    seedPipeline(ws, handoffRun.branch, "canceled");
+
+    // Wait for the first manual prompt to land …
+    await ws.gitlabServer.waitFor(
+      (s) => {
+        const notes = s.notes.get(ISSUE_IID) ?? [];
+        return notes.some((n) =>
+          n.body.includes(`<!-- issuepilot:ci-feedback:${handoffRun.runId} -->`),
+        );
+      },
+      { timeoutMs: 20_000, intervalMs: 50 },
+    );
+
+    // … then let the scanner cycle ~6 more times at FAST_POLL_MS=250ms.
+    // Without C1's dedup this would create 6 additional notes.
+    await new Promise((r) => setTimeout(r, FAST_POLL_MS * 6 + 200));
+
+    const notes = ws.gitlabState.notes.get(ISSUE_IID) ?? [];
+    const markerNotes = notes.filter((n) =>
+      n.body.includes(`<!-- issuepilot:ci-feedback:${handoffRun.runId} -->`),
+    );
+    expect(
+      markerNotes,
+      `expected exactly one marker note, got ${markerNotes.length}: ${markerNotes
+        .map((n) => n.body.slice(0, 120))
+        .join("\n---\n")}`,
+    ).toHaveLength(1);
+    expect(markerNotes[0]?.body).toContain("MR: !");
+
+    // Labels must remain at `human-review` (no auto-action on canceled).
+    const issue = ws.gitlabState.issues.get(ISSUE_IID);
+    expect(issue?.labels).toContain("human-review");
+    expect(issue?.labels).not.toContain("ai-rework");
+
+    const refreshed = (await fetchRuns(daemon.url)).find(
+      (r) => r.runId === handoffRun.runId,
+    );
+    expect(refreshed?.latestCiStatus).toBe("canceled");
+  }, 35_000);
+
   it("pipeline lookup failure emits ci_status_lookup_failed and keeps labels", async () => {
     const ISSUE_IID = 83;
     ws = await createE2EWorkspace({

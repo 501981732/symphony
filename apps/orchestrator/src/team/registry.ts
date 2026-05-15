@@ -1,7 +1,36 @@
 import type { ProjectSummary } from "@issuepilot/shared-contracts";
-import type { WorkflowConfig } from "@issuepilot/workflow";
+import type { CiConfig, WorkflowConfig } from "@issuepilot/workflow";
 
-import type { TeamConfig, TeamProjectConfig } from "./config.js";
+import type {
+  TeamCiConfig,
+  TeamConfig,
+  TeamProjectConfig,
+} from "./config.js";
+
+/**
+ * Resolve the effective CI feedback configuration for a single
+ * project. Precedence (lowest to highest), each layer fully replaces
+ * the previous when set:
+ *
+ *   1. `workflow.ci` (from the project's WORKFLOW.md; always present)
+ *   2. `teamCi` (top-level `ci` block in `issuepilot.team.yaml`)
+ *   3. `projectCi` (`projects[].ci` in `issuepilot.team.yaml`)
+ *
+ * Each override replaces all three keys atomically — partial merges
+ * are intentionally out of scope (see {@link TeamProjectConfig.ci}).
+ * This keeps the precedence story simple and avoids "I set
+ * `enabled: true` at team level but the project's workflow defaults
+ * silently disabled it" surprises.
+ */
+export function resolveEffectiveCi(
+  workflowCi: CiConfig,
+  teamCi: TeamCiConfig | null,
+  projectCi: TeamCiConfig | null,
+): CiConfig {
+  if (projectCi) return { ...projectCi };
+  if (teamCi) return { ...teamCi };
+  return { ...workflowCi };
+}
 
 /**
  * A project whose workflow loaded cleanly and is therefore eligible to be
@@ -65,7 +94,22 @@ export async function createProjectRegistry(
     }
 
     try {
-      const workflow = await workflowLoader.loadOnce(projectConfig.workflowPath);
+      const loadedWorkflow = await workflowLoader.loadOnce(
+        projectConfig.workflowPath,
+      );
+      const effectiveCi = resolveEffectiveCi(
+        loadedWorkflow.ci,
+        config.ci,
+        projectConfig.ci,
+      );
+      // Replace the workflow's `ci` block with the effective one so the
+      // rest of the orchestrator (scanCiFeedbackOnce, dashboard, etc.)
+      // can treat `workflow.ci` as the source of truth without needing
+      // to know about team / project overrides.
+      const workflow: WorkflowConfig = {
+        ...loadedWorkflow,
+        ci: effectiveCi,
+      };
       entries.push({
         config: projectConfig,
         state: {

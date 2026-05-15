@@ -402,7 +402,8 @@ Request，不替代代码审查。
 - 并发从 1 扩展到 2–5，配套槽位调度与租约策略。
 - ✅ dashboard 基础操作 `retry` / `stop` / `archive run` 已交付（V2 Phase 2，stop 走真实 `turn/interrupt`）。
 - ✅ CI 状态读取 + CI 失败自动回流到 `ai-rework`（V2 Phase 3；通过 `WORKFLOW.md`
-  的 `ci.enabled: true` 显式开启）。
+  的 `ci.enabled: true` 显式开启）。注意：scanner 只在 daemon 启动时按 `ci.enabled`
+  决定是否注入 loop，运行中修改 `ci.enabled` 需要重启 `issuepilot run` 才会生效。
 - PR / MR review feedback sweep（把人工 review 评论喂回下一轮 agent）。
 - review 工作流打磨：在 dashboard 和生成报告中直接展示结构化 handoff /
   failure / closing note 字段。

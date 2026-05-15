@@ -29,6 +29,7 @@ function seedReviewRun(
     labels?: string[];
     status?: string;
     archivedAt?: string;
+    endedAt?: string;
   } = {},
 ): string {
   const runId = overrides.runId ?? "run-1";
@@ -45,6 +46,7 @@ function seedReviewRun(
       overrides.labels ?? ["human-review"],
     ),
     ...(overrides.archivedAt ? { archivedAt: overrides.archivedAt } : {}),
+    ...(overrides.endedAt ? { endedAt: overrides.endedAt } : {}),
   });
   return runId;
 }
@@ -92,8 +94,15 @@ function createDeps(opts: {
       if (opts.throwLookup) throw opts.throwLookup;
       return opts.status ?? "success";
     }),
-    transitionLabels: vi.fn(async () => {}),
+    transitionLabels: vi.fn(async () => ({ labels: ["ai-rework"] })),
     createIssueNote: vi.fn(async () => ({ id: 1 })),
+    // Default: no prior marker note exists. Individual tests override
+    // this to simulate the "second scan with marker already on disk"
+    // dedup scenario.
+    findWorkpadNote: vi.fn(
+      async (_: number, __: string) =>
+        null as { id: number; body: string } | null,
+    ),
   };
 
   const workflow = {
@@ -176,6 +185,9 @@ describe("scanCiFeedbackOnce", () => {
       1,
       expect.stringContaining(`<!-- issuepilot:ci-feedback:${runId} -->`),
     );
+    expect(ctx.gitlab.createIssueNote.mock.calls[0]?.[1]).toContain(
+      "MR: !17 https://gitlab.example.com/g/p/-/merge_requests/17",
+    );
     const types = ctx.events.map((e) => e.type);
     expect(types).toEqual(["ci_status_rework_triggered"]);
     expect(ctx.events[0]).toMatchObject({
@@ -232,10 +244,57 @@ describe("scanCiFeedbackOnce", () => {
       1,
       expect.stringContaining(`<!-- issuepilot:ci-feedback:${runId} -->`),
     );
+    expect(ctx.gitlab.createIssueNote.mock.calls[0]?.[1]).toContain(
+      "MR: !17 https://gitlab.example.com/g/p/-/merge_requests/17",
+    );
     expect(ctx.events[0]).toMatchObject({
       runId,
       data: { status: "canceled", action: "manual" },
     });
+  });
+
+  it("does not re-create the manual note when a marker is already on the issue (canceled status)", async () => {
+    const ctx = createDeps({ status: "canceled" });
+    const runId = seedReviewRun(ctx.state);
+    ctx.gitlab.findWorkpadNote.mockImplementationOnce(async () => ({
+      id: 9001,
+      body: `<!-- issuepilot:ci-feedback:${runId} -->\nprior note`,
+    }));
+
+    await scanCiFeedbackOnce(ctx.deps);
+
+    expect(ctx.gitlab.createIssueNote).not.toHaveBeenCalled();
+    // Audit event still fires so the dashboard / event log can show
+    // that we observed the pipeline again — just no duplicate note.
+    expect(ctx.events.map((e) => e.type)).toEqual(["ci_status_observed"]);
+    expect(ctx.events[0]).toMatchObject({
+      runId,
+      data: { status: "canceled", action: "manual" },
+    });
+  });
+
+  it("does not re-create the rework note across consecutive failed scans", async () => {
+    const ctx = createDeps({ status: "failed" });
+    seedReviewRun(ctx.state);
+
+    await scanCiFeedbackOnce(ctx.deps);
+    expect(ctx.gitlab.createIssueNote).toHaveBeenCalledTimes(1);
+
+    // Second scan: simulate GitLab now returning the marker note we
+    // wrote in the first scan. transitionLabels would still be a no-op
+    // (requireCurrent fails because labels already flipped), but we
+    // also explicitly skip the createIssueNote call.
+    ctx.gitlab.transitionLabels.mockRejectedValueOnce(
+      new Error("conflict: label not in required state"),
+    );
+    ctx.gitlab.findWorkpadNote.mockImplementationOnce(async () => ({
+      id: 9002,
+      body: `<!-- issuepilot:ci-feedback:run-1 -->\nprior note`,
+    }));
+
+    await scanCiFeedbackOnce(ctx.deps);
+
+    expect(ctx.gitlab.createIssueNote).toHaveBeenCalledTimes(1);
   });
 
   it("emits ci_status_lookup_failed when getPipelineStatus throws", async () => {
@@ -286,6 +345,18 @@ describe("scanCiFeedbackOnce", () => {
     expect(ctx.events).toEqual([]);
   });
 
+  it("ignores runs whose human-review reconciliation already set endedAt", async () => {
+    const ctx = createDeps({});
+    seedReviewRun(ctx.state, {
+      endedAt: "2026-05-14T00:00:00.000Z",
+    });
+
+    await scanCiFeedbackOnce(ctx.deps);
+
+    expect(ctx.gitlab.findMergeRequestBySourceBranch).not.toHaveBeenCalled();
+    expect(ctx.events).toEqual([]);
+  });
+
   it("emits ci_status_observed (failed/stale) and does not write a note when the issue is no longer in human-review", async () => {
     const ctx = createDeps({ status: "failed" });
     ctx.gitlab.transitionLabels.mockRejectedValueOnce(
@@ -304,7 +375,7 @@ describe("scanCiFeedbackOnce", () => {
     });
   });
 
-  it("does not re-trigger rework after the daemon advances the run off completed", async () => {
+  it("does not re-trigger rework after the run leaves the review-stage candidate set", async () => {
     const ctx = createDeps({ status: "failed" });
     const runId = seedReviewRun(ctx.state);
 
@@ -312,12 +383,17 @@ describe("scanCiFeedbackOnce", () => {
 
     expect(ctx.gitlab.createIssueNote).toHaveBeenCalledTimes(1);
 
-    // Simulate the orchestrator claiming the issue again for rework, which
-    // moves the run out of `completed` and therefore out of the scanner's
-    // review-stage candidate set.
+    // After a fail → rework, V1 dispatch re-claims the same issue under
+    // a *new* runId (the old run record stays at `status: "completed"`
+    // but the daemon stamps `endedAt` on it via the human-review
+    // reconciler observing the MR landing or getting recycled). The
+    // scanner therefore skips the old run on the next tick.
     const existing = ctx.state.getRun(runId);
     if (!existing) throw new Error("expected run to exist");
-    ctx.state.setRun(runId, { ...existing, status: "running" });
+    ctx.state.setRun(runId, {
+      ...existing,
+      endedAt: "2026-05-15T12:30:00.000Z",
+    });
 
     await scanCiFeedbackOnce(ctx.deps);
 

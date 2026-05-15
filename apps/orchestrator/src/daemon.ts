@@ -205,7 +205,29 @@ function fallbackEventIssue(
   };
 }
 
-function syncHumanReviewFinalLabels(
+/**
+ * Mirror the terminal label set we just observed in
+ * `reconcileHumanReview` back onto every RunRecord for the issue, and
+ * stamp `endedAt` on those runs so downstream scanners (V2 Phase 3 CI
+ * feedback, V2 Phase 4 review sweep) know the run has left the
+ * human-review loop and should stop being polled for pipelines / MR
+ * notes.
+ *
+ * We only act on the two events that actually retire the issue from
+ * `human-review`:
+ *
+ *   - `human_review_issue_closed` — MR was merged and IssuePilot
+ *     removed `human-review` and closed the GitLab Issue.
+ *   - `human_review_rework_requested` — MR was closed without merging
+ *     and labels flipped to `ai-rework`. The next claim will spawn a
+ *     fresh run; the current one is done.
+ *
+ * `human_review_mr_still_open` is *not* terminal: the reviewer is still
+ * looking at the MR and the scanner should keep polling pipelines so
+ * CI failures recycle the issue automatically (spec §9). Same with
+ * `human_review_mr_missing` — that's a diagnostic, not a terminal.
+ */
+export function syncHumanReviewFinalLabels(
   state: RuntimeState,
   event: HumanReviewEvent,
 ): void {
@@ -221,6 +243,8 @@ function syncHumanReviewFinalLabels(
   if (!labels.every((label): label is string => typeof label === "string")) {
     return;
   }
+
+  const endedAt = event.ts;
 
   for (const run of state.allRuns()) {
     const issue = run["issue"];
@@ -239,6 +263,9 @@ function syncHumanReviewFinalLabels(
         ...issue,
         labels: [...labels],
       },
+      // Only stamp endedAt once; preserve the earliest observation in
+      // case a later poll re-emits the terminal event (defensive).
+      endedAt: typeof run["endedAt"] === "string" ? run["endedAt"] : endedAt,
     });
   }
 }
@@ -947,6 +974,7 @@ export async function startDaemon(
               getPipelineStatus: gitlab.getPipelineStatus,
               transitionLabels: gitlab.transitionLabels,
               createIssueNote: gitlab.createIssueNote,
+              findWorkpadNote: gitlab.findWorkpadNote,
             },
             workflow: {
               tracker: {

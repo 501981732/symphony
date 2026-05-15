@@ -8,7 +8,11 @@ import type { WorkflowConfig } from "@issuepilot/workflow";
 import type { FastifyInstance } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
-import { hostnameFromBaseUrl, splitCommand } from "../daemon.js";
+import {
+  hostnameFromBaseUrl,
+  splitCommand,
+  syncHumanReviewFinalLabels,
+} from "../daemon.js";
 import { startDaemon } from "../daemon.js";
 import type { LoopDeps } from "../orchestrator/loop.js";
 import type { ServerDeps } from "../server/index.js";
@@ -268,6 +272,98 @@ describe("splitCommand", () => {
 
   it("rejects an unbalanced quote", () => {
     expect(() => splitCommand('codex "app-server')).toThrow(/unbalanced/);
+  });
+});
+
+describe("syncHumanReviewFinalLabels", () => {
+  function seedRun(
+    state: ReturnType<typeof createRuntimeState>,
+    overrides: { runId?: string; iid?: number; endedAt?: string } = {},
+  ): string {
+    const runId = overrides.runId ?? "run-a";
+    state.setRun(runId, {
+      runId,
+      status: "completed",
+      attempt: 1,
+      branch: "ai/1-fix",
+      workspacePath: "/tmp/run",
+      startedAt: "2026-05-15T00:00:00.000Z",
+      updatedAt: "2026-05-15T00:00:01.000Z",
+      issue: {
+        id: String(overrides.iid ?? 1),
+        iid: overrides.iid ?? 1,
+        title: "Issue",
+        url: "https://gitlab.example.com/g/p/-/issues/1",
+        projectId: "g/p",
+        labels: ["human-review"],
+      },
+      ...(overrides.endedAt ? { endedAt: overrides.endedAt } : {}),
+    });
+    return runId;
+  }
+
+  it("stamps endedAt + final labels on human_review_issue_closed", () => {
+    const state = createRuntimeState();
+    const runId = seedRun(state);
+
+    syncHumanReviewFinalLabels(state, {
+      type: "human_review_issue_closed",
+      issueIid: 1,
+      runId,
+      ts: "2026-05-15T12:00:00.000Z",
+      detail: { labels: [] },
+    });
+
+    const run = state.getRun(runId);
+    expect(run?.["endedAt"]).toBe("2026-05-15T12:00:00.000Z");
+    expect((run?.["issue"] as { labels: string[] }).labels).toEqual([]);
+  });
+
+  it("stamps endedAt + ai-rework labels on human_review_rework_requested", () => {
+    const state = createRuntimeState();
+    const runId = seedRun(state);
+
+    syncHumanReviewFinalLabels(state, {
+      type: "human_review_rework_requested",
+      issueIid: 1,
+      runId,
+      ts: "2026-05-15T13:00:00.000Z",
+      detail: { labels: ["ai-rework"] },
+    });
+
+    const run = state.getRun(runId);
+    expect(run?.["endedAt"]).toBe("2026-05-15T13:00:00.000Z");
+    expect((run?.["issue"] as { labels: string[] }).labels).toEqual(["ai-rework"]);
+  });
+
+  it("preserves the earliest endedAt across repeated terminal events", () => {
+    const state = createRuntimeState();
+    const runId = seedRun(state, { endedAt: "2026-05-15T11:00:00.000Z" });
+
+    syncHumanReviewFinalLabels(state, {
+      type: "human_review_issue_closed",
+      issueIid: 1,
+      runId,
+      ts: "2026-05-15T12:00:00.000Z",
+      detail: { labels: [] },
+    });
+
+    expect(state.getRun(runId)?.["endedAt"]).toBe("2026-05-15T11:00:00.000Z");
+  });
+
+  it("ignores non-terminal human-review events", () => {
+    const state = createRuntimeState();
+    const runId = seedRun(state);
+
+    syncHumanReviewFinalLabels(state, {
+      type: "human_review_mr_still_open",
+      issueIid: 1,
+      runId,
+      ts: "2026-05-15T14:00:00.000Z",
+      detail: {},
+    });
+
+    expect(state.getRun(runId)?.["endedAt"]).toBeUndefined();
   });
 });
 
