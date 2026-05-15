@@ -59,6 +59,8 @@ const REQUIRED_EVENT_TYPES = [
   "codex_tool_call_started",
   "codex_tool_call_completed",
   "codex_turn_input_required",
+  "codex_notification",
+  "codex_malformed_message",
   "human_review_scan_started",
   "human_review_mr_found",
   "human_review_mr_missing",

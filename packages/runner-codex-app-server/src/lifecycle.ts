@@ -55,6 +55,10 @@ const NON_INTERACTIVE_INPUT_REPLY =
   "This is a non-interactive IssuePilot run. Operator input is unavailable. " +
   "If blocked, record the blocker and mark the issue ai-blocked.";
 
+const NOTIFICATION_EVENT_MAP: Record<string, string> = {
+  "turn/notification": "notification",
+};
+
 function nestedId(
   params: Record<string, unknown> | undefined,
   key: string,
@@ -145,7 +149,8 @@ function notificationOutcome(
     return { kind: "timeout" };
   }
 
-  onEvent(method.replace(/\//g, "_"), params);
+  const eventType = NOTIFICATION_EVENT_MAP[method] ?? "malformed_message";
+  onEvent(eventType, params);
   return undefined;
 }
 

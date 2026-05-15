@@ -61,6 +61,8 @@ export const EVENT_TYPE_VALUES = [
   "codex_approval_required",
   "codex_approval_auto_approved",
   "codex_turn_input_required",
+  "codex_notification",
+  "codex_malformed_message",
   // Runner runtime
   "notification",
   "malformed_message",

@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { isEventType } from "@issuepilot/shared-contracts";
 import type { GitLabAdapter } from "@issuepilot/tracker-gitlab";
 import type { WorkflowConfig } from "@issuepilot/workflow";
 import type { FastifyInstance } from "fastify";
@@ -327,10 +328,18 @@ describe("startDaemon human-review event publishing", () => {
         .map((line) => JSON.parse(line) as Record<string, unknown>);
       expect(event).toMatchObject({
         type: "human_review_mr_missing",
+        issue: {
+          id: "7",
+          iid: 7,
+          title: "Issue #7",
+          url: "",
+          projectId: "group/project",
+        },
         createdAt: expect.any(String),
         ts: expect.any(String),
         data: expect.objectContaining({ issueIid: 7 }),
       });
+      expect(isEventType(event?.["type"])).toBe(true);
     } finally {
       await daemon.stop();
       await fs.rm(root, { recursive: true, force: true });

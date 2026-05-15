@@ -192,6 +192,53 @@ describe("driveLifecycle", () => {
     expect(events).toContain("turn_completed");
   });
 
+  it("normalizes non-terminal app-server notifications to canonical event types", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+        ["turn/start", { turnId: "u1" }],
+      ]),
+      [
+        {
+          method: "turn/notification",
+          params: { turnId: "u1", message: "working" },
+        },
+        {
+          method: "unknown/event",
+          params: { turnId: "u1" },
+        },
+        {
+          method: "turn/completed",
+          params: { turnId: "u1", stop: true },
+        },
+      ],
+    );
+
+    const events: string[] = [];
+    await driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test-thread",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: (type) => {
+        events.push(type);
+      },
+    });
+
+    expect(events).toContain("notification");
+    expect(events).toContain("malformed_message");
+    expect(events).not.toContain("turn_notification");
+    expect(events).not.toContain("unknown_event");
+  });
+
   it("reports failed status on turn/failed", async () => {
     const rpc = createFakeRpc(
       new Map([

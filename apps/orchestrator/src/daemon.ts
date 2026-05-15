@@ -60,6 +60,13 @@ const HUMAN_REVIEW_SCAN_RUN_ID = "human-review-scan";
 type OrchestratorEvent = {
   id: string;
   runId: string;
+  issue: {
+    id: string;
+    iid: number;
+    title: string;
+    url: string;
+    projectId: string;
+  };
   type: string;
   message: string;
   createdAt: string;
@@ -135,21 +142,65 @@ function toEventRecord(event: {
   runId: string;
   ts: string;
   detail: Record<string, unknown>;
+  issue: OrchestratorEvent["issue"];
 }): OrchestratorEvent {
-  const data = redact(event.detail);
+  const redactedDetail = redact(event.detail);
   const detail =
-    data && typeof data === "object" && !Array.isArray(data)
-      ? (data as Record<string, unknown>)
+    redactedDetail &&
+    typeof redactedDetail === "object" &&
+    !Array.isArray(redactedDetail)
+      ? (redactedDetail as Record<string, unknown>)
       : {};
+  const { issue: _issue, data: nestedData, ...topLevelDetail } = detail;
+  const data = Object.prototype.hasOwnProperty.call(detail, "data")
+    ? nestedData
+    : detail;
   return {
+    ...topLevelDetail,
     id: randomUUID(),
     runId: event.runId,
+    issue: event.issue,
     type: event.type,
     message: event.type,
     createdAt: event.ts,
     ts: event.ts,
     data,
-    ...detail,
+  };
+}
+
+function eventIssueFromUnknown(
+  value: unknown,
+): OrchestratorEvent["issue"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const issue = value as Record<string, unknown>;
+  if (
+    typeof issue["id"] !== "string" ||
+    typeof issue["iid"] !== "number" ||
+    typeof issue["title"] !== "string" ||
+    typeof issue["url"] !== "string" ||
+    typeof issue["projectId"] !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    id: issue["id"],
+    iid: issue["iid"],
+    title: issue["title"],
+    url: issue["url"],
+    projectId: issue["projectId"],
+  };
+}
+
+function fallbackEventIssue(
+  projectId: string,
+  issueIid: number,
+): OrchestratorEvent["issue"] {
+  return {
+    id: String(issueIid),
+    iid: issueIid,
+    title: issueIid > 0 ? `Issue #${issueIid}` : "IssuePilot scan",
+    url: "",
+    projectId,
   };
 }
 
@@ -403,10 +454,19 @@ export async function startDaemon(
     ts: string;
     detail: Record<string, unknown>;
   }): void => {
-    const record = toEventRecord(event);
+    const existing = runIndex.get(event.runId);
+    const run = state.getRun(event.runId);
+    const issue =
+      eventIssueFromUnknown(event.detail["issue"]) ??
+      eventIssueFromUnknown(run?.["issue"]) ??
+      fallbackEventIssue(
+        workflow.tracker.projectId,
+        Number.isFinite(Number(event.detail["issueIid"] ?? event.detail["iid"]))
+          ? Number(event.detail["issueIid"] ?? event.detail["iid"])
+          : 0,
+      );
+    const record = toEventRecord({ ...event, issue });
     eventBus.publish(record);
-    const existing = runIndex.get(record.runId);
-    const run = state.getRun(record.runId);
     const issueIid =
       existing?.issueIid ??
       (typeof run?.["issue"] === "object" &&
@@ -439,6 +499,7 @@ export async function startDaemon(
           type: event.type,
           runId: event.runId,
           ts: event.ts,
+          issue: fallbackEventIssue(workflow.tracker.projectId, event.issueIid),
           detail: {
             issueIid: event.issueIid,
             ...event.detail,
@@ -602,6 +663,7 @@ export async function startDaemon(
             ts: new Date().toISOString(),
             detail: {
               iid: issue.iid,
+              issue,
               kind: classification.kind,
               code: classification.code,
               reason: classification.reason,
