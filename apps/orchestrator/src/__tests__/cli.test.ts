@@ -4,6 +4,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
+const rootPackage = JSON.parse(
+  fs.readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),
+) as { version: string };
+
 describe("CLI", () => {
   let tmpDir: string;
 
@@ -29,7 +33,7 @@ describe("CLI", () => {
       cli.parseAsync(["--version"], { from: "user" }),
     ).rejects.toMatchObject({ code: "commander.version" });
 
-    expect(output.join("")).toContain("0.1.0");
+    expect(output.join("")).toContain(rootPackage.version);
   });
 
   it("validate fails for missing workflow", async () => {

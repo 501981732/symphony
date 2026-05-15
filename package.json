@@ -18,9 +18,11 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
     "test:smoke": "vitest run --config vitest.config.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "release:pack": "tsx scripts/release/package-local.ts",
+    "version:generate": "tsx scripts/release/generate-version.ts",
+    "version:check": "tsx scripts/release/generate-version.ts --check",
+    "release:pack": "pnpm version:generate && tsx scripts/release/package-local.ts",
     "release:install-smoke": "tsx scripts/release/install-smoke.ts",
-    "release:check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm release:install-smoke && pnpm test:smoke && git diff --check",
+    "release:check": "pnpm version:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm release:install-smoke && pnpm test:smoke && git diff --check",
     "dev:orchestrator": "pnpm --filter @issuepilot/orchestrator dev",
     "dev:dashboard": "pnpm --filter @issuepilot/dashboard dev"
   },
