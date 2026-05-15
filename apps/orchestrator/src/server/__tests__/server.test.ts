@@ -1,4 +1,8 @@
 import { createEventBus } from "@issuepilot/observability";
+import type {
+  ProjectSummary,
+  TeamRuntimeSummary,
+} from "@issuepilot/shared-contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createRuntimeState } from "../../runtime/state.js";
@@ -20,10 +24,13 @@ async function buildTestApp(
   overrides: {
     workflowPath?: string;
     gitlabProject?: string;
+    concurrency?: number;
     readLogsTail?: (
       runId: string,
       opts?: { limit?: number },
     ) => Promise<string[]>;
+    runtime?: TeamRuntimeSummary;
+    projects?: ProjectSummary[];
   } = {},
 ) {
   const state = createRuntimeState();
@@ -37,7 +44,9 @@ async function buildTestApp(
       workflowPath: overrides.workflowPath ?? ".agents/workflow.md",
       gitlabProject: overrides.gitlabProject ?? "group/project",
       pollIntervalMs: 10000,
-      concurrency: 1,
+      concurrency: overrides.concurrency ?? 1,
+      ...(overrides.runtime ? { runtime: overrides.runtime } : {}),
+      ...(overrides.projects ? { projects: overrides.projects } : {}),
     },
     { port: 0 },
   );
@@ -78,6 +87,61 @@ describe("Orchestrator HTTP API", () => {
       "human-review": 1,
       failed: 0,
       blocked: 0,
+    });
+  });
+
+  it("GET /api/state exposes team runtime metadata when configured", async () => {
+    await app.close();
+    const setup = await buildTestApp(async () => [], {
+      workflowPath: "/srv/issuepilot.team.yaml",
+      gitlabProject: "team",
+      concurrency: 2,
+      runtime: {
+        mode: "team",
+        maxConcurrentRuns: 2,
+        activeLeases: 1,
+        projectCount: 2,
+      },
+      projects: [
+        {
+          id: "platform-web",
+          name: "Platform Web",
+          workflowPath: "/srv/platform-web/WORKFLOW.md",
+          gitlabProject: "group/platform-web",
+          enabled: true,
+          activeRuns: 1,
+          lastPollAt: null,
+        },
+        {
+          id: "infra-tools",
+          name: "Infra Tools",
+          workflowPath: "/srv/infra-tools/WORKFLOW.md",
+          gitlabProject: "group/infra-tools",
+          enabled: true,
+          activeRuns: 0,
+          lastPollAt: null,
+        },
+      ],
+    });
+    app = setup.app;
+
+    const response = await app.inject({ method: "GET", url: "/api/state" });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      service: {
+        workflowPath: "/srv/issuepilot.team.yaml",
+        gitlabProject: "team",
+        concurrency: 2,
+      },
+      runtime: {
+        mode: "team",
+        activeLeases: 1,
+        projectCount: 2,
+      },
+      projects: [
+        { id: "platform-web", activeRuns: 1 },
+        { id: "infra-tools", activeRuns: 0 },
+      ],
     });
   });
 

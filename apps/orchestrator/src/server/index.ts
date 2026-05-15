@@ -3,11 +3,15 @@ import {
   type EventBus,
   type EventRecord,
 } from "@issuepilot/observability";
+import type {
+  ProjectSummary,
+  TeamRuntimeSummary,
+} from "@issuepilot/shared-contracts";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import type { RuntimeState } from "../runtime/state.js";
 
-interface ServerDeps {
+export interface ServerDeps {
   state: RuntimeState;
   eventBus: EventBus<{
     id: string;
@@ -28,6 +32,10 @@ interface ServerDeps {
   handoffLabel?: string;
   pollIntervalMs: number;
   concurrency: number;
+  /** V2 team runtime rollups; included verbatim in `/api/state`. */
+  runtime?: TeamRuntimeSummary;
+  /** V2 team project rollups; included verbatim in `/api/state`. */
+  projects?: ProjectSummary[];
 }
 
 function parseOptionalPositiveInt(
@@ -160,6 +168,8 @@ export async function createServer(
         deps.state.allRuns(),
         deps.handoffLabel ?? "human-review",
       ),
+      ...(deps.runtime ? { runtime: deps.runtime } : {}),
+      ...(deps.projects ? { projects: deps.projects } : {}),
     };
   });
 
