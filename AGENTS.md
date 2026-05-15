@@ -8,6 +8,12 @@
 - 代码、命令、配置项、日志字段、API 名称和文件路径保持原文，不强行翻译。
 - 如果用户明确要求英文或中英双语，再按用户要求调整。
 
+## 文档语言
+
+- 仓库内 repo-facing 文档默认使用中文，包括 `AGENTS.md`、`docs/superpowers/specs/`、`docs/superpowers/plans/`、runbook、实施计划和验收材料。
+- 公开双语入口继续保持中英文同步：修改 `README.md` 时同步 `README.zh-CN.md`，修改 `docs/getting-started.md` 时同步 `docs/getting-started.zh-CN.md`。
+- 文档正文使用中文；代码块、命令、配置键、API 路径、日志字段、类型名、函数名、package 名称和文件路径保持原文。
+
 ## 事实来源
 
 - `docs/superpowers/specs/2026-05-11-issuepilot-design.md` 是 IssuePilot 的总设计 spec / 产品源头。在规划或实现 IssuePilot 相关工作前必须先阅读它。
