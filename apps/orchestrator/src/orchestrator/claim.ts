@@ -31,6 +31,16 @@ export interface ClaimInput {
   runningLabel: string;
   excludeLabels: string[];
   /**
+   * Logical project bucket for the RunRecord. V1 single-workflow callers
+   * default to `"default"` so the dashboard can group V1 runs alongside V2
+   * team-mode runs (which use real project ids from `issuepilot.team.yaml`).
+   * Spec §1 & §11 require a non-empty `projectId` on every run; this default
+   * keeps existing single-workflow deployments compliant without forcing a
+   * config migration.
+   */
+  projectId?: string;
+  projectName?: string;
+  /**
    * Invoked when `transitionLabels` throws while we are trying to claim an
    * issue. The orchestrator wires this to inspect the error and, if it looks
    * like a GitLab permission/auth failure (HTTP 401/403), escalate the issue
@@ -103,6 +113,8 @@ export async function claimCandidates(
       issue,
       branch: "",
       workspacePath: "",
+      projectId: input.projectId ?? "default",
+      ...(input.projectName ? { projectName: input.projectName } : {}),
       startedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });

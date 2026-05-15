@@ -87,6 +87,48 @@ describe("claimCandidates", () => {
     expect(claimed[0]!.iid).toBe(1);
   });
 
+  it("stamps RunRecord with projectId/name so V1 runs group on dashboard", async () => {
+    const gitlab = fakeGitlab([{ iid: 11, labels: ["ai-ready"] }]);
+    gitlab.transitionLabels.mockResolvedValue({ labels: ["ai-running"] });
+    const state = createRuntimeState();
+    const slots = createConcurrencySlots(2);
+
+    const claimed = await claimCandidates({
+      gitlab,
+      state,
+      slots,
+      activeLabels: ["ai-ready"],
+      runningLabel: "ai-running",
+      excludeLabels: [],
+      projectId: "default",
+      projectName: "Default",
+    });
+
+    expect(claimed).toHaveLength(1);
+    const run = state.getRun(claimed[0]!.runId);
+    expect(run?.projectId).toBe("default");
+    expect(run?.projectName).toBe("Default");
+  });
+
+  it("defaults projectId to 'default' when caller omits it", async () => {
+    const gitlab = fakeGitlab([{ iid: 22, labels: ["ai-ready"] }]);
+    gitlab.transitionLabels.mockResolvedValue({ labels: ["ai-running"] });
+    const state = createRuntimeState();
+    const slots = createConcurrencySlots(2);
+
+    const claimed = await claimCandidates({
+      gitlab,
+      state,
+      slots,
+      activeLabels: ["ai-ready"],
+      runningLabel: "ai-running",
+      excludeLabels: [],
+    });
+    const run = state.getRun(claimed[0]!.runId);
+    expect(run?.projectId).toBe("default");
+    expect(run?.projectName).toBeUndefined();
+  });
+
   it("returns empty when no slots available", async () => {
     const gitlab = fakeGitlab([{ iid: 1, labels: ["ai-ready"] }]);
     const state = createRuntimeState();

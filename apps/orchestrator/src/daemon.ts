@@ -19,6 +19,7 @@ import {
   driveLifecycle,
   spawnRpc,
 } from "@issuepilot/runner-codex-app-server";
+import type { IssuePilotInternalEvent } from "@issuepilot/shared-contracts";
 import {
   createGitLabAdapter,
   createGitLabAdapterFromCredential,
@@ -57,22 +58,13 @@ const DEFAULT_PORT = 4738;
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
 const HUMAN_REVIEW_SCAN_RUN_ID = "human-review-scan";
 
-type OrchestratorEvent = {
-  id: string;
-  runId: string;
-  issue: {
-    id: string;
-    iid: number;
-    title: string;
-    url: string;
-    projectId: string;
-  };
-  type: string;
-  message: string;
-  createdAt: string;
-  ts: string;
+// V1 daemon always fills the issue context (every event flows through a
+// claim/run pair). We narrow `issue` from optional in the shared contract to
+// required here, which keeps existing callers type-safe without forking the
+// type tree (review M9). V2 team daemon uses the shared type as-is.
+type OrchestratorEvent = IssuePilotInternalEvent & {
+  issue: NonNullable<IssuePilotInternalEvent["issue"]>;
   data: unknown;
-  [key: string]: unknown;
 };
 
 export interface DaemonHandle {
@@ -608,6 +600,8 @@ export async function startDaemon(
           workflow.tracker.failedLabel,
           workflow.tracker.blockedLabel,
         ],
+        projectId: "default",
+        projectName: "Default",
         onClaimError: async ({ issue, error }) => {
           // Spec §21.12 says blocked issues must surface as `ai-blocked`
           // (not silently re-polled). When a permission/auth error trips
