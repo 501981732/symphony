@@ -62,7 +62,9 @@ type OrchestratorEvent = {
   runId: string;
   type: string;
   message: string;
+  createdAt: string;
   ts: string;
+  data: unknown;
   [key: string]: unknown;
 };
 
@@ -134,13 +136,20 @@ function toEventRecord(event: {
   ts: string;
   detail: Record<string, unknown>;
 }): OrchestratorEvent {
+  const data = redact(event.detail);
+  const detail =
+    data && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : {};
   return {
     id: randomUUID(),
     runId: event.runId,
     type: event.type,
     message: event.type,
+    createdAt: event.ts,
     ts: event.ts,
-    ...event.detail,
+    data,
+    ...detail,
   };
 }
 

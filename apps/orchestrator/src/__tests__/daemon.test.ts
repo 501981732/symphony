@@ -320,6 +320,17 @@ describe("startDaemon human-review event publishing", () => {
         .filter(Boolean)
         .map((line) => (JSON.parse(line) as { type: string }).type);
       expect(eventTypes).toEqual(["human_review_mr_missing"]);
+      const [event] = content
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(event).toMatchObject({
+        type: "human_review_mr_missing",
+        createdAt: expect.any(String),
+        ts: expect.any(String),
+        data: expect.objectContaining({ issueIid: 7 }),
+      });
     } finally {
       await daemon.stop();
       await fs.rm(root, { recursive: true, force: true });
