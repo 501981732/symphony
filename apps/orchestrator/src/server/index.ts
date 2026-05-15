@@ -4,6 +4,7 @@ import {
   type EventRecord,
 } from "@issuepilot/observability";
 import type {
+  IssuePilotInternalEvent,
   ProjectSummary,
   TeamRuntimeSummary,
 } from "@issuepilot/shared-contracts";
@@ -13,12 +14,7 @@ import type { RuntimeState } from "../runtime/state.js";
 
 export interface ServerDeps {
   state: RuntimeState;
-  eventBus: EventBus<{
-    id: string;
-    runId: string;
-    type: string;
-    [key: string]: unknown;
-  }>;
+  eventBus: EventBus<IssuePilotInternalEvent>;
   readEvents: (
     runId: string,
     opts?: { limit?: number; offset?: number },

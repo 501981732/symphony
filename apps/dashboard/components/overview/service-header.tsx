@@ -18,15 +18,12 @@ function formatTimestamp(value: string | null): string {
   try {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return value;
-    return d.toLocaleString(undefined, {
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+    // Use a stable UTC representation so server-rendered and client-hydrated
+    // markup match exactly. `toLocaleString()` reads the runtime's TZ +
+    // locale, which differs between Node and browser and triggers React
+    // hydration mismatch warnings — same fix as ProjectList.formatLastPoll
+    // (V2 review I6 + pre-existing hydration follow-up).
+    return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
   } catch {
     return value;
   }

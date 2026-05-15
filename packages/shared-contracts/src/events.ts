@@ -127,3 +127,37 @@ export interface IssuePilotEvent {
   /** ISO-8601 timestamp captured at publish time. */
   createdAt: string;
 }
+
+/**
+ * Internal event envelope used by the orchestrator daemon (V1 `--workflow`
+ * and V2 `--config` modes) and the SSE `/api/events` server before being
+ * narrowed to {@link IssuePilotEvent} for public consumers.
+ *
+ * Compared to the wire-level {@link IssuePilotEvent}:
+ *
+ *  - `type` is `string` rather than `EventType` because the daemon emits a
+ *    superset of types (including system-level signals like `heartbeat`)
+ *    that are filtered before publishing to the dashboard.
+ *  - `ts` is preserved alongside `createdAt` because the legacy SSE client
+ *    keys ordering off `ts`; new consumers must prefer `createdAt`.
+ *  - `issue` is optional — V2 team-mode lifecycle events (e.g. scheduler
+ *    startup) do not have an issue context.
+ *  - An index signature is allowed so producers can attach run-mode
+ *    specific keys without forcing a contract change.
+ *
+ * V1 (`apps/orchestrator/src/daemon.ts`) and V2
+ * (`apps/orchestrator/src/team/daemon.ts`) both flow events through this
+ * interface so the Fastify server and dashboard hydrate a single shape
+ * regardless of which entrypoint produced them (review M9).
+ */
+export interface IssuePilotInternalEvent {
+  id: string;
+  runId: string;
+  issue?: EventIssueRef;
+  type: string;
+  message: string;
+  data?: unknown;
+  createdAt: string;
+  ts: string;
+  [key: string]: unknown;
+}

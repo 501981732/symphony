@@ -38,6 +38,12 @@ describe("ServiceHeader", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
   });
 
+  it("renders timestamps in a stable UTC format to avoid SSR hydration mismatch", () => {
+    render(<ServiceHeader snapshot={snapshot} />);
+    expect(screen.getByText("2026-05-12 05:00:00Z")).toBeInTheDocument();
+    expect(screen.getByText("2026-05-12 05:00:30Z")).toBeInTheDocument();
+  });
+
   it("falls back to em-dash when no last reload yet", () => {
     render(
       <ServiceHeader

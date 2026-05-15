@@ -93,7 +93,6 @@ async function readLeaseFile(filePath: string): Promise<LeaseFile> {
       const moved = await quarantineCorruptFile(filePath).catch(() => null);
       // Emit on stderr so operators see the bad-file path without forcing a
       // logger dependency on this leaf module.
-      // eslint-disable-next-line no-console -- intentional operator-facing notice
       console.warn(
         `IssuePilot: lease file at ${filePath} was unreadable JSON; quarantined to ${moved ?? "<failed>"} and started a fresh store.`,
       );

@@ -2,6 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { createEventBus, type EventBus } from "@issuepilot/observability";
+import type { IssuePilotInternalEvent } from "@issuepilot/shared-contracts";
 import { createWorkflowLoader } from "@issuepilot/workflow";
 
 import {
@@ -74,13 +75,10 @@ function deriveLeaseFilePath(config: TeamConfig): string {
   );
 }
 
-type TeamEvent = {
-  id: string;
-  runId: string;
-  type: string;
-  message: string;
-  [key: string]: unknown;
-};
+// V2 team daemon emits events with the shared internal envelope so the SSE
+// server hydrates events identically regardless of which entrypoint
+// produced them (review M9).
+type TeamEvent = IssuePilotInternalEvent;
 
 /**
  * Phase 1 team-mode entrypoint: parse the team config, load each enabled
