@@ -141,6 +141,13 @@ async function main(): Promise<void> {
   const orchestratorPkg = await readPackageJson(orchestratorRoot);
   const dependencies: Record<string, string> = {};
   mergeExternalDependencies(dependencies, orchestratorPkg.dependencies);
+  for (const relativePackage of workspacePackages) {
+    const packageDir = path.join(root, relativePackage);
+    const pkg = await readPackageJson(packageDir);
+    mergeExternalDependencies(dependencies, pkg.dependencies);
+  }
+  const dashboardPkg = await readPackageJson(path.join(root, "apps", "dashboard"));
+  mergeExternalDependencies(dependencies, dashboardPkg.dependencies);
 
   await copyDir(
     path.join(orchestratorRoot, "dist"),
@@ -148,18 +155,30 @@ async function main(): Promise<void> {
   );
   await fs.chmod(path.join(stagingDir, "dist", "bin.js"), 0o755);
 
+  const dependencyInstallPkg: PackageJson = {
+    name: "issuepilot-release-staging",
+    version,
+    private: true,
+    type: "module",
+    dependencies,
+  };
+  await fs.writeFile(
+    path.join(stagingDir, "package.json"),
+    `${JSON.stringify(dependencyInstallPkg, null, 2)}\n`,
+  );
+  await execa("npm", ["install", "--omit=dev", "--ignore-scripts"], {
+    cwd: stagingDir,
+    stdio: "inherit",
+  });
+
   const bundledDependencies: string[] = [];
   for (const relativePackage of workspacePackages) {
     const packageDir = path.join(root, relativePackage);
-    const pkg = await readPackageJson(packageDir);
-    mergeExternalDependencies(dependencies, pkg.dependencies);
     const bundledName = await writeBundledWorkspacePackage(packageDir);
     dependencies[bundledName] = version;
     bundledDependencies.push(bundledName);
   }
 
-  const dashboardPkg = await readPackageJson(path.join(root, "apps", "dashboard"));
-  mergeExternalDependencies(dependencies, dashboardPkg.dependencies);
   await copyDashboard();
 
   const releasePkg: PackageJson = {
@@ -175,7 +194,7 @@ async function main(): Promise<void> {
     types: "./dist/index.d.ts",
     files: ["dist"],
     dependencies,
-    bundledDependencies,
+    bundledDependencies: Object.keys(dependencies),
   };
   await fs.writeFile(
     path.join(stagingDir, "package.json"),
