@@ -4,6 +4,7 @@ import type { GitLabApi, RawMergeRequest } from "../api-shape.js";
 import { createGitLabClient, type GitLabClient } from "../client.js";
 import {
   createMergeRequest,
+  findMergeRequestBySourceBranch,
   getMergeRequest,
   listMergeRequestsBySourceBranch,
   listMergeRequestNotes,
@@ -179,6 +180,67 @@ describe("getMergeRequest", () => {
       webUrl: "https://gitlab.example.com/g/p/-/merge_requests/6",
       state: "opened",
     });
+  });
+});
+
+describe("findMergeRequestBySourceBranch", () => {
+  it("returns the opened MR detail for an exact source branch", async () => {
+    const all = vi.fn(async () => [
+      mrRow({
+        iid: 6,
+        web_url: "https://gitlab.example.com/g/p/-/merge_requests/6",
+        state: "opened",
+        source_branch: "ai/42-add-x",
+        title: "MR title",
+        description: "MR body",
+        updated_at: "2026-05-14T01:02:03Z",
+      }),
+    ]);
+    const client = makeClient({
+      MergeRequests: {
+        all,
+        create: vi.fn(),
+        edit: vi.fn(),
+        show: vi.fn(),
+      },
+    });
+
+    expect(await findMergeRequestBySourceBranch(client, "ai/42-add-x")).toEqual(
+      {
+        iid: 6,
+        webUrl: "https://gitlab.example.com/g/p/-/merge_requests/6",
+        state: "opened",
+        sourceBranch: "ai/42-add-x",
+        title: "MR title",
+        description: "MR body",
+        updatedAt: "2026-05-14T01:02:03Z",
+      },
+    );
+    expect(all).toHaveBeenCalledWith({
+      projectId: "group/project",
+      sourceBranch: "ai/42-add-x",
+      state: "opened",
+      perPage: 5,
+    });
+  });
+
+  it("ignores non-open or mismatched source branch rows", async () => {
+    const all = vi.fn(async () => [
+      mrRow({ state: "merged", source_branch: "ai/42-add-x" }),
+      mrRow({ state: "opened", source_branch: "ai/other" }),
+    ]);
+    const client = makeClient({
+      MergeRequests: {
+        all,
+        create: vi.fn(),
+        edit: vi.fn(),
+        show: vi.fn(),
+      },
+    });
+
+    expect(await findMergeRequestBySourceBranch(client, "ai/42-add-x")).toBe(
+      null,
+    );
   });
 });
 

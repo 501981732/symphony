@@ -7,6 +7,15 @@ export interface Classification {
 const BLOCKED_CATEGORIES = new Set(["auth", "permission"]);
 const RETRYABLE_CATEGORIES = new Set(["transient", "rate_limit"]);
 
+function isInputRequiredReason(reason: string | undefined): boolean {
+  const normalized = reason?.toLowerCase() ?? "";
+  return (
+    normalized.includes("turn_input_required") ||
+    normalized.includes("user input") ||
+    normalized.includes("operator input is unavailable")
+  );
+}
+
 export function classifyError(err: unknown): Classification {
   // Named typed errors first — these carry more structure than the runner
   // outcome shape and can shadow it (e.g. `GitLabError` also has a numeric
@@ -76,6 +85,13 @@ export function classifyError(err: unknown): Classification {
     typeof (err as { status: unknown }).status === "string"
   ) {
     const outcome = err as { status: string; reason?: string };
+    if (isInputRequiredReason(outcome.reason)) {
+      return {
+        kind: "blocked",
+        reason: outcome.reason ?? "runner requested user input",
+        code: "codex_input_required",
+      };
+    }
     if (outcome.status === "timeout") {
       return {
         kind: "retryable",
@@ -91,6 +107,13 @@ export function classifyError(err: unknown): Classification {
   }
 
   if (err instanceof Error) {
+    if (isInputRequiredReason(err.message)) {
+      return {
+        kind: "blocked",
+        reason: err.message,
+        code: "codex_input_required",
+      };
+    }
     return { kind: "failed", reason: err.message, code: "unknown" };
   }
 

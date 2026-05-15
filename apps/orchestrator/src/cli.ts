@@ -40,6 +40,34 @@ function parsePort(value: string): number | null {
   return port;
 }
 
+interface ResolvedWorkflowPath {
+  path: string;
+  warning?: string;
+}
+
+function resolveWorkflowPath(
+  input: unknown,
+  cwd = process.cwd(),
+): ResolvedWorkflowPath {
+  if (typeof input === "string" && input.trim().length > 0) {
+    return { path: path.resolve(input) };
+  }
+
+  const rootWorkflow = path.resolve(cwd, "WORKFLOW.md");
+  if (fs.existsSync(rootWorkflow)) return { path: rootWorkflow };
+
+  const legacyWorkflow = path.resolve(cwd, ".agents", "workflow.md");
+  if (fs.existsSync(legacyWorkflow)) {
+    return {
+      path: legacyWorkflow,
+      warning:
+        "Warning: .agents/workflow.md is deprecated as a default workflow path; move it to WORKFLOW.md or pass --workflow explicitly.",
+    };
+  }
+
+  return { path: rootWorkflow };
+}
+
 export function buildCli(deps: CliDeps = {}): Command {
   const daemonStarter = deps.startDaemon ?? startDaemon;
   const workflowValidator = deps.validateWorkflow ?? validateWorkflow;
@@ -56,7 +84,7 @@ export function buildCli(deps: CliDeps = {}): Command {
   program
     .command("run")
     .description("Start the orchestrator daemon")
-    .requiredOption("--workflow <path>", "Path to workflow file")
+    .option("--workflow <path>", "Path to workflow file")
     .option("--port <number>", "HTTP API port", "4738")
     .option(
       "--host <host>",
@@ -64,7 +92,9 @@ export function buildCli(deps: CliDeps = {}): Command {
       "127.0.0.1",
     )
     .action(async (opts) => {
-      const workflowPath = path.resolve(opts.workflow);
+      const resolvedWorkflow = resolveWorkflowPath(opts.workflow);
+      if (resolvedWorkflow.warning) console.warn(resolvedWorkflow.warning);
+      const workflowPath = resolvedWorkflow.path;
       const port = parsePort(opts.port);
       if (port === null) {
         console.error(`Error: invalid port: ${opts.port}`);
@@ -98,9 +128,11 @@ export function buildCli(deps: CliDeps = {}): Command {
   program
     .command("validate")
     .description("Validate workflow config and GitLab connectivity")
-    .requiredOption("--workflow <path>", "Path to workflow file")
+    .option("--workflow <path>", "Path to workflow file")
     .action(async (opts) => {
-      const workflowPath = path.resolve(opts.workflow);
+      const resolvedWorkflow = resolveWorkflowPath(opts.workflow);
+      if (resolvedWorkflow.warning) console.warn(resolvedWorkflow.warning);
+      const workflowPath = resolvedWorkflow.path;
       if (!fs.existsSync(workflowPath)) {
         console.error(`Error: workflow file not found: ${workflowPath}`);
         process.exitCode = 1;

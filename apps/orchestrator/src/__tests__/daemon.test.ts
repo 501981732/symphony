@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { isEventType } from "@issuepilot/shared-contracts";
 import type { GitLabAdapter } from "@issuepilot/tracker-gitlab";
 import type { WorkflowConfig } from "@issuepilot/workflow";
 import type { FastifyInstance } from "fastify";
@@ -91,6 +92,7 @@ function createGitLabForHumanReviewScanPollution(): GitLabAdapter {
       state: "opened",
     })),
     findLatestIssuePilotWorkpadNote: vi.fn(async () => null),
+    findMergeRequestBySourceBranch: vi.fn(async () => null),
     listMergeRequestsBySourceBranch: vi.fn(async () => []),
     createIssueNote: vi.fn(async () => ({ id: 1 })),
     closeIssue: vi.fn(async () => ({
@@ -147,6 +149,7 @@ function createGitLabForClosedUnmergedReview(): GitLabAdapter {
         "- Branch: `issuepilot/7-needs-review`",
       ].join("\n"),
     })),
+    findMergeRequestBySourceBranch: vi.fn(async () => null),
     listMergeRequestsBySourceBranch: vi.fn(async () => [
       {
         iid: 3,
@@ -318,6 +321,25 @@ describe("startDaemon human-review event publishing", () => {
         .filter(Boolean)
         .map((line) => (JSON.parse(line) as { type: string }).type);
       expect(eventTypes).toEqual(["human_review_mr_missing"]);
+      const [event] = content
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(event).toMatchObject({
+        type: "human_review_mr_missing",
+        issue: {
+          id: "7",
+          iid: 7,
+          title: "Issue #7",
+          url: "",
+          projectId: "group/project",
+        },
+        createdAt: expect.any(String),
+        ts: expect.any(String),
+        data: expect.objectContaining({ issueIid: 7 }),
+      });
+      expect(isEventType(event?.["type"])).toBe(true);
     } finally {
       await daemon.stop();
       await fs.rm(root, { recursive: true, force: true });

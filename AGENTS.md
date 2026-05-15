@@ -10,8 +10,11 @@
 
 ## 事实来源
 
-- 在规划或实现 IssuePilot 相关工作前，先阅读 `docs/superpowers/specs/2026-05-11-issuepilot-design.md`。
-- `SPEC.md` 和 `elixir/` 是 Symphony 的协议和参考实现材料，不是内部生产架构的直接复制对象。可作为参考spec和实现。
+- `docs/superpowers/specs/2026-05-11-issuepilot-design.md` 是 IssuePilot 的总设计 spec / 产品源头。在规划或实现 IssuePilot 相关工作前必须先阅读它。
+- `SPEC.md` 是 OpenAI Symphony 的开源通用 spec，保留作参考和对齐对象，不是 IssuePilot 内部产品架构的直接源头。
+- `elixir/` 是 OpenAI Symphony 的 Elixir 参考实现，修改该目录时遵守 `elixir/AGENTS.md`，不要把它当作 TypeScript IssuePilot 的生产实现路线。
+- `docs/superpowers/specs/2026-05-15-issuepilot-gap-closure-design.md` 是用于对比根 `SPEC.md`、当前实现和 P0 收口差距的补充 spec，不替代总设计 spec。
+- `docs/superpowers/plans/` 下的文件是实施计划、runbook 或验收材料，用于执行和追踪，不作为产品源头。
 - 如果修改产品行为、架构、workflow labels、runner 行为或路线图范围，必须在同一变更中更新 IssuePilot 设计 spec。
 
 ## 项目方向

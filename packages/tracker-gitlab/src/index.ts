@@ -57,6 +57,7 @@ export {
 } from "./notes.js";
 export {
   createMergeRequest,
+  findMergeRequestBySourceBranch,
   getMergeRequest,
   listMergeRequestsBySourceBranch,
   listMergeRequestNotes,
@@ -66,6 +67,7 @@ export {
   type MergeRequestNote,
   type MergeRequestSummary,
   type MergeRequestUpdates,
+  type SourceBranchMergeRequestDetail,
   type SourceBranchMergeRequestSummary,
 } from "./merge-requests.js";
 export {

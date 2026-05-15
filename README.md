@@ -46,7 +46,7 @@ issue after that MR is manually merged.
   restart without requiring an external database.
 - **Complements harness engineering** — designed for mature repos that already
   ship an agent harness; IssuePilot focuses on scheduling and isolation while
-  `.agents/workflow.md` in your repo owns the prompt and policy.
+  `WORKFLOW.md` in your repo owns the prompt and policy.
 - **Open SPEC + reference implementation** — `SPEC.md` and the Symphony Elixir
   reference implementation remain in the repository, so teams can build their
   own variants in other languages from the same contract.
@@ -93,7 +93,7 @@ it**:
 | Positioning     | Public prototype; recommended to fork and harden internally     | Internal P0 product direction; targeting day-to-day use by an engineering team                     |
 | Issue tracker   | Linear                                                          | GitLab (SaaS and self-managed, Group Access Token or Personal Token)                               |
 | State machine   | Linear issue **status** (state-based)                           | GitLab **labels** (`ai-ready` / `ai-running` / `human-review` / …)                                 |
-| Workflow file   | `WORKFLOW.md` at the repo root                                  | `.agents/workflow.md` (YAML front matter + Markdown prompt)                                        |
+| Workflow file   | `WORKFLOW.md` at the repo root                                  | `WORKFLOW.md` (YAML front matter + Markdown prompt)                                        |
 | Language        | Elixir / OTP                                                    | TypeScript / Node.js 22 LTS                                                                        |
 | Runtime         | Single Elixir service + optional status surface                 | Orchestrator daemon (Fastify) + read-only Next.js dashboard (Tailwind/shadcn)                      |
 | Workspace       | Per-issue workspace                                             | Bare mirror + git worktree under `~/.issuepilot/{repos,workspaces,state}`                          |
@@ -142,6 +142,8 @@ Implemented in this repository:
 
 Still stabilizing:
 
+- P0 source-checkout usage is supported; packaged install/upgrade is still a
+  V1 release task.
 - Public packaging and versioned releases.
 
 ## How It Works
@@ -179,7 +181,7 @@ apps/
 
 packages/
   core/                          Shared domain primitives
-  workflow/                      .agents/workflow.md parser and renderer
+  workflow/                      WORKFLOW.md parser and renderer
   tracker-gitlab/                GitLab issue, label, note, MR, pipeline adapter
   workspace/                     Mirror, worktree, branch, hook, and cleanup logic
   runner-codex-app-server/       Codex app-server JSON-RPC integration
@@ -236,7 +238,7 @@ pnpm exec issuepilot validate --workflow path/to/workflow.md
 IssuePilot expects each target repository to provide an agent contract file:
 
 ```text
-.agents/workflow.md
+WORKFLOW.md
 ```
 
 The file contains YAML front matter for machine-readable configuration and a
@@ -321,7 +323,7 @@ The IssuePilot roadmap lives in
 §20 — the section below is a summary so you can quickly see what's usable today
 and where the project is heading.
 
-### V1 / P0 — Local single-machine loop (current)
+### P0 — Local single-machine loop (current)
 
 In active development; large parts are already usable in this repository:
 
@@ -341,7 +343,26 @@ In active development; large parts are already usable in this repository:
   the issue.
 - ✅ Read-only Next.js dashboard (overview + run detail + SSE timeline).
 - ✅ Fake GitLab + fake Codex end-to-end harness + real GitLab smoke runbook.
-- 🚧 Public packaging, versioned releases, install/upgrade paths.
+- ✅ P0 source-checkout usage for local pilots.
+- 🚧 Release evidence and docs are still being tightened before a stable V1.
+
+### V1 — Stable local release
+
+Goal: make the current single-machine loop installable, repeatable, and safe
+for internal pilot teams without changing the core execution model.
+
+- Public or internal package distribution (npm package, standalone tarball, or
+  internal registry package).
+- Versioned releases with upgrade notes, rollback notes, and compatibility
+  expectations.
+- Stable workflow schema, event contract, CLI commands, and dashboard API for
+  the local loop.
+- Release gate that combines unit tests, fake E2E, smoke wrapper, and fixed
+  real-GitLab evidence fields.
+- Source-checkout and packaged-install docs kept side by side.
+- Basic migration guide for existing local state under `~/.issuepilot`.
+- Operational docs for auth refresh, token rotation, log redaction, and
+  debugging failed / blocked runs.
 
 ### V2 — Team-operable release
 

@@ -8,12 +8,15 @@ describe("CLI", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cli-test-"));
+    tmpDir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "cli-test-")),
+    );
     process.exitCode = 0;
   });
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    process.exitCode = 0;
   });
 
   it("validate fails for missing workflow", async () => {
@@ -96,6 +99,144 @@ describe("CLI", () => {
     mockLog.mockRestore();
   });
 
+  it("validate defaults to ./WORKFLOW.md when --workflow is omitted", async () => {
+    const originalCwd = process.cwd();
+    const wfPath = path.join(tmpDir, "WORKFLOW.md");
+    fs.writeFileSync(wfPath, "---\ntitle: test\n---\n");
+
+    const validateWorkflow = vi.fn(async () => ({
+      tracker: {
+        kind: "gitlab",
+        baseUrl: "https://gitlab.example.com",
+        projectId: "group/project",
+        tokenEnv: "GITLAB_TOKEN",
+        activeLabels: ["ai-ready"],
+        runningLabel: "ai-running",
+        handoffLabel: "human-review",
+        failedLabel: "ai-failed",
+        blockedLabel: "ai-blocked",
+        reworkLabel: "ai-rework",
+        mergingLabel: "ai-merging",
+      },
+      workspace: {
+        root: "/tmp/issuepilot",
+        strategy: "worktree",
+        repoCacheRoot: "/tmp/issuepilot/cache",
+      },
+      git: {
+        repoUrl: "git@example.com:group/project.git",
+        baseBranch: "main",
+        branchPrefix: "issuepilot",
+      },
+      agent: {
+        runner: "codex-app-server",
+        maxConcurrentAgents: 1,
+        maxTurns: 3,
+        maxAttempts: 2,
+        retryBackoffMs: 1000,
+      },
+      codex: {
+        command: "codex app-server",
+        approvalPolicy: "never",
+        threadSandbox: "workspace-write",
+        turnTimeoutMs: 60_000,
+        turnSandboxPolicy: { type: "workspaceWrite" },
+      },
+      hooks: {},
+      promptTemplate: "Fix {{ issue.title }}",
+      source: {
+        path: wfPath,
+        sha256: "sha",
+        loadedAt: new Date(0).toISOString(),
+      },
+    }));
+    const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cli = buildCli({ validateWorkflow });
+
+    try {
+      process.chdir(tmpDir);
+      await cli.parseAsync(["validate"], { from: "user" });
+    } finally {
+      process.chdir(originalCwd);
+      mockLog.mockRestore();
+    }
+
+    expect(validateWorkflow).toHaveBeenCalledWith(wfPath);
+  });
+
+  it("validate falls back to .agents/workflow.md with a warning", async () => {
+    const originalCwd = process.cwd();
+    const legacyDir = path.join(tmpDir, ".agents");
+    fs.mkdirSync(legacyDir);
+    const wfPath = path.join(legacyDir, "workflow.md");
+    fs.writeFileSync(wfPath, "---\ntitle: test\n---\n");
+
+    const validateWorkflow = vi.fn(async () => ({
+      tracker: {
+        kind: "gitlab",
+        baseUrl: "https://gitlab.example.com",
+        projectId: "group/project",
+        tokenEnv: "GITLAB_TOKEN",
+        activeLabels: ["ai-ready"],
+        runningLabel: "ai-running",
+        handoffLabel: "human-review",
+        failedLabel: "ai-failed",
+        blockedLabel: "ai-blocked",
+        reworkLabel: "ai-rework",
+        mergingLabel: "ai-merging",
+      },
+      workspace: {
+        root: "/tmp/issuepilot",
+        strategy: "worktree",
+        repoCacheRoot: "/tmp/issuepilot/cache",
+      },
+      git: {
+        repoUrl: "git@example.com:group/project.git",
+        baseBranch: "main",
+        branchPrefix: "issuepilot",
+      },
+      agent: {
+        runner: "codex-app-server",
+        maxConcurrentAgents: 1,
+        maxTurns: 3,
+        maxAttempts: 2,
+        retryBackoffMs: 1000,
+      },
+      codex: {
+        command: "codex app-server",
+        approvalPolicy: "never",
+        threadSandbox: "workspace-write",
+        turnTimeoutMs: 60_000,
+        turnSandboxPolicy: { type: "workspaceWrite" },
+      },
+      hooks: {},
+      promptTemplate: "Fix {{ issue.title }}",
+      source: {
+        path: wfPath,
+        sha256: "sha",
+        loadedAt: new Date(0).toISOString(),
+      },
+    }));
+    const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const mockWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cli = buildCli({ validateWorkflow });
+
+    try {
+      process.chdir(tmpDir);
+      await cli.parseAsync(["validate"], { from: "user" });
+      expect(validateWorkflow).toHaveBeenCalledWith(wfPath);
+      expect(mockWarn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          ".agents/workflow.md is deprecated as a default",
+        ),
+      );
+    } finally {
+      process.chdir(originalCwd);
+      mockLog.mockRestore();
+      mockWarn.mockRestore();
+    }
+  });
+
   it("doctor runs checks", async () => {
     const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const cli = buildCli({
@@ -151,6 +292,37 @@ describe("CLI", () => {
       expect.stringContaining("daemon ready"),
     );
     mockLog.mockRestore();
+  });
+
+  it("run defaults to ./WORKFLOW.md when --workflow is omitted", async () => {
+    const originalCwd = process.cwd();
+    const wfPath = path.join(tmpDir, "WORKFLOW.md");
+    fs.writeFileSync(wfPath, "---\ntitle: test\n---\n");
+
+    const startDaemon = vi.fn(async () => ({
+      host: "127.0.0.1",
+      port: 4738,
+      url: "http://127.0.0.1:4738",
+      state: {} as never,
+      stop: async () => undefined,
+      wait: async () => undefined,
+    }));
+    const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cli = buildCli({ startDaemon });
+
+    try {
+      process.chdir(tmpDir);
+      await cli.parseAsync(["run"], { from: "user" });
+    } finally {
+      process.chdir(originalCwd);
+      mockLog.mockRestore();
+    }
+
+    expect(startDaemon).toHaveBeenCalledWith({
+      workflowPath: wfPath,
+      port: 4738,
+      host: "127.0.0.1",
+    });
   });
 
   describe("auth subcommands", () => {

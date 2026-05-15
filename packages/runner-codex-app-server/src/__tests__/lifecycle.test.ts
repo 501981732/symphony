@@ -192,6 +192,53 @@ describe("driveLifecycle", () => {
     expect(events).toContain("turn_completed");
   });
 
+  it("normalizes non-terminal app-server notifications to canonical event types", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+        ["turn/start", { turnId: "u1" }],
+      ]),
+      [
+        {
+          method: "turn/notification",
+          params: { turnId: "u1", message: "working" },
+        },
+        {
+          method: "unknown/event",
+          params: { turnId: "u1" },
+        },
+        {
+          method: "turn/completed",
+          params: { turnId: "u1", stop: true },
+        },
+      ],
+    );
+
+    const events: string[] = [];
+    await driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test-thread",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: (type) => {
+        events.push(type);
+      },
+    });
+
+    expect(events).toContain("notification");
+    expect(events).toContain("malformed_message");
+    expect(events).not.toContain("turn_notification");
+    expect(events).not.toContain("unknown_event");
+  });
+
   it("reports failed status on turn/failed", async () => {
     const rpc = createFakeRpc(
       new Map([
@@ -224,6 +271,50 @@ describe("driveLifecycle", () => {
 
     expect(result.status).toBe("failed");
     expect(result.failureReason).toContain("something went wrong");
+  });
+
+  it("does not lose turn notifications emitted immediately after turn/start", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+      ]),
+    );
+    (rpc.request as ReturnType<typeof vi.fn>).mockImplementation(
+      async (method: string) => {
+        if (method === "initialize")
+          return { serverInfo: { name: "codex", version: "1.0" } };
+        if (method === "thread/start") return { threadId: "t1" };
+        if (method === "turn/start") {
+          rpc.notifHandler("turn/failed", {
+            turnId: "u1",
+            error: "failed before wait registered",
+          });
+          return { turnId: "u1" };
+        }
+        throw new Error(`Unexpected: ${method}`);
+      },
+    );
+
+    const result = await driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: () => {},
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      failureReason: "failed before wait registered",
+    });
   });
 
   it("stops after maxTurns if no stop signal", async () => {
@@ -374,5 +465,54 @@ describe("driveLifecycle", () => {
     expect(events.filter((e) => e === "approval_auto_approved")).toHaveLength(
       2,
     );
+  });
+
+  it("returns a deterministic non-interactive response for user input requests", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+        ["turn/start", { turnId: "u1" }],
+      ]),
+      [
+        {
+          method: "turn/completed",
+          params: { turnId: "u1", stop: true },
+        },
+      ],
+    );
+    const events: string[] = [];
+
+    const resultPromise = driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: (type) => events.push(type),
+    });
+
+    await Promise.resolve();
+    await expect(
+      rpc.requestHandler("item/tool/requestUserInput", { turnId: "u1" }),
+    ).resolves.toMatchObject({
+      success: false,
+      contentItems: [
+        {
+          type: "inputText",
+          text: expect.stringContaining("non-interactive IssuePilot run"),
+        },
+      ],
+    });
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(events).toContain("turn_input_required");
   });
 });

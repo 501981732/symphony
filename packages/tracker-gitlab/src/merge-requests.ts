@@ -32,6 +32,11 @@ export interface MergeRequestSummary {
   state: string;
 }
 
+export interface SourceBranchMergeRequestDetail extends SourceBranchMergeRequestSummary {
+  title: string;
+  description: string;
+}
+
 export interface SourceBranchMergeRequestSummary extends MergeRequestSummary {
   sourceBranch: string;
   updatedAt?: string;
@@ -106,6 +111,35 @@ export async function getMergeRequest(
   return client.request("mergeRequests.show", async (api) => {
     const mr = await api.MergeRequests.show(client.projectId, mrIid);
     return { iid: mr.iid, webUrl: mr.web_url, state: mr.state };
+  });
+}
+
+export async function findMergeRequestBySourceBranch(
+  client: GitLabClient<GitLabApi>,
+  sourceBranch: string,
+): Promise<SourceBranchMergeRequestDetail | null> {
+  return client.request("mergeRequests.findBySourceBranch", async (api) => {
+    const rows = await api.MergeRequests.all({
+      projectId: client.projectId,
+      sourceBranch,
+      state: "opened",
+      perPage: 5,
+    });
+    const mr = rows.find(
+      (candidate) =>
+        candidate.source_branch === sourceBranch &&
+        candidate.state === "opened",
+    );
+    if (!mr) return null;
+    const summary: SourceBranchMergeRequestDetail = {
+      iid: mr.iid,
+      webUrl: mr.web_url,
+      state: mr.state,
+      sourceBranch: mr.source_branch,
+      title: mr.title,
+      description: typeof mr.description === "string" ? mr.description : "",
+    };
+    return mr.updated_at ? { ...summary, updatedAt: mr.updated_at } : summary;
   });
 }
 

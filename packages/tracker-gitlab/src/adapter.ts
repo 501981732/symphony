@@ -10,6 +10,7 @@ import { closeIssue, getIssue, listCandidateIssues } from "./issues.js";
 import { transitionLabels } from "./labels.js";
 import {
   createMergeRequest,
+  findMergeRequestBySourceBranch,
   getMergeRequest,
   listMergeRequestsBySourceBranch,
   listMergeRequestNotes,
@@ -51,6 +52,8 @@ function bindAdapter(client: GitLabClient<GitLabApi>): GitLabAdapterHandle {
     findWorkpadNote: (iid, marker) => findWorkpadNote(client, iid, marker),
     findLatestIssuePilotWorkpadNote: (iid) =>
       findLatestIssuePilotWorkpadNote(client, iid),
+    findMergeRequestBySourceBranch: (sourceBranch) =>
+      findMergeRequestBySourceBranch(client, sourceBranch),
     createMergeRequest: (mrInput) => createMergeRequest(client, mrInput),
     updateMergeRequest: (mrIid, updates) =>
       updateMergeRequest(client, mrIid, updates),

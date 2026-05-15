@@ -68,10 +68,13 @@ pnpm exec issuepilot doctor
 
 ---
 
-## 1. 配置 `.agents/workflow.md`
+## 1. 配置 `WORKFLOW.md`
 
-在 sandbox 项目里新建文件 `.agents/workflow.md`（与本仓库无关，是
+在 sandbox 项目里新建文件 `WORKFLOW.md`（与本仓库无关，是
 **目标项目**里的文件），内容参考 spec §6：
+
+`WORKFLOW.md` 是默认 workflow 文件名。迁移期仍可通过 `--workflow`
+显式传入旧的 `.agents/workflow.md`，但 smoke 项目应使用根目录文件。
 
 ```md
 ---
@@ -139,9 +142,8 @@ Description:
 
 ```bash
 git checkout -b chore/issuepilot-workflow
-mkdir -p .agents
-$EDITOR .agents/workflow.md
-git add .agents/workflow.md
+$EDITOR WORKFLOW.md
+git add WORKFLOW.md
 git commit -m "chore(issuepilot): seed workflow.md"
 git push -u origin chore/issuepilot-workflow
 # 然后在 GitLab 上 fast-forward 合到 main，或直接给自己开 MR 合并
@@ -168,7 +170,7 @@ pnpm -w turbo run build
 mkdir -p ~/issuepilot-smoke
 git clone git@gitlab.example.com:group/issuepilot-smoke.git \
   ~/issuepilot-smoke
-WORKFLOW_PATH="$HOME/issuepilot-smoke/.agents/workflow.md"
+WORKFLOW_PATH="$HOME/issuepilot-smoke/WORKFLOW.md"
 ```
 
 ### 2.3 启动 orchestrator + dashboard
@@ -182,6 +184,10 @@ WORKFLOW_PATH="$HOME/issuepilot-smoke/.agents/workflow.md"
 pnpm smoke --workflow "$WORKFLOW_PATH"
 ```
 
+`pnpm smoke` 只负责启动 orchestrator daemon、等待 `/api/state` ready，
+并打印 API / Dashboard URL。GitLab Issue、MR 和 dashboard 内容仍需操作者按
+下方 checklist 人工核验。
+
 成功输出形如：
 
 ```text
@@ -191,7 +197,7 @@ pnpm smoke --workflow "$WORKFLOW_PATH"
 ------------------------------------------------------
  API:        http://127.0.0.1:4738
  Dashboard:  http://localhost:3000
- Workflow:   /home/you/issuepilot-smoke/.agents/workflow.md
+ Workflow:   /home/you/issuepilot-smoke/WORKFLOW.md
  Project:    group/issuepilot-smoke
  Poll every: 10000ms
  Concurrency:1
@@ -246,19 +252,20 @@ pnpm dev:dashboard
       多出一个 `group__issuepilot-smoke/<iid>` 目录。
 - [ ] **4. Codex app-server run 起来**。
       `ps aux | grep "codex app-server"` 看到子进程；timeline 里
-      有 `codex_thread_started`、`codex_turn_started` 事件。
+      有 `codex_session_started`、`codex_turn_started` 事件。
 - [ ] **5. branch push**：`git ls-remote git@gitlab.example.com:...`
       或在 GitLab Repository → Branches 里看到 `ai/<issue-iid>-*` 分支。
-- [ ] **6. MR 创建**：GitLab Merge Requests 列表新增一条 draft MR，
-      `Source` = AI 分支，`Target` = `main`。
+- [ ] **6. MR 创建**：GitLab Merge Requests 列表新增一条 MR，`Source` =
+      AI 分支，`Target` = `main`。
 - [ ] **7. Issue note**：Issue discussion 里有 IssuePilot 写的工作日志
       note（含实现、验证、MR 链接、可能的风险）。
 - [ ] **8. label `human-review` 已切换**：GitLab Issue 上原 `ai-ready` /
       `ai-running` 被替换为 `human-review`。
 - [ ] **9. dashboard timeline 完整**：run 详情页能看到
-      `run_started → claim_succeeded → workspace_ready →
-      codex_thread_started → tool_call_* → branch_pushed →
-      merge_request_opened → note_handoff → run_completed`，
+      `run_started → claim_succeeded → mirror_ready → worktree_ready →
+      codex_session_started → codex_turn_started → gitlab_push →
+      gitlab_mr_created → gitlab_workpad_note_created →
+      gitlab_labels_transitioned → dispatch_completed`，
       时间线无空洞、无空 redact。
 - [ ] **10. workspace + logs 保留**：成功 run 之后
       `~/.issuepilot/workspaces/group__issuepilot-smoke/<iid>/` 仍在；
@@ -267,6 +274,23 @@ pnpm dev:dashboard
       内容。
 
 10 项全过 = MVP §21 闭环验证 ✅。
+
+---
+
+## Smoke Evidence Template
+
+- Date:
+- Issue URL:
+- MR URL:
+- Workflow path:
+- Command:
+- API URL:
+- Dashboard URL:
+- Handoff note marker:
+- Closing note observed:
+- Final issue state:
+- Verification commands:
+- Operator notes:
 
 ---
 
