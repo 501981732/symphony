@@ -75,7 +75,7 @@ describe("retryRun", () => {
     const { deps, events, gitlab } = createDeps();
     const runId = seedRun(deps.state, { status: "failed", attempt: 2 });
 
-    const result = await retryRun({ runId, operator: "system" }, deps);
+    const result = await retryRun({ runId, operator: "alice" }, deps);
 
     expect(result.ok).toBe(true);
     expect(gitlab.transitionLabels).toHaveBeenCalledWith(1, {
@@ -90,6 +90,30 @@ describe("retryRun", () => {
       "operator_action_requested",
       "operator_action_succeeded",
     ]);
+
+    expect(events[0]).toMatchObject({
+      runId,
+      type: "operator_action_requested",
+      data: { action: "retry", operator: "alice" },
+      issue: {
+        iid: 1,
+        projectId: "g/p",
+        url: "https://gitlab.example.com/g/p/-/issues/1",
+      },
+    });
+    expect(events[0]?.id).toMatch(/[0-9a-f-]{36}/);
+    expect(events[0]?.createdAt).toBe("2026-05-15T12:00:00.000Z");
+    expect(events[0]?.ts).toBe("2026-05-15T12:00:00.000Z");
+
+    expect(events[1]).toMatchObject({
+      runId,
+      type: "operator_action_succeeded",
+      data: {
+        action: "retry",
+        operator: "alice",
+        transitions: ["attempt_incremented", "labels_to_rework"],
+      },
+    });
   });
 
   it("accepts retry from blocked status", async () => {
@@ -135,7 +159,19 @@ describe("retryRun", () => {
     const run = deps.state.getRun(runId);
     expect(run?.status).toBe("failed");
     expect(run?.attempt).toBe(1);
-    expect(events.at(-1)?.type).toBe("operator_action_failed");
+    // updatedAt should also roll back to the pre-retry value (set by seedRun)
+    // so the dashboard doesn't surface a stale "just retried" timestamp.
+    expect(run?.["updatedAt"]).toBe("2026-05-15T00:00:01.000Z");
+    expect(events.at(-1)).toMatchObject({
+      runId,
+      type: "operator_action_failed",
+      data: {
+        action: "retry",
+        operator: "system",
+        code: "gitlab_failed",
+        message: "network down",
+      },
+    });
   });
 });
 
@@ -179,7 +215,7 @@ describe("stopRun", () => {
     const runId = seedRun(deps.state, { status: "running" });
 
     const promise = stopRun(
-      { runId, operator: "system", cancelTimeoutMs: 50 },
+      { runId, operator: "bob", cancelTimeoutMs: 50 },
       deps,
     );
     await vi.advanceTimersByTimeAsync(100);
@@ -190,7 +226,16 @@ describe("stopRun", () => {
     expect((result as { code?: string }).code).toBe("cancel_failed");
     expect((result as { reason?: string }).reason).toBe("cancel_timeout");
     expect(deps.state.getRun(runId)?.status).toBe("stopping");
-    expect(events.at(-1)?.type).toBe("operator_action_failed");
+    expect(events.at(-1)).toMatchObject({
+      runId,
+      type: "operator_action_failed",
+      data: {
+        action: "stop",
+        operator: "bob",
+        code: "cancel_failed",
+        reason: "cancel_timeout",
+      },
+    });
   });
 
   it("marks run as stopping when cancel throws", async () => {

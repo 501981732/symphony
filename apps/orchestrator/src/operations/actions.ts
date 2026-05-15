@@ -131,6 +131,7 @@ export async function retryRun(
 
   const previousAttempt = run.attempt;
   const previousStatus = run.status;
+  const previousUpdatedAt = run["updatedAt"];
   const issue = run["issue"] as IssueLike | undefined;
   if (!issue) {
     emit(deps, "operator_action_failed", runId, {
@@ -165,10 +166,16 @@ export async function retryRun(
   } catch (err) {
     const current = deps.state.getRun(runId);
     if (current) {
+      // Rollback ALL fields the success path mutated so the dashboard
+      // doesn't see an updatedAt newer than the run's actual last
+      // observed state.
       deps.state.setRun(runId, {
         ...current,
         status: previousStatus,
         attempt: previousAttempt,
+        ...(typeof previousUpdatedAt === "string"
+          ? { updatedAt: previousUpdatedAt }
+          : {}),
       });
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -292,10 +299,11 @@ export async function archiveRun(
     return { ok: false, code: "invalid_status" };
   }
 
+  const archivedAt = nowIso(deps);
   deps.state.setRun(runId, {
     ...run,
-    archivedAt: nowIso(deps),
-    updatedAt: nowIso(deps),
+    archivedAt,
+    updatedAt: archivedAt,
   });
   emit(deps, "operator_action_succeeded", runId, {
     action: "archive",
