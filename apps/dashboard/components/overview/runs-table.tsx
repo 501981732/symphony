@@ -13,10 +13,13 @@ import {
   TableRow,
 } from "../ui/table";
 
+import { RunActions } from "./run-actions";
+
 const STATUS_TONES: Record<RunStatus, BadgeTone> = {
   claimed: "info",
   running: "info",
   retrying: "warning",
+  stopping: "warning",
   completed: "success",
   failed: "danger",
   blocked: "violet",
@@ -56,20 +59,42 @@ function compare(a: RunRecord, b: RunRecord, key: SortKey): number {
 
 interface RunsTableProps {
   runs: RunRecord[];
+  /**
+   * Optional callbacks fired when an operator clicks Retry / Stop / Archive
+   * on a row. The parent owns the API call, refresh, and pending state so
+   * `RunsTable` itself stays purely presentational.
+   */
+  onRetry?: (runId: string) => void;
+  onStop?: (runId: string) => void;
+  onArchive?: (runId: string) => void;
+  /** When true, disables all action buttons in every row. */
+  actionsPending?: boolean;
 }
 
-export function RunsTable({ runs }: RunsTableProps) {
+export function RunsTable({
+  runs,
+  onRetry,
+  onStop,
+  onArchive,
+  actionsPending = false,
+}: RunsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [direction, setDirection] = useState<SortDirection>("desc");
+  const [showArchived, setShowArchived] = useState(false);
+
+  const visible = useMemo(
+    () => (showArchived ? runs : runs.filter((r) => !r.archivedAt)),
+    [runs, showArchived],
+  );
 
   const sorted = useMemo(() => {
-    const next = [...runs];
+    const next = [...visible];
     next.sort((a, b) => {
       const result = compare(a, b, sortKey);
       return direction === "asc" ? result : -result;
     });
     return next;
-  }, [runs, sortKey, direction]);
+  }, [visible, sortKey, direction]);
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -80,11 +105,27 @@ export function RunsTable({ runs }: RunsTableProps) {
     }
   };
 
-  if (runs.length === 0) {
+  const archivedToggle = runs.some((r) => r.archivedAt) ? (
+    <label className="flex items-center gap-2 self-end text-xs text-slate-600">
+      <input
+        type="checkbox"
+        className="h-3.5 w-3.5"
+        checked={showArchived}
+        onChange={(e) => setShowArchived(e.target.checked)}
+      />
+      Show archived
+    </label>
+  ) : null;
+
+  if (sorted.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
-        No active runs yet. Add the <code className="font-mono">ai-ready</code>{" "}
-        label to a GitLab issue to kick one off.
+      <div className="flex flex-col gap-2">
+        {archivedToggle}
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
+          No active runs yet. Add the{" "}
+          <code className="font-mono">ai-ready</code> label to a GitLab issue
+          to kick one off.
+        </div>
       </div>
     );
   }
@@ -105,7 +146,9 @@ export function RunsTable({ runs }: RunsTableProps) {
   );
 
   return (
-    <Table>
+    <div className="flex flex-col gap-2">
+      {archivedToggle}
+      <Table>
       <TableHeader>
         <TableRow>
           {sortableHead("iid", "Issue")}
@@ -187,17 +230,33 @@ export function RunsTable({ runs }: RunsTableProps) {
               {run.workspacePath}
             </TableCell>
             <TableCell className="text-right">
-              <a
-                className="text-sky-700 hover:underline"
-                href={`/runs/${encodeURIComponent(run.runId)}`}
-                aria-label={`detail of ${run.runId}`}
-              >
-                detail
-              </a>
+              <div className="flex flex-col items-end gap-1">
+                <a
+                  className="text-sky-700 hover:underline"
+                  href={`/runs/${encodeURIComponent(run.runId)}`}
+                  aria-label={`detail of ${run.runId}`}
+                >
+                  detail
+                </a>
+                <RunActions
+                  run={{
+                    runId: run.runId,
+                    status: run.status,
+                    ...(run.archivedAt
+                      ? { archivedAt: run.archivedAt }
+                      : {}),
+                  }}
+                  {...(onRetry ? { onRetry } : {})}
+                  {...(onStop ? { onStop } : {})}
+                  {...(onArchive ? { onArchive } : {})}
+                  pending={actionsPending}
+                />
+              </div>
             </TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }

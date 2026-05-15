@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  archiveRun,
   getRunDetail,
   getState,
   listEvents,
   listRuns,
   resolveApiBase,
+  retryRun,
+  stopRun,
 } from "./api";
 
 const FAKE_BASE = "http://api.test";
@@ -134,5 +137,94 @@ describe("listEvents", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       `${FAKE_BASE}/api/events?runId=r1&limit=50&offset=10`,
     );
+  });
+});
+
+describe("listRuns includeArchived", () => {
+  it("passes includeArchived=true when requested", async () => {
+    const fetchMock = mockFetch([]);
+    await listRuns({ includeArchived: true });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      `${FAKE_BASE}/api/runs?includeArchived=true`,
+    );
+  });
+
+  it("omits includeArchived when false", async () => {
+    const fetchMock = mockFetch([]);
+    await listRuns({ includeArchived: false });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${FAKE_BASE}/api/runs`);
+  });
+});
+
+describe("operator action clients", () => {
+  it("retryRun POSTs without operator header by default", async () => {
+    const fetchMock = mockFetch({ ok: true });
+    await retryRun("r-1");
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe(`${FAKE_BASE}/api/runs/r-1/retry`);
+    const reqInit = init as RequestInit;
+    expect(reqInit.method).toBe("POST");
+    const headers = new Headers(reqInit.headers ?? undefined);
+    expect(headers.get("x-issuepilot-operator")).toBeNull();
+  });
+
+  it("stopRun POSTs to /stop", async () => {
+    const fetchMock = mockFetch({ ok: true });
+    await stopRun("r-1");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      `${FAKE_BASE}/api/runs/r-1/stop`,
+    );
+  });
+
+  it("archiveRun POSTs to /archive", async () => {
+    const fetchMock = mockFetch({ ok: true });
+    await archiveRun("r-1");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      `${FAKE_BASE}/api/runs/r-1/archive`,
+    );
+  });
+
+  it("URL-encodes runId in the action path", async () => {
+    const fetchMock = mockFetch({ ok: true });
+    await retryRun("r 1/2");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      `${FAKE_BASE}/api/runs/r%201%2F2/retry`,
+    );
+  });
+
+  it("throws ApiError on 409 invalid_status", async () => {
+    mockFetch({ ok: false, code: "invalid_status" }, { status: 409 });
+    await expect(stopRun("r-1")).rejects.toMatchObject({
+      status: 409,
+      code: "invalid_status",
+    });
+  });
+
+  it("throws ApiError on 409 cancel_failed with reason", async () => {
+    mockFetch(
+      { ok: false, code: "cancel_failed", reason: "cancel_timeout" },
+      { status: 409 },
+    );
+    await expect(stopRun("r-1")).rejects.toMatchObject({
+      status: 409,
+      code: "cancel_failed",
+      reason: "cancel_timeout",
+    });
+  });
+
+  it("throws ApiError on 503 actions_unavailable", async () => {
+    mockFetch({ ok: false, code: "actions_unavailable" }, { status: 503 });
+    await expect(retryRun("r-1")).rejects.toMatchObject({
+      status: 503,
+      code: "actions_unavailable",
+    });
+  });
+
+  it("includes operator header when explicitly supplied", async () => {
+    const fetchMock = mockFetch({ ok: true });
+    await retryRun("r-1", { operator: "alice" });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = new Headers(init.headers ?? undefined);
+    expect(headers.get("x-issuepilot-operator")).toBe("alice");
   });
 });

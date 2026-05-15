@@ -421,7 +421,7 @@ run IssuePilot on its day-to-day work.
 - Deployable to a shared team box or intranet service (multi-user friendly).
 - Multi-project workflow configuration in a single daemon.
 - Concurrency lifted from 1 to 2–5, with slot scheduling and lease policy.
-- Dashboard gains `retry`, `stop`, and `archive run` actions.
+- ✅ Dashboard gains `retry`, `stop`, and `archive run` actions (V2 Phase 2).
 - CI status ingestion + automatic flip of CI failures back to `ai-rework`.
 - MR / PR review feedback sweep (feed human review comments back into the
   next agent turn).

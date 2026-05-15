@@ -70,6 +70,9 @@ const REQUIRED_EVENT_TYPES = [
   "human_review_mr_closed_unmerged",
   "human_review_rework_requested",
   "human_review_reconcile_failed",
+  "operator_action_requested",
+  "operator_action_succeeded",
+  "operator_action_failed",
 ] as const;
 
 describe("@issuepilot/shared-contracts/events", () => {
@@ -89,6 +92,12 @@ describe("@issuepilot/shared-contracts/events", () => {
     expect(isEventType("gitlab_mr_created")).toBe(true);
     expect(isEventType("nope")).toBe(false);
     expect(isEventType(null)).toBe(false);
+  });
+
+  it("isEventType narrows new operator action types", () => {
+    expect(isEventType("operator_action_requested")).toBe(true);
+    expect(isEventType("operator_action_succeeded")).toBe(true);
+    expect(isEventType("operator_action_failed")).toBe(true);
   });
 
   it("IssuePilotEvent requires id / runId / issue / type / message / createdAt", () => {

@@ -4,8 +4,9 @@ import type {
   OrchestratorStateSnapshot,
   RunRecord,
 } from "@issuepilot/shared-contracts";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
 
+import { ApiError, archiveRun, retryRun, stopRun } from "../../lib/api";
 import { useEventStream } from "../../lib/use-event-stream";
 
 import { ProjectList } from "./project-list";
@@ -39,6 +40,7 @@ export function OverviewPage({
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [runs, setRuns] = useState(initialRuns);
   const [error, setError] = useState<string | null>(null);
+  const [actionsPending, startAction] = useTransition();
   const pendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightRef = useRef(false);
 
@@ -73,6 +75,48 @@ export function OverviewPage({
       }
     },
   });
+
+  const performAction = useCallback(
+    (
+      runId: string,
+      action: (id: string) => Promise<{ ok: true }>,
+      label: string,
+    ): void => {
+      startAction(async () => {
+        try {
+          await action(runId);
+          await doRefresh();
+        } catch (err) {
+          if (err instanceof ApiError) {
+            const detail = err.reason
+              ? `${err.code ?? "error"}:${err.reason}`
+              : (err.code ?? `HTTP ${err.status}`);
+            setError(`${label} failed for ${runId} (${detail})`);
+          } else {
+            setError(
+              err instanceof Error
+                ? `${label} failed for ${runId}: ${err.message}`
+                : `${label} failed for ${runId}`,
+            );
+          }
+        }
+      });
+    },
+    [doRefresh],
+  );
+
+  const handleRetry = useCallback(
+    (runId: string) => performAction(runId, retryRun, "retry"),
+    [performAction],
+  );
+  const handleStop = useCallback(
+    (runId: string) => performAction(runId, stopRun, "stop"),
+    [performAction],
+  );
+  const handleArchive = useCallback(
+    (runId: string) => performAction(runId, archiveRun, "archive"),
+    [performAction],
+  );
 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
@@ -113,7 +157,13 @@ export function OverviewPage({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Runs
         </h2>
-        <RunsTable runs={runs} />
+        <RunsTable
+          runs={runs}
+          onRetry={handleRetry}
+          onStop={handleStop}
+          onArchive={handleArchive}
+          actionsPending={actionsPending}
+        />
       </section>
     </main>
   );

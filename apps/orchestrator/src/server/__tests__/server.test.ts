@@ -5,8 +5,9 @@ import type {
 } from "@issuepilot/shared-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { OperatorActionResult } from "../../operations/actions.js";
 import { createRuntimeState } from "../../runtime/state.js";
-import { createServer } from "../index.js";
+import { createServer, type ServerDeps } from "../index.js";
 
 type TestEvent = {
   id: string;
@@ -31,6 +32,7 @@ async function buildTestApp(
     ) => Promise<string[]>;
     runtime?: TeamRuntimeSummary | (() => TeamRuntimeSummary);
     projects?: ProjectSummary[] | (() => ProjectSummary[]);
+    operatorActions?: ServerDeps["operatorActions"];
   } = {},
 ) {
   const state = createRuntimeState();
@@ -47,6 +49,9 @@ async function buildTestApp(
       concurrency: overrides.concurrency ?? 1,
       ...(overrides.runtime ? { runtime: overrides.runtime } : {}),
       ...(overrides.projects ? { projects: overrides.projects } : {}),
+      ...(overrides.operatorActions
+        ? { operatorActions: overrides.operatorActions }
+        : {}),
     },
     { port: 0 },
   );
@@ -491,5 +496,332 @@ describe("Orchestrator HTTP API", () => {
     expect(body).not.toContain("secret-token");
     expect(body).not.toContain("glpat-12345678901234567890");
     expect(body).toContain("[REDACTED]");
+  });
+});
+
+type ActionFn = (input: {
+  runId: string;
+  operator: string;
+  cancelTimeoutMs?: number;
+}) => Promise<OperatorActionResult>;
+
+function buildActions(partial: {
+  retry?: ActionFn;
+  stop?: ActionFn;
+  archive?: ActionFn;
+}): NonNullable<ServerDeps["operatorActions"]> {
+  return {
+    retry: partial.retry ?? (async () => ({ ok: true })),
+    stop: partial.stop ?? (async () => ({ ok: true })),
+    archive: partial.archive ?? (async () => ({ ok: true })),
+  };
+}
+
+describe("operator action routes", () => {
+  it("POST /api/runs/:runId/retry returns 200 and defaults operator to system", async () => {
+    const retry = vi.fn<ActionFn>(async () => ({ ok: true }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ retry }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/retry",
+      });
+      expect(resp.statusCode).toBe(200);
+      expect(JSON.parse(resp.body)).toEqual({ ok: true });
+      expect(retry).toHaveBeenCalledWith({
+        runId: "run-1",
+        operator: "system",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST honors x-issuepilot-operator header", async () => {
+    const retry = vi.fn<ActionFn>(async () => ({ ok: true }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ retry }),
+    });
+    try {
+      await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/retry",
+        headers: { "x-issuepilot-operator": "alice" },
+      });
+      expect(retry).toHaveBeenCalledWith({
+        runId: "run-1",
+        operator: "alice",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST returns 409 on invalid_status", async () => {
+    const stop = vi.fn<ActionFn>(async () => ({
+      ok: false,
+      code: "invalid_status",
+    }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ stop }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/stop",
+      });
+      expect(resp.statusCode).toBe(409);
+      expect(JSON.parse(resp.body)).toMatchObject({
+        ok: false,
+        code: "invalid_status",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST returns 409 on cancel_failed and surfaces reason", async () => {
+    const stop = vi.fn<ActionFn>(async () => ({
+      ok: false,
+      code: "cancel_failed",
+      reason: "cancel_timeout",
+    }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ stop }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/stop",
+      });
+      expect(resp.statusCode).toBe(409);
+      expect(JSON.parse(resp.body)).toMatchObject({
+        ok: false,
+        code: "cancel_failed",
+        reason: "cancel_timeout",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST returns 404 on not_found", async () => {
+    const archive = vi.fn<ActionFn>(async () => ({
+      ok: false,
+      code: "not_found",
+    }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ archive }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/archive",
+      });
+      expect(resp.statusCode).toBe(404);
+      expect(JSON.parse(resp.body)).toMatchObject({
+        ok: false,
+        code: "not_found",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST returns 500 on gitlab_failed", async () => {
+    const retry = vi.fn<ActionFn>(async () => ({
+      ok: false,
+      code: "gitlab_failed",
+      message: "no route to host",
+    }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ retry }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/retry",
+      });
+      expect(resp.statusCode).toBe(500);
+      expect(JSON.parse(resp.body)).toMatchObject({
+        ok: false,
+        code: "gitlab_failed",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST returns 503 actions_unavailable when operatorActions is not wired", async () => {
+    const { app } = await buildTestApp();
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/retry",
+      });
+      expect(resp.statusCode).toBe(503);
+      expect(JSON.parse(resp.body)).toMatchObject({
+        ok: false,
+        code: "actions_unavailable",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("dispatches to stop and archive routes by URL path", async () => {
+    const stop = vi.fn<ActionFn>(async () => ({ ok: true }));
+    const archive = vi.fn<ActionFn>(async () => ({ ok: true }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ stop, archive }),
+    });
+    try {
+      await app.inject({ method: "POST", url: "/api/runs/run-1/stop" });
+      expect(stop).toHaveBeenCalledTimes(1);
+
+      await app.inject({ method: "POST", url: "/api/runs/run-1/archive" });
+      expect(archive).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST /stop forwards cancelTimeoutMs query parameter", async () => {
+    const stop = vi.fn<ActionFn>(async () => ({ ok: true }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ stop }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/stop?cancelTimeoutMs=750",
+      });
+      expect(resp.statusCode).toBe(200);
+      expect(stop).toHaveBeenCalledWith({
+        runId: "run-1",
+        operator: "system",
+        cancelTimeoutMs: 750,
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST /stop rejects invalid cancelTimeoutMs with 400", async () => {
+    const stop = vi.fn<ActionFn>(async () => ({ ok: true }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ stop }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/stop?cancelTimeoutMs=0",
+      });
+      expect(resp.statusCode).toBe(400);
+      expect(stop).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("archived run filter", () => {
+  it("GET /api/runs hides archived runs by default", async () => {
+    const { app, state } = await buildTestApp();
+    try {
+      state.setRun("active", {
+        runId: "active",
+        status: "completed",
+        attempt: 1,
+        issue: {
+          id: "1",
+          iid: 1,
+          title: "Fix",
+          url: "https://example/-/issues/1",
+          projectId: "g/p",
+          labels: [],
+        },
+      });
+      state.setRun("archived", {
+        runId: "archived",
+        status: "completed",
+        attempt: 1,
+        archivedAt: "2026-05-15T00:00:00.000Z",
+        issue: {
+          id: "2",
+          iid: 2,
+          title: "Done",
+          url: "https://example/-/issues/2",
+          projectId: "g/p",
+          labels: [],
+        },
+      });
+
+      const resp = await app.inject({ method: "GET", url: "/api/runs" });
+      const body = JSON.parse(resp.body) as Array<{ runId: string }>;
+      expect(body.map((r) => r.runId)).toEqual(["active"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("GET /api/runs?includeArchived=true returns archived runs", async () => {
+    const { app, state } = await buildTestApp();
+    try {
+      state.setRun("archived", {
+        runId: "archived",
+        status: "completed",
+        attempt: 1,
+        archivedAt: "2026-05-15T00:00:00.000Z",
+        issue: {
+          id: "2",
+          iid: 2,
+          title: "Done",
+          url: "https://example/-/issues/2",
+          projectId: "g/p",
+          labels: [],
+        },
+      });
+
+      const resp = await app.inject({
+        method: "GET",
+        url: "/api/runs?includeArchived=true",
+      });
+      const body = JSON.parse(resp.body) as Array<{ runId: string }>;
+      expect(body.map((r) => r.runId)).toContain("archived");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("GET /api/runs ignores invalid includeArchived values", async () => {
+    const { app, state } = await buildTestApp();
+    try {
+      state.setRun("archived", {
+        runId: "archived",
+        status: "completed",
+        attempt: 1,
+        archivedAt: "2026-05-15T00:00:00.000Z",
+        issue: {
+          id: "2",
+          iid: 2,
+          title: "Done",
+          url: "https://example/-/issues/2",
+          projectId: "g/p",
+          labels: [],
+        },
+      });
+
+      const resp = await app.inject({
+        method: "GET",
+        url: "/api/runs?includeArchived=yes",
+      });
+      const body = JSON.parse(resp.body) as Array<{ runId: string }>;
+      expect(body).toEqual([]);
+    } finally {
+      await app.close();
+    }
   });
 });

@@ -40,6 +40,13 @@ import {
 } from "@issuepilot/workspace";
 import { execa } from "execa";
 
+import {
+  archiveRun,
+  retryRun,
+  stopRun,
+  type OperatorActionDeps,
+  type OperatorActionInput,
+} from "./operations/actions.js";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
@@ -49,6 +56,7 @@ import {
 } from "./orchestrator/human-review.js";
 import { startLoop } from "./orchestrator/loop.js";
 import { reconcile } from "./orchestrator/reconcile.js";
+import { createRunCancelRegistry } from "./runtime/run-cancel-registry.js";
 import { createConcurrencySlots } from "./runtime/slots.js";
 import { createRuntimeState, type RuntimeState } from "./runtime/state.js";
 import { createServer } from "./server/index.js";
@@ -384,6 +392,7 @@ export async function startDaemon(
     path.join(workflow.workspace.root, ".issuepilot", "events"),
   );
   const runIndex = new Map<string, { projectSlug: string; issueIid: number }>();
+  const runCancelRegistry = createRunCancelRegistry();
 
   /**
    * Resolve GitLab credentials before the server starts taking traffic. The
@@ -482,6 +491,35 @@ export async function startDaemon(
       });
   };
 
+  // Operator action services publish directly to the event bus (they do not
+  // have access to publishEvent's eventStore-aware path). Bridge those
+  // records into the eventStore so `/api/events?runId=...` and the
+  // dashboard's audit log can surface them alongside dispatch/codex events.
+  // The bus already received the record from actions.ts; this subscriber
+  // strictly appends to disk and never re-publishes.
+  eventBus.subscribe((record) => {
+    if (!record.type.startsWith("operator_action_")) return;
+    const existing = runIndex.get(record.runId);
+    const run = state.getRun(record.runId);
+    const issueIid =
+      existing?.issueIid ??
+      (typeof run?.["issue"] === "object" &&
+      run["issue"] !== null &&
+      "iid" in run["issue"]
+        ? Number((run["issue"] as { iid: unknown }).iid)
+        : undefined);
+    if (!issueIid || !Number.isFinite(issueIid)) return;
+    const key = existing ?? runKey(workflow, issueIid);
+    runIndex.set(record.runId, key);
+    void eventStore
+      .append(key.projectSlug, key.issueIid, record)
+      .catch((err) => {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT") return;
+        console.error(err);
+      });
+  });
+
   const publishHumanReviewEvent = (event: HumanReviewEvent): void => {
     syncHumanReviewFinalLabels(state, event);
     if (event.issueIid > 0) {
@@ -520,6 +558,25 @@ export async function startDaemon(
     });
   };
 
+  const operatorActionDeps = (): OperatorActionDeps => ({
+    state,
+    eventBus,
+    runCancelRegistry,
+    gitlab: {
+      transitionLabels: async (iid, labels) => {
+        await gitlab.transitionLabels(iid, labels);
+      },
+    },
+    workflow: {
+      tracker: {
+        runningLabel: workflow.tracker.runningLabel,
+        reworkLabel: workflow.tracker.reworkLabel,
+        failedLabel: workflow.tracker.failedLabel,
+        blockedLabel: workflow.tracker.blockedLabel,
+      },
+    },
+  });
+
   const serverFactory = deps.createServer ?? createServer;
   const app = await serverFactory(
     {
@@ -545,6 +602,14 @@ export async function startDaemon(
           ),
           readOpts?.limit,
         ),
+      operatorActions: {
+        retry: (input: OperatorActionInput) =>
+          retryRun(input, operatorActionDeps()),
+        stop: (input: OperatorActionInput) =>
+          stopRun(input, operatorActionDeps()),
+        archive: (input: OperatorActionInput) =>
+          archiveRun(input, operatorActionDeps()),
+      },
     },
     { host, port },
   );
@@ -801,12 +866,15 @@ export async function startDaemon(
                     ts: new Date().toISOString(),
                     detail: { data },
                   }),
+                onTurnActive: (cancel) =>
+                  runCancelRegistry.register(runId, cancel),
               });
               return {
                 status: result.status,
                 summary: result.failureReason,
               };
             } finally {
+              runCancelRegistry.unregister(runId);
               await rpc.close();
             }
           },

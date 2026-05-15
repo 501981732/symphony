@@ -8,12 +8,13 @@ import {
 } from "../run.js";
 
 describe("@issuepilot/shared-contracts/run", () => {
-  it("RUN_STATUS_VALUES enumerates exactly the six P0 statuses", () => {
+  it("RUN_STATUS_VALUES enumerates the seven dashboard-visible statuses", () => {
     expect(new Set(RUN_STATUS_VALUES)).toEqual(
       new Set([
         "claimed",
         "running",
         "retrying",
+        "stopping",
         "completed",
         "failed",
         "blocked",
@@ -75,6 +76,33 @@ describe("@issuepilot/shared-contracts/run", () => {
 
     expect(run.projectId).toBe("platform-web");
     expect(run.projectName).toBe("Platform Web");
+  });
+
+  it("accepts stopping run status", () => {
+    expect(isRunStatus("stopping")).toBe(true);
+  });
+
+  it("allows RunRecord to carry archivedAt", () => {
+    const run: RunRecord = {
+      runId: "run-1",
+      issue: {
+        id: "1",
+        iid: 1,
+        title: "Fix checkout",
+        url: "https://gitlab.example.com/group/web/-/issues/1",
+        projectId: "group/web",
+        labels: ["ai-failed"],
+      },
+      status: "failed",
+      attempt: 1,
+      branch: "ai/1-fix",
+      workspacePath: "/tmp/run-1",
+      startedAt: "2026-05-15T00:00:00.000Z",
+      updatedAt: "2026-05-15T00:00:01.000Z",
+      archivedAt: "2026-05-15T00:01:00.000Z",
+    };
+
+    expect(run.archivedAt).toBe("2026-05-15T00:01:00.000Z");
   });
 
   it("RunRecord.mergeRequestUrl / endedAt / lastError / dashboard metadata are optional", () => {

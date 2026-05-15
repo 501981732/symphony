@@ -167,4 +167,52 @@ describe("startTeamDaemon", () => {
     await handle.stop();
     expect(createdApp?.close).toHaveBeenCalled();
   });
+
+  it("does not wire operatorActions in Phase 2 (V2 dispatch lands later)", async () => {
+    const loadTeamConfig = vi.fn(async () => baseConfig());
+    const registry: ProjectRegistry = {
+      enabledProjects: () => [],
+      project: () => undefined,
+      summaries: () => summaries,
+      updateProjectPoll: () => {},
+      updateProjectActiveRuns: () => {},
+    };
+    const createProjectRegistry = vi.fn(async () => registry);
+    const leaseStore: LeaseStore = {
+      acquire: vi.fn(async () => null),
+      release: vi.fn(async () => undefined),
+      heartbeat: vi.fn(async () => null),
+      expireStale: vi.fn(async () => []),
+      active: vi.fn(async () => []),
+      activeCount: () => 0,
+    };
+    const createLeaseStore = vi.fn(() => leaseStore);
+    const createServer = vi.fn(async (deps: ServerDeps) => {
+      createdDeps = deps;
+      const close = vi.fn(async () => {});
+      const fake: FakeServer = {
+        listening: true,
+        close,
+        server: { address: () => ({ port: 4738 }) },
+      };
+      createdApp = fake;
+      return fake as never;
+    });
+
+    const handle = await startTeamDaemon(
+      { configPath: "/srv/issuepilot.team.yaml", host: "127.0.0.1", port: 4738 },
+      {
+        loadTeamConfig,
+        createProjectRegistry,
+        createServer,
+        createLeaseStore,
+      },
+    );
+
+    try {
+      expect(createdDeps?.operatorActions).toBeUndefined();
+    } finally {
+      await handle.stop();
+    }
+  });
 });

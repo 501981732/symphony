@@ -10,6 +10,7 @@ import type {
 } from "@issuepilot/shared-contracts";
 import Fastify, { type FastifyInstance } from "fastify";
 
+import type { OperatorActionResult } from "../operations/actions.js";
 import type { RuntimeState } from "../runtime/state.js";
 
 export interface ServerDeps {
@@ -37,6 +38,27 @@ export interface ServerDeps {
   runtime?: TeamRuntimeSummary | (() => TeamRuntimeSummary);
   /** V2 team project rollups; same value-or-getter semantics as `runtime`. */
   projects?: ProjectSummary[] | (() => ProjectSummary[]);
+  /**
+   * Operator-initiated retry / stop / archive entry points. When absent the
+   * POST routes respond with HTTP 503 `actions_unavailable` so dashboards
+   * see a deterministic error instead of a 5xx black box. V2 team daemon
+   * currently leaves this unwired pending dispatch integration.
+   */
+  operatorActions?: {
+    retry(input: {
+      runId: string;
+      operator: string;
+    }): Promise<OperatorActionResult>;
+    stop(input: {
+      runId: string;
+      operator: string;
+      cancelTimeoutMs?: number;
+    }): Promise<OperatorActionResult>;
+    archive(input: {
+      runId: string;
+      operator: string;
+    }): Promise<OperatorActionResult>;
+  };
 }
 
 function resolveSnapshotField<T>(
@@ -115,6 +137,13 @@ function buildDashboardSummary(
   runs: Array<Record<string, unknown>>,
   handoffLabel: string,
 ): Record<string, number> {
+  // NOTE: `stopping` is intentionally not bucketed. It's a transient state
+  // produced only when `stopRun` fails to cancel (cancel_timeout etc.) and
+  // resolves quickly via `turnTimeoutMs` into `failed`. The dashboard summary
+  // contract `DASHBOARD_SUMMARY_VALUES` (spec §14) only tracks long-lived
+  // states. Surfacing `stopping` would require coordinated changes to
+  // `packages/shared-contracts` and the dashboard `SummaryCards` highlight
+  // map, which is out of Phase 2 scope.
   const summary = {
     running: 0,
     retrying: 0,
@@ -183,25 +212,30 @@ export async function createServer(
     };
   });
 
-  app.get<{ Querystring: { status?: string; limit?: string } }>(
-    "/api/runs",
-    async (request, reply) => {
-      const status = request.query.status;
-      const limit = parseOptionalPositiveInt(request.query.limit);
-      if (request.query.limit !== undefined && limit === undefined) {
-        return reply
-          .code(400)
-          .send({ error: "limit must be a positive integer" });
-      }
-      let runs = status ? deps.state.listRuns(status) : deps.state.allRuns();
-      runs = runs.slice(0, limit ?? 50);
-      return Promise.all(
-        runs.map(async (run) =>
-          enrichRunForDashboard(run, await deps.readEvents(run.runId)),
-        ),
+  app.get<{
+    Querystring: { status?: string; limit?: string; includeArchived?: string };
+  }>("/api/runs", async (request, reply) => {
+    const status = request.query.status;
+    const limit = parseOptionalPositiveInt(request.query.limit);
+    if (request.query.limit !== undefined && limit === undefined) {
+      return reply
+        .code(400)
+        .send({ error: "limit must be a positive integer" });
+    }
+    const includeArchived = request.query.includeArchived === "true";
+    let runs = status ? deps.state.listRuns(status) : deps.state.allRuns();
+    if (!includeArchived) {
+      runs = runs.filter(
+        (run) => !(run as { archivedAt?: unknown }).archivedAt,
       );
-    },
-  );
+    }
+    runs = runs.slice(0, limit ?? 50);
+    return Promise.all(
+      runs.map(async (run) =>
+        enrichRunForDashboard(run, await deps.readEvents(run.runId)),
+      ),
+    );
+  });
 
   app.get<{ Params: { runId: string } }>(
     "/api/runs/:runId",
@@ -279,6 +313,90 @@ export async function createServer(
       unsub();
     });
     reply.raw.write(": connected\n\n");
+  });
+
+  function statusFromCode(code: string): number {
+    if (code === "not_found") return 404;
+    if (code === "invalid_status" || code === "cancel_failed") return 409;
+    if (code === "gitlab_failed" || code === "internal_error") return 500;
+    return 500;
+  }
+
+  function extractOperator(headers: Record<string, unknown>): string {
+    const raw = headers["x-issuepilot-operator"];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof value !== "string" || value.length === 0) return "system";
+    return value;
+  }
+
+  app.post<{
+    Params: { runId: string };
+  }>("/api/runs/:runId/retry", async (request, reply) => {
+    if (!deps.operatorActions) {
+      return reply.code(503).send({ ok: false, code: "actions_unavailable" });
+    }
+    const operator = extractOperator(
+      request.headers as Record<string, unknown>,
+    );
+    const result = await deps.operatorActions.retry({
+      runId: request.params.runId,
+      operator,
+    });
+    if (result.ok) {
+      return reply.code(200).send({ ok: true });
+    }
+    return reply.code(statusFromCode(result.code)).send(result);
+  });
+
+  app.post<{
+    Params: { runId: string };
+    Querystring: { cancelTimeoutMs?: string };
+  }>("/api/runs/:runId/stop", async (request, reply) => {
+    if (!deps.operatorActions) {
+      return reply.code(503).send({ ok: false, code: "actions_unavailable" });
+    }
+    const operator = extractOperator(
+      request.headers as Record<string, unknown>,
+    );
+    const cancelTimeoutMs = parseOptionalPositiveInt(
+      request.query.cancelTimeoutMs,
+    );
+    if (
+      request.query.cancelTimeoutMs !== undefined &&
+      cancelTimeoutMs === undefined
+    ) {
+      return reply
+        .code(400)
+        .send({ error: "cancelTimeoutMs must be a positive integer" });
+    }
+    const result = await deps.operatorActions.stop({
+      runId: request.params.runId,
+      operator,
+      ...(cancelTimeoutMs !== undefined ? { cancelTimeoutMs } : {}),
+    });
+    if (result.ok) {
+      return reply.code(200).send({ ok: true });
+    }
+    return reply.code(statusFromCode(result.code)).send(result);
+  });
+
+  app.post<{
+    Params: { runId: string };
+  }>("/api/runs/:runId/archive", async (request, reply) => {
+    if (!deps.operatorActions) {
+      return reply.code(503).send({ ok: false, code: "actions_unavailable" });
+    }
+    const operator = extractOperator(
+      request.headers as Record<string, unknown>,
+    );
+    const result = await deps.operatorActions.archive({
+      runId: request.params.runId,
+      operator,
+    });
+    if (result.ok) {
+      return reply.code(200).send({ ok: true });
+    }
+    return reply.code(statusFromCode(result.code)).send(result);
   });
 
   const host = opts.host ?? "127.0.0.1";

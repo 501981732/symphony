@@ -13,7 +13,13 @@ async function fetchOverview(): Promise<{
   snapshot: OrchestratorStateSnapshot;
   runs: RunRecord[];
 }> {
-  const [snapshot, runs] = await Promise.all([getState(), listRuns()]);
+  // Pull archived runs too so the `Show archived` toggle in `RunsTable` has
+  // something to reveal. The orchestrator default-hides archived runs; the
+  // dashboard always wants the full set and filters client-side.
+  const [snapshot, runs] = await Promise.all([
+    getState(),
+    listRuns({ includeArchived: true }),
+  ]);
   return { snapshot, runs };
 }
 

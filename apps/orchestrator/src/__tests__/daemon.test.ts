@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { hostnameFromBaseUrl, splitCommand } from "../daemon.js";
 import { startDaemon } from "../daemon.js";
 import type { LoopDeps } from "../orchestrator/loop.js";
+import type { ServerDeps } from "../server/index.js";
 import { createRuntimeState } from "../runtime/state.js";
 
 function createWorkflow(root: string): WorkflowConfig {
@@ -340,6 +341,139 @@ describe("startDaemon human-review event publishing", () => {
         data: expect.objectContaining({ issueIid: 7 }),
       });
       expect(isEventType(event?.["type"])).toBe(true);
+    } finally {
+      await daemon.stop();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("wires operatorActions (retry/stop/archive) into createServer", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "issuepilot-daemon-operator-actions-"),
+    );
+    const workflow = createWorkflow(root);
+    let serverDeps: ServerDeps | undefined;
+    const createServer = vi.fn(async (deps: ServerDeps) => {
+      serverDeps = deps;
+      return createFakeServer();
+    });
+
+    const daemon = await startDaemon(
+      { workflowPath: workflow.source.path },
+      {
+        workflowLoader: {
+          loadOnce: vi.fn(async () => workflow),
+          start: vi.fn(async () => ({
+            stop: vi.fn(async () => {}),
+          })),
+          render: vi.fn(() => "prompt"),
+        },
+        createGitLab: vi.fn(async () =>
+          createGitLabForHumanReviewScanPollution(),
+        ),
+        createServer,
+        startLoop: vi.fn(() => ({
+          tick: vi.fn(async () => {}),
+          stop: vi.fn(async () => {}),
+        })),
+        state: createRuntimeState(),
+      },
+    );
+
+    try {
+      expect(serverDeps).toBeDefined();
+      expect(serverDeps?.operatorActions).toBeDefined();
+      expect(typeof serverDeps?.operatorActions?.retry).toBe("function");
+      expect(typeof serverDeps?.operatorActions?.stop).toBe("function");
+      expect(typeof serverDeps?.operatorActions?.archive).toBe("function");
+    } finally {
+      await daemon.stop();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("operatorActions.retry delegates to retryRun against runtime state", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "issuepilot-daemon-operator-retry-"),
+    );
+    const workflow = createWorkflow(root);
+    const gitlab = createGitLabForHumanReviewScanPollution();
+    let serverDeps: ServerDeps | undefined;
+    const state = createRuntimeState();
+    state.setRun("run-9", {
+      runId: "run-9",
+      status: "failed",
+      attempt: 1,
+      issue: {
+        id: "9",
+        iid: 9,
+        title: "Boom",
+        url: "https://gitlab.example.com/group/project/-/issues/9",
+        projectId: "group/project",
+        labels: ["ai-failed"],
+      },
+    });
+
+    const daemon = await startDaemon(
+      { workflowPath: workflow.source.path },
+      {
+        workflowLoader: {
+          loadOnce: vi.fn(async () => workflow),
+          start: vi.fn(async () => ({
+            stop: vi.fn(async () => {}),
+          })),
+          render: vi.fn(() => "prompt"),
+        },
+        createGitLab: vi.fn(async () => gitlab),
+        createServer: vi.fn(async (deps: ServerDeps) => {
+          serverDeps = deps;
+          return createFakeServer();
+        }),
+        startLoop: vi.fn(() => ({
+          tick: vi.fn(async () => {}),
+          stop: vi.fn(async () => {}),
+        })),
+        state,
+      },
+    );
+
+    try {
+      const result = await serverDeps!.operatorActions!.retry({
+        runId: "run-9",
+        operator: "alice",
+      });
+      expect(result.ok).toBe(true);
+      expect(state.getRun("run-9")?.status).toBe("claimed");
+      expect(state.getRun("run-9")?.attempt).toBe(2);
+      expect(gitlab.transitionLabels).toHaveBeenCalledWith(9, {
+        add: ["ai-rework"],
+        remove: ["ai-running", "ai-failed", "ai-blocked"],
+      });
+
+      // The daemon's eventBus subscriber must bridge operator_action_*
+      // records into the per-run eventStore so `/api/events?runId=...`
+      // (the dashboard's audit log query) sees the retry attempt. Without
+      // this bridge actions.ts publishes only to the bus and the audit
+      // trail vanishes the moment the SSE client disconnects.
+      //
+      // The bridge's `eventStore.append` is fire-and-forget (matches the
+      // existing publishEvent pattern), so poll briefly for the records
+      // instead of asserting synchronously.
+      const deadline = Date.now() + 2_000;
+      let types: string[] = [];
+      while (Date.now() < deadline) {
+        const events = await serverDeps!.readEvents("run-9");
+        types = events.map((e) => e.type);
+        if (
+          types.includes("operator_action_requested") &&
+          types.includes("operator_action_succeeded")
+        ) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(types).toContain("operator_action_requested");
+      expect(types).toContain("operator_action_succeeded");
     } finally {
       await daemon.stop();
       await fs.rm(root, { recursive: true, force: true });

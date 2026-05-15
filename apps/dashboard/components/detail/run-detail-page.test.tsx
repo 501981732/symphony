@@ -1,11 +1,23 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { IssuePilotEvent, RunRecord } from "@issuepilot/shared-contracts";
 
 import { __setEventSourceFactory } from "../../lib/use-event-stream";
 import { RunDetailPage } from "./run-detail-page";
+
+const routerRefresh = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: routerRefresh,
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+}));
 
 class FakeES {
   static instances: FakeES[] = [];
@@ -66,6 +78,7 @@ const initialEvent: IssuePilotEvent = {
 
 beforeEach(() => {
   FakeES.instances = [];
+  routerRefresh.mockClear();
   __setEventSourceFactory((url) => new FakeES(url) as never);
 });
 
@@ -124,5 +137,40 @@ describe("RunDetailPage", () => {
     });
 
     expect(screen.getAllByText("started")).toHaveLength(1);
+  });
+
+  it("renders RunActions in the header for a failed run", () => {
+    render(
+      <RunDetailPage
+        run={{ ...run, status: "failed" }}
+        initialEvents={[]}
+        logsTail={[]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /archive/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders RunActions Stop button for a running run", () => {
+    render(
+      <RunDetailPage run={run} initialEvents={[]} logsTail={[]} />,
+    );
+    expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
+  });
+
+  it("calls onRetry when Retry header button is clicked", () => {
+    const onRetry = vi.fn();
+    render(
+      <RunDetailPage
+        run={{ ...run, status: "failed" }}
+        initialEvents={[]}
+        logsTail={[]}
+        onRetry={onRetry}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(onRetry).toHaveBeenCalledWith(run.runId);
   });
 });

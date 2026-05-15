@@ -1,0 +1,23 @@
+[
+  {
+    "expect": "initialize",
+    "respond": {
+      "result": { "serverInfo": { "name": "fake-codex", "version": "0.0.0" } }
+    }
+  },
+  { "expect": "initialized" },
+  {
+    "expect": "thread/start",
+    "respond": { "result": { "threadId": "t1" } }
+  },
+  {
+    "expect": "turn/start",
+    "respond": { "result": { "turnId": "u1" } }
+  },
+  {
+    "notify": "turn/notification",
+    "params": { "turnId": "u1", "message": "long-running task; ignores interrupt" }
+  },
+  { "expect": "turn/interrupt" },
+  { "expect": "__never_sent_method__" }
+]

@@ -25,12 +25,28 @@ export function resolveApiBase(): string {
 
 export class ApiError extends Error {
   override name = "ApiError";
+  /**
+   * The orchestrator `code` field (e.g. `invalid_status`, `cancel_failed`,
+   * `actions_unavailable`). Populated when the response body is a JSON
+   * object containing a string `code`; otherwise undefined.
+   */
+  public readonly code: string | undefined;
+  /**
+   * Secondary discriminator surfaced by the `stop` action when cancel
+   * fails (one of `cancel_timeout` / `cancel_threw` / `not_registered`).
+   */
+  public readonly reason: string | undefined;
   constructor(
     message: string,
     public readonly status: number,
     public readonly body: unknown,
   ) {
     super(message);
+    if (body && typeof body === "object") {
+      const data = body as { code?: unknown; reason?: unknown };
+      if (typeof data.code === "string") this.code = data.code;
+      if (typeof data.reason === "string") this.reason = data.reason;
+    }
   }
 }
 
@@ -76,6 +92,13 @@ export function getState(
 export interface ListRunsParams {
   status?: RunStatus | readonly RunStatus[];
   limit?: number;
+  /**
+   * When true, sends `?includeArchived=true` so the orchestrator returns
+   * runs whose `archivedAt` field is set. Operator-archived runs are
+   * hidden by default in both the orchestrator response and dashboard
+   * tables; flip this to true to surface them under "Show archived".
+   */
+  includeArchived?: boolean;
 }
 
 export function listRuns(
@@ -91,6 +114,9 @@ export function listRuns(
   }
   if (typeof params.limit === "number" && Number.isFinite(params.limit)) {
     search.set("limit", String(params.limit));
+  }
+  if (params.includeArchived === true) {
+    search.set("includeArchived", "true");
   }
   const query = search.toString();
   return apiGet<RunRecord[]>(`/api/runs${query ? `?${query}` : ""}`, opts);
@@ -131,4 +157,70 @@ export function eventStreamUrl(runId?: string): string {
   if (!runId) return base;
   const search = new URLSearchParams({ runId });
   return `${base}?${search.toString()}`;
+}
+
+export interface OperatorActionOptions {
+  /**
+   * Optional operator identity sent as the `x-issuepilot-operator` header.
+   * When omitted, the dashboard relies on the orchestrator's default
+   * `"system"` so V2 P0 (no auth) and V3+ (real user identity) share the
+   * same wire contract.
+   */
+  operator?: string;
+  signal?: AbortSignal;
+}
+
+async function postRunAction(
+  runId: string,
+  action: "retry" | "stop" | "archive",
+  opts: OperatorActionOptions = {},
+): Promise<{ ok: true }> {
+  const path = `/api/runs/${encodeURIComponent(runId)}/${action}`;
+  const url = `${resolveApiBase()}${path}`;
+  const headers: Record<string, string> = { accept: "application/json" };
+  if (opts.operator && opts.operator.length > 0) {
+    headers["x-issuepilot-operator"] = opts.operator;
+  }
+  const init: RequestInit = {
+    method: "POST",
+    headers,
+    cache: "no-store",
+  };
+  if (opts.signal) init.signal = opts.signal;
+  const response = await fetch(url, init);
+  if (response.ok) {
+    return { ok: true };
+  }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = await response.text().catch(() => null);
+  }
+  throw new ApiError(
+    `POST ${path} failed: HTTP ${response.status}`,
+    response.status,
+    body,
+  );
+}
+
+export function retryRun(
+  runId: string,
+  opts: OperatorActionOptions = {},
+): Promise<{ ok: true }> {
+  return postRunAction(runId, "retry", opts);
+}
+
+export function stopRun(
+  runId: string,
+  opts: OperatorActionOptions = {},
+): Promise<{ ok: true }> {
+  return postRunAction(runId, "stop", opts);
+}
+
+export function archiveRun(
+  runId: string,
+  opts: OperatorActionOptions = {},
+): Promise<{ ok: true }> {
+  return postRunAction(runId, "archive", opts);
 }

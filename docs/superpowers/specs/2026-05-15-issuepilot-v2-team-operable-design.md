@@ -370,6 +370,10 @@ V2 实现需要覆盖：
 
 - `docs/superpowers/plans/2026-05-15-issuepilot-v2-dashboard-operations.md`
 
+补充设计：
+
+- `docs/superpowers/specs/2026-05-15-issuepilot-v2-phase2-dashboard-operations-design.md`
+
 ### Phase 3：CI 回流
 
 - GitLab pipeline lookup。
