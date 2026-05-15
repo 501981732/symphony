@@ -44,12 +44,31 @@ export interface TeamRetentionConfig {
   maxWorkspaceGb: number;
 }
 
+/**
+ * Team-wide CI feedback override. When `enabled` is `true`, the V2
+ * daemon's reconciliation loop runs the CI feedback scanner regardless
+ * of per-workflow defaults. `null` (the absence of the `ci` section)
+ * means "fall back to each project's WORKFLOW.md `ci` block" so an
+ * existing team config doesn't suddenly start polling pipelines after
+ * an orchestrator upgrade.
+ */
+export interface TeamCiConfig {
+  enabled: boolean;
+  onFailure: "ai-rework" | "human-review";
+  waitForPipeline: boolean;
+}
+
 export interface TeamConfig {
   version: 1;
   server: { host: string; port: number };
   scheduler: TeamSchedulerConfig;
   projects: TeamProjectConfig[];
   retention: TeamRetentionConfig;
+  /**
+   * Optional team-wide CI override; `null` means defer to per-workflow
+   * `ci` section.
+   */
+  ci: TeamCiConfig | null;
   source: { path: string; sha256: string; loadedAt: string };
 }
 
@@ -89,12 +108,21 @@ const rawRetentionSchema = z
   })
   .optional();
 
+const rawCiSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    on_failure: z.enum(["ai-rework", "human-review"]).optional(),
+    wait_for_pipeline: z.boolean().optional(),
+  })
+  .optional();
+
 const rawConfigSchema = z.object({
   version: z.literal(1),
   server: rawServerSchema,
   scheduler: rawSchedulerSchema,
   projects: z.array(rawProjectSchema).min(1),
   retention: rawRetentionSchema,
+  ci: rawCiSchema,
 });
 
 function camelToSnake(segment: string): string {
@@ -195,6 +223,14 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
     maxWorkspaceGb: parsed.retention?.max_workspace_gb ?? 50,
   };
 
+  const ci: TeamCiConfig | null = parsed.ci
+    ? {
+        enabled: parsed.ci.enabled ?? false,
+        onFailure: parsed.ci.on_failure ?? "ai-rework",
+        waitForPipeline: parsed.ci.wait_for_pipeline ?? true,
+      }
+    : null;
+
   return {
     version: 1,
     server: {
@@ -204,6 +240,7 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
     scheduler,
     projects,
     retention,
+    ci,
     source: {
       path: configPath,
       sha256: crypto.createHash("sha256").update(raw).digest("hex"),

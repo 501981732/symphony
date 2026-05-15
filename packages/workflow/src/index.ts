@@ -3,6 +3,7 @@ export const VERSION = "0.0.0";
 
 export type {
   AgentConfig,
+  CiConfig,
   CodexApprovalPolicy,
   CodexConfig,
   CodexThreadSandbox,

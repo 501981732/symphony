@@ -7,6 +7,7 @@ import { z, type ZodIssue } from "zod";
 
 import type {
   AgentConfig,
+  CiConfig,
   CodexConfig,
   GitConfig,
   HooksConfig,
@@ -111,6 +112,14 @@ const HooksSchema = z
   })
   .prefault({});
 
+const CiSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    on_failure: z.enum(["ai-rework", "human-review"]).default("ai-rework"),
+    wait_for_pipeline: z.boolean().default(true),
+  })
+  .prefault({});
+
 const WorkflowFrontMatterSchema = z.object({
   tracker: TrackerSchema,
   workspace: WorkspaceSchema,
@@ -118,6 +127,7 @@ const WorkflowFrontMatterSchema = z.object({
   agent: AgentSchema,
   codex: CodexSchema,
   hooks: HooksSchema,
+  ci: CiSchema,
   poll_interval_ms: z.number().int().min(1_000).default(10_000),
 });
 
@@ -193,6 +203,12 @@ export async function parseWorkflowFile(
     hooks.afterRun = fm.hooks.after_run;
   }
 
+  const ci: CiConfig = {
+    enabled: fm.ci.enabled,
+    onFailure: fm.ci.on_failure,
+    waitForPipeline: fm.ci.wait_for_pipeline,
+  };
+
   return {
     tracker,
     workspace,
@@ -200,6 +216,7 @@ export async function parseWorkflowFile(
     agent,
     codex,
     hooks,
+    ci,
     pollIntervalMs: fm.poll_interval_ms,
     promptTemplate,
     source: {

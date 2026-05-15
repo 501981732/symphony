@@ -62,6 +62,29 @@ export interface HooksConfig {
   afterRun?: string;
 }
 
+/**
+ * CI feedback policy applied during the `human-review` reconciliation
+ * loop (V2 spec §9). When `enabled`, the orchestrator polls the latest
+ * pipeline on the run's source branch:
+ *
+ * - `success` keeps the run in `human-review` and merely records the
+ *   observation.
+ * - `failed` recycles the issue to `onFailure` (`ai-rework` by default,
+ *   meaning "ask Codex to retry"; setting `human-review` keeps the run
+ *   parked but emits the observation event for visibility).
+ * - `running` / `pending` are no-ops aside from emitting `ci_status_observed`.
+ *
+ * `waitForPipeline` is reserved for a follow-up plan and currently maps
+ * to a no-op flag carried through configuration to avoid breaking team
+ * configs that already encode user intent. Defaults match V2 spec §9:
+ * `{ enabled: false, onFailure: "ai-rework", waitForPipeline: true }`.
+ */
+export interface CiConfig {
+  enabled: boolean;
+  onFailure: "ai-rework" | "human-review";
+  waitForPipeline: boolean;
+}
+
 export interface WorkflowSource {
   path: string;
   sha256: string;
@@ -75,6 +98,7 @@ export interface WorkflowConfig {
   agent: AgentConfig;
   codex: CodexConfig;
   hooks: HooksConfig;
+  ci: CiConfig;
   /** Orchestrator main-loop poll interval in milliseconds. Defaults to 10 000. */
   pollIntervalMs: number;
   promptTemplate: string;
