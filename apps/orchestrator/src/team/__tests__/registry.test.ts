@@ -119,6 +119,7 @@ describe("project registry", () => {
       id: "infra-tools",
       gitlabProject: "",
       enabled: false,
+      disabledReason: "config",
     });
   });
 
@@ -147,6 +148,7 @@ describe("project registry", () => {
     expect(registry.summaries()[0]).toMatchObject({
       id: "platform-web",
       enabled: false,
+      disabledReason: "load-error",
       lastError: "workflow missing tracker.project_id",
     });
   });

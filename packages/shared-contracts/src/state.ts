@@ -54,6 +54,20 @@ export interface OrchestratorStateSnapshot {
 }
 
 /**
+ * Why a project is currently inactive in the team registry. The two reasons
+ * carry different operator semantics:
+ *
+ *  - `config`: project is intentionally disabled (`enabled: false` in
+ *    `issuepilot.team.yaml`). No action required.
+ *  - `load-error`: workflow file failed to load. Operator must fix the
+ *    referenced WORKFLOW.md before the project can rejoin the schedule;
+ *    `lastError` carries the failure detail.
+ *
+ * `disabledReason` is `undefined` when `enabled === true`.
+ */
+export type ProjectDisabledReason = "config" | "load-error";
+
+/**
  * Per-project rollup used by the V2 team-operable dashboard.
  *
  * `enabled === false` means the project was declared in the team config but
@@ -69,6 +83,7 @@ export interface ProjectSummary {
   activeRuns: number;
   lastPollAt: string | null;
   lastError?: string;
+  disabledReason?: ProjectDisabledReason;
 }
 
 /**

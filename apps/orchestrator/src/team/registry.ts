@@ -114,6 +114,7 @@ export async function createProjectRegistry(
       enabled: false,
       activeRuns: 0,
       lastPollAt: null,
+      disabledReason: entry.state.reason,
     };
     if (entry.state.lastError) base.lastError = entry.state.lastError;
     return base;

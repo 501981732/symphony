@@ -41,6 +41,42 @@ describe("ProjectList", () => {
     ).toBeInTheDocument();
   });
 
+  it("distinguishes manually-disabled projects from load-error projects", () => {
+    render(
+      <ProjectList
+        projects={[
+          {
+            id: "manual-off",
+            name: "Manual Off",
+            workflowPath: "/srv/manual-off/WORKFLOW.md",
+            gitlabProject: "group/manual-off",
+            enabled: false,
+            activeRuns: 0,
+            lastPollAt: null,
+            disabledReason: "config",
+          },
+          {
+            id: "broken-wf",
+            name: "Broken WF",
+            workflowPath: "/srv/broken-wf/WORKFLOW.md",
+            gitlabProject: "group/broken-wf",
+            enabled: false,
+            activeRuns: 0,
+            lastPollAt: null,
+            disabledReason: "load-error",
+            lastError: "ENOENT: workflow file missing",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("disabled")).toBeInTheDocument();
+    expect(screen.getByText("load error")).toBeInTheDocument();
+    expect(
+      screen.getByText("ENOENT: workflow file missing"),
+    ).toBeInTheDocument();
+  });
+
   it("renders Last poll in a stable UTC format to avoid SSR hydration mismatch", () => {
     render(
       <ProjectList

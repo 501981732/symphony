@@ -40,8 +40,20 @@ export function ProjectList({ projects }: ProjectListProps) {
                 {project.gitlabProject || project.workflowPath}
               </p>
             </div>
-            <Badge tone={project.enabled ? "info" : "neutral"}>
-              {project.enabled ? `${project.activeRuns} active` : "disabled"}
+            <Badge
+              tone={
+                project.enabled
+                  ? "info"
+                  : project.disabledReason === "load-error"
+                    ? "danger"
+                    : "neutral"
+              }
+            >
+              {project.enabled
+                ? `${project.activeRuns} active`
+                : project.disabledReason === "load-error"
+                  ? "load error"
+                  : "disabled"}
             </Badge>
           </div>
           <div className="text-xs text-slate-500">
