@@ -19,6 +19,19 @@ describe("CLI", () => {
     process.exitCode = 0;
   });
 
+  it("prints the package version", async () => {
+    const output: string[] = [];
+    const cli = buildCli();
+    cli.configureOutput({ writeOut: (text) => output.push(text) });
+    cli.exitOverride();
+
+    await expect(
+      cli.parseAsync(["--version"], { from: "user" }),
+    ).rejects.toMatchObject({ code: "commander.version" });
+
+    expect(output.join("")).toContain("0.1.0");
+  });
+
   it("validate fails for missing workflow", async () => {
     const cli = buildCli();
     const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -251,6 +264,44 @@ describe("CLI", () => {
     expect(output).toContain("git");
     expect(output).toContain("state dir");
     mockLog.mockRestore();
+  });
+
+  it("dashboard starts with configured port and API URL", async () => {
+    const spawnDashboard = vi.fn(async () => ({
+      wait: async () => undefined,
+    }));
+    const cli = buildCli({ spawnDashboard });
+
+    await cli.parseAsync(
+      ["dashboard", "--port", "3333", "--api-url", "http://127.0.0.1:4738"],
+      { from: "user" },
+    );
+
+    expect(spawnDashboard).toHaveBeenCalledWith({
+      port: 3333,
+      host: "127.0.0.1",
+      apiUrl: "http://127.0.0.1:4738",
+    });
+  });
+
+  it("dashboard rejects invalid port", async () => {
+    const spawnDashboard = vi.fn(async () => ({
+      wait: async () => undefined,
+    }));
+    const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cli = buildCli({ spawnDashboard });
+
+    await cli.parseAsync(["dashboard", "--port", "70000"], {
+      from: "user",
+    });
+
+    expect(process.exitCode).toBe(1);
+    expect(spawnDashboard).not.toHaveBeenCalled();
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining("invalid port"),
+    );
+    mockError.mockRestore();
+    process.exitCode = 0;
   });
 
   it("run fails for missing workflow", async () => {

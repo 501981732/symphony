@@ -142,9 +142,10 @@ Implemented in this repository:
 
 Still stabilizing:
 
-- P0 source-checkout usage is supported; packaged install/upgrade is still a
-  V1 release task.
-- Public packaging and versioned releases.
+- V1 local CLI packaging is available through `pnpm release:pack`; the generated
+  tarball installs an `issuepilot` executable for local pilots.
+- The package is still a local tarball release, not a published npm registry
+  package.
 
 ## How It Works
 
@@ -206,6 +207,35 @@ SPEC.md                          Original language-agnostic Symphony spec
 
 The root `.npmrc` enables strict engine checks.
 
+## Installable Local Release
+
+Build and install the local V1 package:
+
+```bash
+corepack enable
+pnpm install
+pnpm release:pack
+npm install -g ./dist/release/issuepilot-0.1.0.tgz
+```
+
+Then run IssuePilot from any directory:
+
+```bash
+issuepilot --version
+issuepilot doctor
+issuepilot validate --workflow /path/to/target-project/WORKFLOW.md
+issuepilot run --workflow /path/to/target-project/WORKFLOW.md
+issuepilot dashboard
+```
+
+The dashboard command starts the packaged Next.js dashboard and points at
+`http://127.0.0.1:4738` by default. Use `--api-url` if the orchestrator runs on
+a different port:
+
+```bash
+issuepilot dashboard --port 3000 --api-url http://127.0.0.1:4738
+```
+
 ## Development Setup
 
 ```bash
@@ -221,11 +251,13 @@ Useful commands:
 pnpm build
 pnpm lint
 pnpm format:check
+pnpm release:check
 pnpm --filter @issuepilot/workflow test
 pnpm --filter @issuepilot/orchestrator test
 ```
 
-After building, the CLI can be exercised from the workspace root:
+For contributor workflows, the CLI can still be exercised from the workspace
+root:
 
 ```bash
 pnpm build
@@ -343,26 +375,29 @@ In active development; large parts are already usable in this repository:
   the issue.
 - ✅ Read-only Next.js dashboard (overview + run detail + SSE timeline).
 - ✅ Fake GitLab + fake Codex end-to-end harness + real GitLab smoke runbook.
-- ✅ P0 source-checkout usage for local pilots.
-- 🚧 Release evidence and docs are still being tightened before a stable V1.
+- ✅ Installable local CLI tarball with installed `issuepilot run` and
+  `issuepilot dashboard` startup paths.
+- ✅ Release evidence gate via `pnpm release:check`.
+- ✅ Source-checkout usage remains available for contributors and rollback.
 
 ### V1 — Stable local release
 
-Goal: make the current single-machine loop installable, repeatable, and safe
-for internal pilot teams without changing the core execution model.
+Goal: make the current single-machine loop installable, repeatable, and safe for
+internal pilot teams without changing the core execution model.
 
-- Public or internal package distribution (npm package, standalone tarball, or
-  internal registry package).
-- Versioned releases with upgrade notes, rollback notes, and compatibility
-  expectations.
-- Stable workflow schema, event contract, CLI commands, and dashboard API for
+- ✅ Installable CLI distribution through npm-compatible package tooling, with
+  `issuepilot` as the executable command.
+- ✅ Installed startup path for the local loop: `issuepilot run --workflow ...`
+  for daemon/API and an installed dashboard start command for the local UI.
+- ✅ Release gate that combines unit tests, fake E2E, smoke wrapper, installed
+  CLI smoke, and `git diff --check`.
+- ✅ Operational docs for install, startup, auth, log redaction, and failed /
+  blocked run debugging.
+- 🚧 Versioned tags with release notes, rollback notes, and compatibility
+  expectations for the local loop.
+- 🚧 Stable workflow schema, event contract, CLI commands, and dashboard API for
   the local loop.
-- Release gate that combines unit tests, fake E2E, smoke wrapper, and fixed
-  real-GitLab evidence fields.
-- Source-checkout and packaged-install docs kept side by side.
-- Basic migration guide for existing local state under `~/.issuepilot`.
-- Operational docs for auth refresh, token rotation, log redaction, and
-  debugging failed / blocked runs.
+- ✅ Source-checkout remains supported for contributors and emergency rollback.
 
 ### V2 — Team-operable release
 

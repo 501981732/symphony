@@ -78,22 +78,14 @@ describe("authLogin", () => {
     expect(requestDeviceCode).toHaveBeenCalledOnce();
     expect(pollForToken).toHaveBeenCalledOnce();
     const stored = await store.read("gitlab.example.com");
-    expect(stored?.accessToken).toBe(
-      "oauth-test-supersecret-1234567890abcdef",
-    );
-    expect(stored?.refreshToken).toBe(
-      "oauth-test-refresh-zzzzzzzzzzzzzzzzzz",
-    );
+    expect(stored?.accessToken).toBe("oauth-test-supersecret-1234567890abcdef");
+    expect(stored?.refreshToken).toBe("oauth-test-refresh-zzzzzzzzzzzzzzzzzz");
     expect(stored?.scope).toBe("api read_repository write_repository");
     expect(result.credential.clientId).toBe("test-client");
 
     const fullOutput = cliConsole.lines.join("\n");
-    expect(fullOutput).not.toContain(
-      "oauth-test-supersecret-1234567890abcdef",
-    );
-    expect(fullOutput).not.toContain(
-      "oauth-test-refresh-zzzzzzzzzzzzzzzzzz",
-    );
+    expect(fullOutput).not.toContain("oauth-test-supersecret-1234567890abcdef");
+    expect(fullOutput).not.toContain("oauth-test-refresh-zzzzzzzzzzzzzzzzzz");
     expect(fullOutput).toContain("ABCD-EFGH");
   });
 

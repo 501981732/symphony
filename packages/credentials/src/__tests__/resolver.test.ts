@@ -1,15 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { OAuthError } from "../device-flow.js";
-import {
-  CredentialError,
-  createCredentialResolver,
-} from "../resolver.js";
+import { CredentialError, createCredentialResolver } from "../resolver.js";
 import type { CredentialsStore } from "../store.js";
-import type {
-  OAuthTokenResponse,
-  StoredCredential,
-} from "../types.js";
+import type { OAuthTokenResponse, StoredCredential } from "../types.js";
 
 function fakeStore(initial: StoredCredential[] = []): CredentialsStore {
   const data = new Map<string, StoredCredential>();
@@ -30,7 +24,9 @@ function fakeStore(initial: StoredCredential[] = []): CredentialsStore {
   };
 }
 
-function envFromMap(env: Record<string, string>): { get: (n: string) => string | undefined } {
+function envFromMap(env: Record<string, string>): {
+  get: (n: string) => string | undefined;
+} {
   return { get: (name) => env[name] };
 }
 
@@ -90,12 +86,14 @@ describe("createCredentialResolver", () => {
       expiresAt: new Date(now + 60_000).toISOString(), // 1 minute left
     };
     const store = fakeStore([cred]);
-    const refresh = vi.fn(async (): Promise<OAuthTokenResponse> => ({
-      accessToken: "oauth-test-new",
-      refreshToken: "oauth-test-refresh-2",
-      tokenType: "Bearer",
-      expiresAt: new Date(now + 7_200_000).toISOString(),
-    }));
+    const refresh = vi.fn(
+      async (): Promise<OAuthTokenResponse> => ({
+        accessToken: "oauth-test-new",
+        refreshToken: "oauth-test-refresh-2",
+        tokenType: "Bearer",
+        expiresAt: new Date(now + 7_200_000).toISOString(),
+      }),
+    );
     const resolver = createCredentialResolver({
       store,
       env: envFromMap({}),
@@ -172,12 +170,14 @@ describe("createCredentialResolver", () => {
       expiresAt: new Date(now + 7_200_000).toISOString(),
     };
     const store = fakeStore([cred]);
-    const refresh = vi.fn(async (): Promise<OAuthTokenResponse> => ({
-      accessToken: "oauth-test-new",
-      refreshToken: "oauth-test-refresh-2",
-      tokenType: "Bearer",
-      expiresAt: new Date(now + 7_200_000).toISOString(),
-    }));
+    const refresh = vi.fn(
+      async (): Promise<OAuthTokenResponse> => ({
+        accessToken: "oauth-test-new",
+        refreshToken: "oauth-test-refresh-2",
+        tokenType: "Bearer",
+        expiresAt: new Date(now + 7_200_000).toISOString(),
+      }),
+    );
     const resolver = createCredentialResolver({
       store,
       env: envFromMap({}),

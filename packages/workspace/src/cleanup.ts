@@ -38,8 +38,6 @@ export interface PruneWorktreeInput {
  * P1 placeholder: prune a worktree and optionally delete its branch.
  * Not called in P0.
  */
-export async function pruneWorktree(
-  _input: PruneWorktreeInput,
-): Promise<void> {
+export async function pruneWorktree(_input: PruneWorktreeInput): Promise<void> {
   // intentionally empty for P0
 }

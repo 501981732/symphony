@@ -1,10 +1,7 @@
 export const PACKAGE_NAME = "@issuepilot/credentials";
 export const VERSION = "0.0.0";
 
-export {
-  DEFAULT_OAUTH_CLIENT_ID,
-  DEFAULT_OAUTH_SCOPES,
-} from "./types.js";
+export { DEFAULT_OAUTH_CLIENT_ID, DEFAULT_OAUTH_SCOPES } from "./types.js";
 export type {
   CredentialResolver,
   DeviceCodeRequest,
@@ -35,10 +32,7 @@ export {
   type CredentialsPathOptions,
 } from "./paths.js";
 
-export {
-  createCredentialsStore,
-  type CredentialsStore,
-} from "./store.js";
+export { createCredentialsStore, type CredentialsStore } from "./store.js";
 
 export {
   CredentialError,

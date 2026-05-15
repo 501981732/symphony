@@ -1,9 +1,4 @@
-import {
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -158,22 +153,26 @@ describe("createWorkflowLoader", () => {
     const defaultWarn = vi.fn();
     const overrideWarn = vi.fn();
     const loader = createWorkflowLoader({ logger: { warn: defaultWarn } });
-    await loader.render("{{ issue.bogus }}", {
-      issue: {
-        id: "g1",
-        iid: 1,
-        identifier: "g/p#1",
-        title: "t",
-        description: "d",
-        labels: [],
-        url: "https://example.com",
-        author: "a",
-        assignees: [],
+    await loader.render(
+      "{{ issue.bogus }}",
+      {
+        issue: {
+          id: "g1",
+          iid: 1,
+          identifier: "g/p#1",
+          title: "t",
+          description: "d",
+          labels: [],
+          url: "https://example.com",
+          author: "a",
+          assignees: [],
+        },
+        attempt: 1,
+        workspace: { path: "/tmp" },
+        git: { branch: "ai/1" },
       },
-      attempt: 1,
-      workspace: { path: "/tmp" },
-      git: { branch: "ai/1" },
-    }, { logger: { warn: overrideWarn } });
+      { logger: { warn: overrideWarn } },
+    );
 
     expect(overrideWarn).toHaveBeenCalled();
     expect(defaultWarn).not.toHaveBeenCalled();

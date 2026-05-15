@@ -6,16 +6,19 @@
 
 最快路径只需要记住两件事：
 
-- **IssuePilot 仓库**：你在这里安装、登录、启动 orchestrator 和 dashboard。
+- **IssuePilot 仓库**：你在这里构建或获取本地安装包。
 - **目标项目仓库**：真正要被 AI 修改的业务仓库，里面需要放 `WORKFLOW.md`。
 
 ```text
 /path/to/issuepilot
-  运行：pnpm smoke / pnpm dev:dashboard / pnpm exec issuepilot ...
+  构建安装包：pnpm release:pack
 
 /path/to/target-project
   存放：WORKFLOW.md
   被 IssuePilot 创建 worktree 后修改
+
+安装后的 CLI
+  运行：issuepilot doctor / issuepilot run / issuepilot dashboard
 ```
 
 ---
@@ -30,20 +33,21 @@ IssuePilot 是本地单机 orchestrator。它会：
 4. 推送分支，创建或更新 MR，给 Issue 写 handoff note。
 5. 把 Issue label 从 `ai-running` 切到 `human-review`、`ai-failed` 或 `ai-blocked`。
 
-P0 是本地开发工具，不是 SaaS、集群或自动合并系统。MR 合并前必须人工 review。
-P0 source-checkout 使用方式已支持；打包安装、升级路径仍属于 V1 release 任务。
+V1 是本地开发工具，不是 SaaS、集群或自动合并系统。MR 合并前必须人工 review。
+稳定本地路径是安装后的 `issuepilot` CLI；source-checkout 命令继续保留给贡献者开发和紧急回滚。
 
 ---
 
-## 2. 准备环境
+## 2. 安装 IssuePilot
 
 在 **IssuePilot 仓库**里执行：
 
 ```bash
 corepack enable
 pnpm install
-pnpm -F @issuepilot/orchestrator build
-pnpm exec issuepilot doctor
+pnpm release:pack
+npm install -g ./dist/release/issuepilot-0.1.0.tgz
+issuepilot doctor
 ```
 
 期望 `doctor` 输出里 Node.js、Git、Codex app-server、`~/.issuepilot/state` 都是 `[OK]`。
@@ -58,6 +62,13 @@ pnpm exec issuepilot doctor
 | Codex CLI | 需要能执行 `codex app-server`，且已登录  |
 | GitLab    | 一个测试项目，支持 API、label、Issue、MR |
 | SSH key   | 能 push 到目标项目                       |
+
+贡献者开发兜底：
+
+```bash
+pnpm build
+pnpm exec issuepilot doctor
+```
 
 ---
 
@@ -239,11 +250,11 @@ IssuePilot 支持两条常用路径。个人开发机推荐 OAuth；CI 或团队
 - 如果有 Device Authorization Grant 开关，需要勾选
 - 保存后复制 **Application ID**，它就是 `--client-id`
 
-然后在 **IssuePilot 仓库**里登录：
+然后使用安装后的 CLI 登录：
 
 ```bash
-pnpm exec issuepilot auth login --hostname gitlab.example.com --client-id <oauth-application-id>
-pnpm exec issuepilot auth status --hostname gitlab.example.com
+issuepilot auth login --hostname gitlab.example.com --client-id <oauth-application-id>
+issuepilot auth status --hostname gitlab.example.com
 ```
 
 `--client-id` 是 OAuth Application 的公开 Application ID，不是 Application Secret，也不是 Access Token。
@@ -251,8 +262,8 @@ pnpm exec issuepilot auth status --hostname gitlab.example.com
 如果你同时使用两套公司 GitLab，需要分别登录：
 
 ```bash
-pnpm exec issuepilot auth login --hostname gitlab.chehejia.com --client-id <oauth-application-id>
-pnpm exec issuepilot auth login --hostname gitlabee.chehejia.com --client-id <oauth-application-id>
+issuepilot auth login --hostname gitlab.chehejia.com --client-id <oauth-application-id>
+issuepilot auth login --hostname gitlabee.chehejia.com --client-id <oauth-application-id>
 ```
 
 登录成功后，token 会保存到 `~/.issuepilot/credentials`，文件权限为 `0600`。如果你使用 OAuth 登录，workflow 里不要写 `tracker.token_env`；一旦写了 `tracker.token_env`，daemon 会要求对应环境变量必须存在。
@@ -290,13 +301,12 @@ export GITLABEE_TOKEN="<gitlabee.chehejia.com token>"
 
 ## 6. 验证 workflow
 
-在 **IssuePilot 仓库**里执行：
+安装 CLI 后，在任意 shell 执行：
 
 ```bash
-cd /path/to/issuepilot
 # 如果这是新终端，把第 4 节复制的绝对路径重新放进变量
 export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
-pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
+issuepilot validate --workflow "$WORKFLOW_PATH"
 ```
 
 成功时应该看到：
@@ -324,15 +334,12 @@ Validation passed.
 
 ### 7.1 终端 A：启动 orchestrator
 
-推荐用 smoke wrapper，它会等待 daemon ready：
-
 ```bash
-cd /path/to/issuepilot
 export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
-pnpm smoke --workflow "$WORKFLOW_PATH"
+issuepilot run --workflow "$WORKFLOW_PATH" --port 4738 --host 127.0.0.1
 ```
 
-也可以直接启动：
+贡献者 source-checkout 兜底：
 
 ```bash
 cd /path/to/issuepilot
@@ -349,8 +356,7 @@ API: http://127.0.0.1:4738
 ### 7.2 终端 B：启动 dashboard
 
 ```bash
-cd /path/to/issuepilot
-pnpm dev:dashboard
+issuepilot dashboard
 ```
 
 打开：
@@ -362,7 +368,7 @@ http://localhost:3000
 dashboard 默认连接 `http://127.0.0.1:4738`。如果 orchestrator 用了其他端口，启动 dashboard 时指定：
 
 ```bash
-NEXT_PUBLIC_API_BASE=http://127.0.0.1:4839 pnpm dev:dashboard
+issuepilot dashboard --api-url http://127.0.0.1:4839
 ```
 
 如果页面显示 `IssuePilot orchestrator unreachable` / `fetch failed`，先确认终端 A 里的 orchestrator 还在运行，并且 dashboard 连接的是同一个端口。
@@ -417,24 +423,22 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:4839 pnpm dev:dashboard
 
 ```bash
 # 环境检查
-cd /path/to/issuepilot
 export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
-pnpm exec issuepilot doctor
+issuepilot doctor
 
 # OAuth 登录
-pnpm exec issuepilot auth login --hostname <gitlab-host> --client-id <oauth-application-id>
-pnpm exec issuepilot auth status --hostname <gitlab-host>
-pnpm exec issuepilot auth logout --hostname <gitlab-host>
+issuepilot auth login --hostname <gitlab-host> --client-id <oauth-application-id>
+issuepilot auth status --hostname <gitlab-host>
+issuepilot auth logout --hostname <gitlab-host>
 
 # 校验 workflow
-pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
+issuepilot validate --workflow "$WORKFLOW_PATH"
 
 # 启动 orchestrator
-pnpm smoke --workflow "$WORKFLOW_PATH"
-pnpm exec issuepilot run --workflow "$WORKFLOW_PATH"
+issuepilot run --workflow "$WORKFLOW_PATH"
 
 # 启动 dashboard
-pnpm dev:dashboard
+issuepilot dashboard
 ```
 
 ---
@@ -457,7 +461,7 @@ codex app-server --help
 GitLab 上没有注册匹配的 OAuth Application，或没有启用 Device Authorization Grant。重新注册 Application，复制 Application ID，再执行：
 
 ```bash
-pnpm exec issuepilot auth login --hostname <host> --client-id <oauth-application-id>
+issuepilot auth login --hostname <host> --client-id <oauth-application-id>
 ```
 
 **GitLab 401 / 403**
@@ -469,9 +473,8 @@ pnpm exec issuepilot auth login --hostname <host> --client-id <oauth-application
 dashboard 只是前端。必须另开一个终端启动 orchestrator：
 
 ```bash
-cd /path/to/issuepilot
 export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
-pnpm smoke --workflow "$WORKFLOW_PATH"
+issuepilot run --workflow "$WORKFLOW_PATH"
 ```
 
 如果 orchestrator 不在 `4738`，用 `NEXT_PUBLIC_API_BASE` 指定地址。

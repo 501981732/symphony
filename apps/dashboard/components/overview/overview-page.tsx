@@ -6,7 +6,6 @@ import type {
 } from "@issuepilot/shared-contracts";
 import { useCallback, useRef, useState } from "react";
 
-
 import { useEventStream } from "../../lib/use-event-stream";
 
 import { RunsTable } from "./runs-table";
@@ -81,8 +80,8 @@ export function OverviewPage({
           IssuePilot Dashboard
         </h1>
         <p className="text-sm text-slate-500">
-          Read-only live timeline of the local orchestrator. Updates stream
-          over SSE from <code className="font-mono">/api/events/stream</code>.
+          Read-only live timeline of the local orchestrator. Updates stream over
+          SSE from <code className="font-mono">/api/events/stream</code>.
         </p>
         {error && (
           <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">

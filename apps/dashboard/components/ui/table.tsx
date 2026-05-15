@@ -27,10 +27,7 @@ export function TableHeader({
   ...rest
 }: HTMLAttributes<HTMLTableSectionElement>) {
   return (
-    <thead
-      className={cn("bg-slate-50 text-slate-600", className)}
-      {...rest}
-    />
+    <thead className={cn("bg-slate-50 text-slate-600", className)} {...rest} />
   );
 }
 

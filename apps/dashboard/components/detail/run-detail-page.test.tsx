@@ -2,10 +2,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type {
-  IssuePilotEvent,
-  RunRecord,
-} from "@issuepilot/shared-contracts";
+import type { IssuePilotEvent, RunRecord } from "@issuepilot/shared-contracts";
 
 import { __setEventSourceFactory } from "../../lib/use-event-stream";
 import { RunDetailPage } from "./run-detail-page";
@@ -88,9 +85,7 @@ describe("RunDetailPage", () => {
 
     expect(screen.getByText("#42")).toBeInTheDocument();
     expect(screen.getByText("fix flaky test")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "merge request" }),
-    ).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "merge request" })).toHaveAttribute(
       "href",
       "https://gitlab.example.com/group/project/-/merge_requests/7",
     );
@@ -100,11 +95,7 @@ describe("RunDetailPage", () => {
 
   it("subscribes to events scoped by runId and appends live events", () => {
     render(
-      <RunDetailPage
-        run={run}
-        initialEvents={[initialEvent]}
-        logsTail={[]}
-      />,
+      <RunDetailPage run={run} initialEvents={[initialEvent]} logsTail={[]} />,
     );
     expect(FakeES.instances).toHaveLength(1);
     expect(FakeES.instances[0]!.url).toContain("runId=r1");
@@ -125,11 +116,7 @@ describe("RunDetailPage", () => {
 
   it("ignores duplicate events with the same id", () => {
     render(
-      <RunDetailPage
-        run={run}
-        initialEvents={[initialEvent]}
-        logsTail={[]}
-      />,
+      <RunDetailPage run={run} initialEvents={[initialEvent]} logsTail={[]} />,
     );
 
     act(() => {

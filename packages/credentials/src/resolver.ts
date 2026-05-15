@@ -51,7 +51,11 @@ function defaultBaseUrl(hostname: string): string {
   return /^https?:\/\//i.test(hostname) ? hostname : `https://${hostname}`;
 }
 
-function shouldRefresh(cred: StoredCredential, nowMs: number, skew: number): boolean {
+function shouldRefresh(
+  cred: StoredCredential,
+  nowMs: number,
+  skew: number,
+): boolean {
   const expiresAtMs = Date.parse(cred.expiresAt);
   if (Number.isNaN(expiresAtMs)) return false;
   return expiresAtMs - nowMs <= skew;
@@ -80,8 +84,7 @@ function applyTokenToCredential(
 export function createCredentialResolver(
   deps: CreateResolverDeps,
 ): CredentialResolver {
-  const env: EnvLike =
-    deps.env ?? { get: (name) => process.env[name] };
+  const env: EnvLike = deps.env ?? { get: (name) => process.env[name] };
   const refresh = deps.refresh ?? defaultRefreshAccessToken;
   const skew = deps.refreshSkewMs ?? DEFAULT_REFRESH_SKEW_MS;
   const clientIdDefault = deps.clientId ?? DEFAULT_OAUTH_CLIENT_ID;

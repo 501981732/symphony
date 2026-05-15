@@ -76,7 +76,9 @@ function expectParseableTimestamp(ts: unknown): void {
   expect(Number.isNaN(Date.parse(ts as string))).toBe(false);
 }
 
-function expectScanEvent(events: ReturnType<typeof createMocks>["events"]): void {
+function expectScanEvent(
+  events: ReturnType<typeof createMocks>["events"],
+): void {
   const event = events.find(
     (candidate) => candidate.type === "human_review_scan_started",
   );
@@ -263,11 +265,7 @@ describe("reconcileHumanReview", () => {
     expect(mocks.gitlab.transitionLabels).not.toHaveBeenCalled();
     expectScanEvent(mocks.events);
     expectIssueMrEvent(mocks.events, "human_review_mr_found", "opened");
-    expectIssueMrEvent(
-      mocks.events,
-      "human_review_mr_still_open",
-      "opened",
-    );
+    expectIssueMrEvent(mocks.events, "human_review_mr_still_open", "opened");
   });
 
   it("emits MR closed unmerged and moves the issue to ai-rework", async () => {

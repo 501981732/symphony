@@ -32,9 +32,7 @@ interface GitSlice {
 }
 
 interface GitLabReconcileSlice {
-  findMergeRequest(
-    sourceBranch: string,
-  ): Promise<{
+  findMergeRequest(sourceBranch: string): Promise<{
     iid: number;
     title: string;
     description: string;
@@ -46,8 +44,14 @@ interface GitLabReconcileSlice {
     title: string;
     description: string;
   }): Promise<{ iid: number; webUrl?: string }>;
-  updateMergeRequest(mrIid: number, opts: { title?: string; description?: string }): Promise<void>;
-  findWorkpadNote(issueIid: number, marker: string): Promise<{ id: number; body: string } | null>;
+  updateMergeRequest(
+    mrIid: number,
+    opts: { title?: string; description?: string },
+  ): Promise<void>;
+  findWorkpadNote(
+    issueIid: number,
+    marker: string,
+  ): Promise<{ id: number; body: string } | null>;
   createNote(issueIid: number, body: string): Promise<{ id: number }>;
   updateNote(issueIid: number, noteId: number, body: string): Promise<void>;
   transitionLabels(
@@ -158,10 +162,7 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
     }
 
     const marker = `<!-- issuepilot:run:${input.runId} -->`;
-    const existingNote = await input.gitlab.findWorkpadNote(
-      input.iid,
-      marker,
-    );
+    const existingNote = await input.gitlab.findWorkpadNote(input.iid, marker);
     const noteBody = buildHandoffNote({ ...input, noCodeChangeReason }, null);
 
     if (!existingNote) {
@@ -226,10 +227,7 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
   }
 
   const marker = `<!-- issuepilot:run:${input.runId} -->`;
-  const existingNote = await input.gitlab.findWorkpadNote(
-    input.iid,
-    marker,
-  );
+  const existingNote = await input.gitlab.findWorkpadNote(input.iid, marker);
   const noteBody = buildHandoffNote(input, handoffMr);
 
   if (!existingNote) {

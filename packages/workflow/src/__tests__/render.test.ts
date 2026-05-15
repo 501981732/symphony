@@ -50,9 +50,13 @@ describe("renderPrompt", () => {
     expect(out).toContain("iid=42");
     expect(out).toContain("identifier=group/project#42");
     expect(out).toContain("title=Update README");
-    expect(out).toContain("description=Bring the README in line with the new CLI.");
+    expect(out).toContain(
+      "description=Bring the README in line with the new CLI.",
+    );
     expect(out).toContain("labels=ai-ready,documentation");
-    expect(out).toContain("url=https://gitlab.example.com/group/project/-/issues/42");
+    expect(out).toContain(
+      "url=https://gitlab.example.com/group/project/-/issues/42",
+    );
     expect(out).toContain("author=alice");
     expect(out).toContain("assignees=alice,bob");
     expect(out).toContain("attempt=1");
@@ -139,7 +143,10 @@ describe("renderPrompt", () => {
   });
 
   it("`attempt` 顶层访问也能命中（与嵌套对象区分）", async () => {
-    const out = await renderPrompt("attempt={{ attempt }}", ctx({ attempt: 3 }));
+    const out = await renderPrompt(
+      "attempt={{ attempt }}",
+      ctx({ attempt: 3 }),
+    );
     expect(out).toBe("attempt=3");
   });
 });

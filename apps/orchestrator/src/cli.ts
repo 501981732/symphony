@@ -20,11 +20,21 @@ import {
   validateWorkflow,
   type DaemonHandle,
 } from "./daemon.js";
+import {
+  startDashboard,
+  type DashboardHandle,
+  type DashboardOptions,
+} from "./dashboard.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 export interface CliDeps {
+  version?: string | undefined;
   startDaemon?: typeof startDaemon | undefined;
   validateWorkflow?: typeof validateWorkflow | undefined;
   checkCodexAppServer?: typeof checkCodexAppServer | undefined;
+  spawnDashboard?:
+    | ((opts: DashboardOptions) => Promise<DashboardHandle>)
+    | undefined;
   execaCommand?: typeof execaCommand | undefined;
   authLogin?:
     | ((opts: AuthLoginOptions, deps?: AuthLoginDeps) => Promise<unknown>)
@@ -72,6 +82,7 @@ export function buildCli(deps: CliDeps = {}): Command {
   const daemonStarter = deps.startDaemon ?? startDaemon;
   const workflowValidator = deps.validateWorkflow ?? validateWorkflow;
   const codexCheck = deps.checkCodexAppServer ?? checkCodexAppServer;
+  const dashboardStarter = deps.spawnDashboard ?? startDashboard;
   const runExecaCommand = deps.execaCommand ?? execaCommand;
   const authLoginImpl = deps.authLogin ?? authLogin;
   const authStatusImpl = deps.authStatus ?? authStatus;
@@ -79,7 +90,45 @@ export function buildCli(deps: CliDeps = {}): Command {
 
   const program = new Command("issuepilot")
     .description("IssuePilot — AI-driven GitLab issue orchestrator")
-    .version("0.0.0");
+    .version(deps.version ?? PACKAGE_VERSION);
+
+  program
+    .command("dashboard")
+    .description("Start the local read-only dashboard")
+    .option("--port <number>", "Dashboard port", "3000")
+    .option("--host <host>", "Dashboard bind host", "127.0.0.1")
+    .option("--api-url <url>", "Orchestrator API URL", "http://127.0.0.1:4738")
+    .action(async (opts) => {
+      const port = parsePort(opts.port);
+      if (port === null) {
+        console.error(`Error: invalid port: ${opts.port}`);
+        process.exitCode = 1;
+        return;
+      }
+      const host = typeof opts.host === "string" ? opts.host.trim() : "";
+      if (!host) {
+        console.error("Error: --host must not be empty");
+        process.exitCode = 1;
+        return;
+      }
+      const apiUrl = typeof opts.apiUrl === "string" ? opts.apiUrl.trim() : "";
+      if (!apiUrl) {
+        console.error("Error: --api-url must not be empty");
+        process.exitCode = 1;
+        return;
+      }
+      let handle: DashboardHandle;
+      try {
+        handle = await dashboardStarter({ port, host, apiUrl });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Error: failed to start dashboard: ${message}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`IssuePilot dashboard ready: http://${host}:${port}`);
+      await handle.wait();
+    });
 
   program
     .command("run")

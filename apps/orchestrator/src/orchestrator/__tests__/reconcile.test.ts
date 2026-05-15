@@ -23,9 +23,7 @@ function createMocks() {
   };
 }
 
-function baseInput(
-  mocks: ReturnType<typeof createMocks>,
-): ReconcileInput {
+function baseInput(mocks: ReturnType<typeof createMocks>): ReconcileInput {
   return {
     runId: "run-1",
     iid: 42,
@@ -71,7 +69,8 @@ describe("reconcile", () => {
   it("creates a structured handoff note before moving to human-review", async () => {
     const input = baseInput(mocks);
     input.agentSummary = "Fixed the null check";
-    input.agentValidation = "pnpm --filter @issuepilot/orchestrator test passed";
+    input.agentValidation =
+      "pnpm --filter @issuepilot/orchestrator test passed";
     input.agentRisks = "None identified";
 
     await reconcile(input);
@@ -112,16 +111,20 @@ describe("reconcile", () => {
     expect(mocks.gitlab.createNote).not.toHaveBeenCalled();
     expect(mocks.gitlab.updateNote).not.toHaveBeenCalled();
     expect(mocks.gitlab.transitionLabels).not.toHaveBeenCalled();
-    expect(mocks.events.find((e) => e.type === "reconcile_no_commits")).toBeDefined();
+    expect(
+      mocks.events.find((e) => e.type === "reconcile_no_commits"),
+    ).toBeDefined();
   });
 
   it("writes fallback note and transitions labels when no new commits have explicit no-code-change reason", async () => {
     mocks.git.hasNewCommits.mockResolvedValue(false);
     const input = baseInput(mocks);
-    input.agentSummary = "Reviewed issue and confirmed config already matches request.";
+    input.agentSummary =
+      "Reviewed issue and confirmed config already matches request.";
     input.agentValidation = "Ran inspection; no files required updates.";
     input.agentRisks = "No runtime risk.";
-    input.noCodeChangeReason = "Existing implementation already satisfies the issue.";
+    input.noCodeChangeReason =
+      "Existing implementation already satisfies the issue.";
 
     await reconcile(input);
 
@@ -165,7 +168,9 @@ describe("reconcile", () => {
     expect(mocks.gitlab.updateMergeRequest).toHaveBeenCalledWith(99, {
       description: expect.stringContaining("Implementation summary"),
     });
-    expect(mocks.events.find((e) => e.type === "gitlab_mr_updated")).toBeDefined();
+    expect(
+      mocks.events.find((e) => e.type === "gitlab_mr_updated"),
+    ).toBeDefined();
   });
 
   it("updates existing workpad note instead of creating", async () => {

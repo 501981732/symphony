@@ -10,7 +10,10 @@ describe("RuntimeState", () => {
       attempt: 1,
       branch: "ai/1-fix",
     });
-    expect(state.getRun("r1")).toMatchObject({ runId: "r1", status: "claimed" });
+    expect(state.getRun("r1")).toMatchObject({
+      runId: "r1",
+      status: "claimed",
+    });
   });
 
   it("lists runs by status", () => {

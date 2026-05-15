@@ -6,16 +6,19 @@ This guide is for engineers running IssuePilot for the first time. The goal is t
 
 Keep two repos separate:
 
-- **IssuePilot repo**: where you install, authenticate, and run the orchestrator + dashboard.
+- **IssuePilot repo**: where you build or download the local package.
 - **Target project repo**: the product repo Codex will modify. This repo needs `WORKFLOW.md`.
 
 ```text
 /path/to/issuepilot
-  run: pnpm smoke / pnpm dev:dashboard / pnpm exec issuepilot ...
+  build package: pnpm release:pack
 
 /path/to/target-project
   stores: WORKFLOW.md
   gets modified through IssuePilot-created worktrees
+
+installed CLI
+  run: issuepilot doctor / issuepilot run / issuepilot dashboard
 ```
 
 ---
@@ -30,20 +33,21 @@ IssuePilot is a local, single-machine orchestrator. It:
 4. Pushes a branch, creates or updates an MR, and writes an Issue handoff note.
 5. Moves the Issue from `ai-running` to `human-review`, `ai-failed`, or `ai-blocked`.
 
-P0 is a local developer tool. It is not SaaS, not a worker cluster, and not an auto-merge system. Humans still review MRs before merging.
-P0 source-checkout usage is supported; packaged install/upgrade is still a V1 release task.
+V1 is a local developer tool. It is not SaaS, not a worker cluster, and not an auto-merge system. Humans still review MRs before merging.
+The stable local path is the installed `issuepilot` CLI. Source-checkout commands remain available for contributors and emergency rollback.
 
 ---
 
-## 2. Prepare Your Machine
+## 2. Install IssuePilot
 
 Run this in the **IssuePilot repo**:
 
 ```bash
 corepack enable
 pnpm install
-pnpm -F @issuepilot/orchestrator build
-pnpm exec issuepilot doctor
+pnpm release:pack
+npm install -g ./dist/release/issuepilot-0.1.0.tgz
+issuepilot doctor
 ```
 
 Expected: `doctor` reports `[OK]` for Node.js, Git, Codex app-server, and `~/.issuepilot/state`.
@@ -58,6 +62,13 @@ Required tools:
 | Codex CLI | must run `codex app-server` and already be logged in |
 | GitLab    | a test project with API, label, Issue, and MR access |
 | SSH key   | can push to the target project                       |
+
+Contributor fallback:
+
+```bash
+pnpm build
+pnpm exec issuepilot doctor
+```
 
 ---
 
@@ -238,11 +249,11 @@ A GitLab admin creates the application:
 - Enable Device Authorization Grant if GitLab shows that option
 - Save and copy the **Application ID**. That is the `--client-id`
 
-Then log in from the **IssuePilot repo**:
+Then log in with the installed CLI:
 
 ```bash
-pnpm exec issuepilot auth login --hostname gitlab.example.com --client-id <oauth-application-id>
-pnpm exec issuepilot auth status --hostname gitlab.example.com
+issuepilot auth login --hostname gitlab.example.com --client-id <oauth-application-id>
+issuepilot auth status --hostname gitlab.example.com
 ```
 
 `--client-id` is the OAuth Application's public Application ID. It is not the Application Secret and not an Access Token.
@@ -250,8 +261,8 @@ pnpm exec issuepilot auth status --hostname gitlab.example.com
 If you use two company GitLab instances, log in to both hostnames:
 
 ```bash
-pnpm exec issuepilot auth login --hostname gitlab.chehejia.com --client-id <oauth-application-id>
-pnpm exec issuepilot auth login --hostname gitlabee.chehejia.com --client-id <oauth-application-id>
+issuepilot auth login --hostname gitlab.chehejia.com --client-id <oauth-application-id>
+issuepilot auth login --hostname gitlabee.chehejia.com --client-id <oauth-application-id>
 ```
 
 After login, tokens are stored in `~/.issuepilot/credentials` with mode `0600`. If you use OAuth login, do not set `tracker.token_env` in the workflow. Once `tracker.token_env` is present, the daemon requires that environment variable to exist.
@@ -289,13 +300,12 @@ Never put tokens in `WORKFLOW.md`, Issues, prompts, or logs.
 
 ## 6. Validate the Workflow
 
-Run this in the **IssuePilot repo**:
+Run this from any shell after installing the CLI:
 
 ```bash
-cd /path/to/issuepilot
 # If this is a new terminal, put the copied absolute path back into the variable.
 export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
-pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
+issuepilot validate --workflow "$WORKFLOW_PATH"
 ```
 
 Successful output:
@@ -323,15 +333,12 @@ Use two terminals.
 
 ### 7.1 Terminal A: Start the Orchestrator
 
-Recommended: use the smoke wrapper, which waits until the daemon is ready.
-
 ```bash
-cd /path/to/issuepilot
 export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
-pnpm smoke --workflow "$WORKFLOW_PATH"
+issuepilot run --workflow "$WORKFLOW_PATH" --port 4738 --host 127.0.0.1
 ```
 
-Direct start also works:
+Contributor source-checkout fallback:
 
 ```bash
 cd /path/to/issuepilot
@@ -348,8 +355,7 @@ API: http://127.0.0.1:4738
 ### 7.2 Terminal B: Start the Dashboard
 
 ```bash
-cd /path/to/issuepilot
-pnpm dev:dashboard
+issuepilot dashboard
 ```
 
 Open:
@@ -361,7 +367,7 @@ http://localhost:3000
 The dashboard defaults to `http://127.0.0.1:4738`. If the orchestrator uses another port, set:
 
 ```bash
-NEXT_PUBLIC_API_BASE=http://127.0.0.1:4839 pnpm dev:dashboard
+issuepilot dashboard --api-url http://127.0.0.1:4839
 ```
 
 If the page shows `IssuePilot orchestrator unreachable` / `fetch failed`, confirm Terminal A is still running and that the dashboard points at the same port.
@@ -416,24 +422,22 @@ Failed runs are preserved. Forensics live at:
 
 ```bash
 # Environment check
-cd /path/to/issuepilot
 export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
-pnpm exec issuepilot doctor
+issuepilot doctor
 
 # OAuth login
-pnpm exec issuepilot auth login --hostname <gitlab-host> --client-id <oauth-application-id>
-pnpm exec issuepilot auth status --hostname <gitlab-host>
-pnpm exec issuepilot auth logout --hostname <gitlab-host>
+issuepilot auth login --hostname <gitlab-host> --client-id <oauth-application-id>
+issuepilot auth status --hostname <gitlab-host>
+issuepilot auth logout --hostname <gitlab-host>
 
 # Validate workflow
-pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
+issuepilot validate --workflow "$WORKFLOW_PATH"
 
 # Start orchestrator
-pnpm smoke --workflow "$WORKFLOW_PATH"
-pnpm exec issuepilot run --workflow "$WORKFLOW_PATH"
+issuepilot run --workflow "$WORKFLOW_PATH"
 
 # Start dashboard
-pnpm dev:dashboard
+issuepilot dashboard
 ```
 
 ---
@@ -456,7 +460,7 @@ If Codex is not on PATH, set `codex.command` in the workflow to an absolute path
 The GitLab instance has no matching OAuth Application, or Device Authorization Grant is disabled. Register the application, copy the Application ID, then run:
 
 ```bash
-pnpm exec issuepilot auth login --hostname <host> --client-id <oauth-application-id>
+issuepilot auth login --hostname <host> --client-id <oauth-application-id>
 ```
 
 **GitLab 401 / 403**
@@ -468,9 +472,8 @@ Check that the token is exported in the same shell that starts the daemon, has t
 The dashboard is only the frontend. Start the orchestrator in another terminal:
 
 ```bash
-cd /path/to/issuepilot
 export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
-pnpm smoke --workflow "$WORKFLOW_PATH"
+issuepilot run --workflow "$WORKFLOW_PATH"
 ```
 
 If the orchestrator is not on `4738`, set `NEXT_PUBLIC_API_BASE`.

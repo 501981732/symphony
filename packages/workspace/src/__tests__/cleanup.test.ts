@@ -40,10 +40,7 @@ describe("cleanupOnFailure", () => {
     const markers = files.filter((f) => f.startsWith("failed-at-"));
     expect(markers.length).toBe(1);
 
-    const content = fs.readFileSync(
-      path.join(markerDir, markers[0]!),
-      "utf-8",
-    );
+    const content = fs.readFileSync(path.join(markerDir, markers[0]!), "utf-8");
     expect(content).toContain("something broke");
     expect(content).toContain("attempt");
   });

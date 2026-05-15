@@ -216,9 +216,7 @@ describe("dispatch", () => {
     await dispatch(baseInput, deps);
 
     const hookCalls = (deps.runHook as ReturnType<typeof vi.fn>).mock.calls;
-    const scripts = hookCalls.map(
-      (c: [{ script?: string }]) => c[0].script,
-    );
+    const scripts = hookCalls.map((c: [{ script?: string }]) => c[0].script);
     expect(scripts).not.toContain("echo afterCreate");
     expect(scripts).toContain("echo beforeRun");
   });
@@ -237,9 +235,7 @@ describe("dispatch", () => {
     await dispatch(baseInput, deps);
 
     const hookCalls = (deps.runHook as ReturnType<typeof vi.fn>).mock.calls;
-    const scripts = hookCalls.map(
-      (c: [{ script?: string }]) => c[0].script,
-    );
+    const scripts = hookCalls.map((c: [{ script?: string }]) => c[0].script);
     expect(scripts).toContain("echo afterRun");
   });
 });

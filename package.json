@@ -1,6 +1,6 @@
 {
   "name": "issuepilot",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "IssuePilot P0 — GitLab issue driven Codex orchestrator.",
   "packageManager": "pnpm@10.33.2",
@@ -18,6 +18,9 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
     "test:smoke": "vitest run --config vitest.config.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "release:pack": "tsx scripts/release/package-local.ts",
+    "release:install-smoke": "tsx scripts/release/install-smoke.ts",
+    "release:check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm release:install-smoke && pnpm test:smoke && git diff --check",
     "dev:orchestrator": "pnpm --filter @issuepilot/orchestrator dev",
     "dev:dashboard": "pnpm --filter @issuepilot/dashboard dev"
   },

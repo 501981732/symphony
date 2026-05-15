@@ -6,6 +6,8 @@
 
 ### Added
 
+- 2026-05-15 — **V1 本地可安装 CLI release 闭环完成。** 新增 `issuepilot@0.1.0` 本地 tarball 打包、全量 runtime 依赖自包含安装、安装态 `issuepilot dashboard` 启动路径、`release:install-smoke` 和 `release:check` 门禁。用户可通过 `pnpm release:pack` 生成 `dist/release/issuepilot-0.1.0.tgz`，再用 `npm install -g ./dist/release/issuepilot-0.1.0.tgz` 安装，并从任意目录执行 `issuepilot --version`、`issuepilot doctor`、`issuepilot validate --workflow ...`、`issuepilot run --workflow ...` 和 `issuepilot dashboard`。验证：`pnpm release:check` 通过，覆盖 format/lint/typecheck/build/test、安装态 smoke、fake smoke runner 和 `git diff --check`。
+
 - 2026-05-14 — **新增 GitLab OAuth 2.0 Device Flow 登录：`issuepilot auth login | status | logout`，daemon 自动 refresh token。** 把 spec §22 决策 3 从「P1 规划」提到「现役交付」，正式让用户摆脱手工 PAT 维护。新增 `@issuepilot/credentials` 包（device flow client + 0600/0700 本地存储 + 自动 refresh + CredentialResolver），重写 daemon 启动时的凭据解析路径（env 优先 → `~/.issuepilot/credentials` fallback），改造 `@issuepilot/tracker-gitlab` 在 401 时自动 refresh 一次再重试。验证：`pnpm -w turbo run build typecheck lint test` 44/44 全绿（新增 49 个单测：credentials 36、tracker-gitlab 5、orchestrator 13），`pnpm -w turbo run test:smoke` 通过。
   - **新增 `@issuepilot/credentials` 包（packages/credentials/）**：6 个模块、36 单测。
     - `device-flow.ts`：`requestDeviceCode` / `pollForToken` / `refreshAccessToken` 三个端点 client。`OAuthError` 把 RFC 8628 的 7 种状态（authorization_pending、slow_down、expired_token、access_denied、invalid_grant、invalid_client、transient/unknown）连同 `retriable` 一起暴露。所有 fetch 走 `AbortController` 30s timeout；5xx 即便 body 含 OAuth `error` 也归 `transient`；任何错误 message 都不嵌入 device_code / user_code / refresh token / access token。
