@@ -47,12 +47,11 @@ export default async function HomePage() {
         <p className="text-sm text-slate-500">
           Start the orchestrator with{" "}
           <code className="font-mono">
-            pnpm smoke --workflow /path/to/target-project/.agents/workflow.md
+            issuepilot run --workflow /path/to/target-project/WORKFLOW.md
           </code>{" "}
-          or{" "}
+          or team mode with{" "}
           <code className="font-mono">
-            pnpm exec issuepilot run --workflow
-            /path/to/target-project/.agents/workflow.md
+            issuepilot run --config /path/to/issuepilot.team.yaml
           </code>
           , then reload this page.
         </p>

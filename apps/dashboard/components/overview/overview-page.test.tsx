@@ -86,6 +86,43 @@ describe("OverviewPage", () => {
     expect(screen.getByText(/no active runs/i)).toBeInTheDocument();
   });
 
+  it("renders the Projects section when team-mode snapshot has projects", () => {
+    const teamSnapshot: OrchestratorStateSnapshot = {
+      ...baseSnapshot,
+      runtime: {
+        mode: "team",
+        maxConcurrentRuns: 2,
+        activeLeases: 0,
+        projectCount: 1,
+      },
+      projects: [
+        {
+          id: "platform-web",
+          name: "Platform Web",
+          workflowPath: "/srv/platform-web/WORKFLOW.md",
+          gitlabProject: "group/platform-web",
+          enabled: true,
+          activeRuns: 0,
+          lastPollAt: null,
+        },
+      ],
+    };
+    const refetch = vi.fn(async () => ({
+      snapshot: teamSnapshot,
+      runs: [],
+    }));
+    render(
+      <OverviewPage
+        initialSnapshot={teamSnapshot}
+        initialRuns={[]}
+        refetch={refetch}
+      />,
+    );
+
+    expect(screen.getByText("Projects")).toBeInTheDocument();
+    expect(screen.getByText("Platform Web")).toBeInTheDocument();
+  });
+
   it("re-fetches (throttled 1s) when a run lifecycle event arrives", async () => {
     vi.useFakeTimers();
     const { refetch } = renderPage();

@@ -16,7 +16,7 @@ describe("HomePage", () => {
     vi.mocked(listRuns).mockReset();
   });
 
-  it("points users at workflow-aware orchestrator startup commands when the API is unreachable", async () => {
+  it("points users at workflow- and team-aware orchestrator startup commands when the API is unreachable", async () => {
     vi.mocked(getState).mockRejectedValue(new Error("fetch failed"));
     vi.mocked(listRuns).mockResolvedValue([]);
 
@@ -28,12 +28,12 @@ describe("HomePage", () => {
     expect(screen.getByText("fetch failed")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "pnpm smoke --workflow /path/to/target-project/.agents/workflow.md",
+        "issuepilot run --workflow /path/to/target-project/WORKFLOW.md",
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "pnpm exec issuepilot run --workflow /path/to/target-project/.agents/workflow.md",
+        "issuepilot run --config /path/to/issuepilot.team.yaml",
       ),
     ).toBeInTheDocument();
   });

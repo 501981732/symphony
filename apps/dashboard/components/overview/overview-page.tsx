@@ -8,6 +8,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { useEventStream } from "../../lib/use-event-stream";
 
+import { ProjectList } from "./project-list";
 import { RunsTable } from "./runs-table";
 import { ServiceHeader } from "./service-header";
 import { SummaryCards } from "./summary-cards";
@@ -98,6 +99,15 @@ export function OverviewPage({
         </h2>
         <SummaryCards summary={snapshot.summary} />
       </section>
+
+      {snapshot.projects && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Projects
+          </h2>
+          <ProjectList projects={snapshot.projects} />
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
