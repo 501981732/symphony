@@ -9,6 +9,7 @@ export const RUN_STATUS_VALUES = [
   "claimed",
   "running",
   "retrying",
+  "stopping",
   "completed",
   "failed",
   "blocked",
@@ -58,4 +59,10 @@ export interface RunRecord {
   projectId?: string;
   /** V2 team mode: human-readable project name shown on the dashboard. */
   projectName?: string;
+  /**
+   * ISO-8601 timestamp set when an operator archives this run via the
+   * dashboard. Archived runs are excluded from `/api/runs` by default; pass
+   * `?includeArchived=true` to include them.
+   */
+  archivedAt?: string;
 }

@@ -91,6 +91,10 @@ export const EVENT_TYPE_VALUES = [
   "human_review_mr_closed_unmerged",
   "human_review_rework_requested",
   "human_review_reconcile_failed",
+  // Operator dashboard actions (V2 Phase 2)
+  "operator_action_requested",
+  "operator_action_succeeded",
+  "operator_action_failed",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPE_VALUES)[number];
