@@ -252,19 +252,20 @@ pnpm dev:dashboard
       多出一个 `group__issuepilot-smoke/<iid>` 目录。
 - [ ] **4. Codex app-server run 起来**。
       `ps aux | grep "codex app-server"` 看到子进程；timeline 里
-      有 `codex_thread_started`、`codex_turn_started` 事件。
+      有 `codex_session_started`、`codex_turn_started` 事件。
 - [ ] **5. branch push**：`git ls-remote git@gitlab.example.com:...`
       或在 GitLab Repository → Branches 里看到 `ai/<issue-iid>-*` 分支。
-- [ ] **6. MR 创建**：GitLab Merge Requests 列表新增一条 draft MR，
-      `Source` = AI 分支，`Target` = `main`。
+- [ ] **6. MR 创建**：GitLab Merge Requests 列表新增一条 MR，`Source` =
+      AI 分支，`Target` = `main`。
 - [ ] **7. Issue note**：Issue discussion 里有 IssuePilot 写的工作日志
       note（含实现、验证、MR 链接、可能的风险）。
 - [ ] **8. label `human-review` 已切换**：GitLab Issue 上原 `ai-ready` /
       `ai-running` 被替换为 `human-review`。
 - [ ] **9. dashboard timeline 完整**：run 详情页能看到
-      `run_started → claim_succeeded → workspace_ready →
-      codex_thread_started → tool_call_* → branch_pushed →
-      merge_request_opened → note_handoff → run_completed`，
+      `run_started → claim_succeeded → mirror_ready → worktree_ready →
+      codex_session_started → codex_turn_started → gitlab_push →
+      gitlab_mr_created → gitlab_workpad_note_created →
+      gitlab_labels_transitioned → dispatch_completed`，
       时间线无空洞、无空 redact。
 - [ ] **10. workspace + logs 保留**：成功 run 之后
       `~/.issuepilot/workspaces/group__issuepilot-smoke/<iid>/` 仍在；
@@ -273,6 +274,23 @@ pnpm dev:dashboard
       内容。
 
 10 项全过 = MVP §21 闭环验证 ✅。
+
+---
+
+## Smoke Evidence Template
+
+- Date:
+- Issue URL:
+- MR URL:
+- Workflow path:
+- Command:
+- API URL:
+- Dashboard URL:
+- Handoff note marker:
+- Closing note observed:
+- Final issue state:
+- Verification commands:
+- Operator notes:
 
 ---
 

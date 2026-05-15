@@ -142,6 +142,8 @@ Implemented in this repository:
 
 Still stabilizing:
 
+- P0 source-checkout usage is supported; packaged install/upgrade is still a
+  V1 release task.
 - Public packaging and versioned releases.
 
 ## How It Works
@@ -345,6 +347,7 @@ In active development; large parts are already usable in this repository:
   the issue.
 - ✅ Read-only Next.js dashboard (overview + run detail + SSE timeline).
 - ✅ Fake GitLab + fake Codex end-to-end harness + real GitLab smoke runbook.
+- ✅ P0 source-checkout usage for local pilots.
 - 🚧 Public packaging, versioned releases, install/upgrade paths.
 
 ### V2 — Team-operable release

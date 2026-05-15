@@ -119,6 +119,8 @@ GitLab + TypeScript 路线、并打算在内部团队范围内试运行，那么
 
 仍在稳定中：
 
+- P0 source-checkout 使用方式已支持；打包安装、升级路径仍属于 V1 release
+  任务。
 - 公开 package 与版本化 release。
 
 ## 工作方式
@@ -359,6 +361,7 @@ Request，不替代代码审查。
 - ✅ 结构化 closing note：IssuePilot 移除 `human-review` 并关闭 Issue 时写入。
 - ✅ 只读 Next.js dashboard（overview + run detail + SSE timeline）。
 - ✅ fake GitLab + fake Codex 全闭环 E2E + 真实 GitLab smoke runbook。
+- ✅ 本地试点可使用 P0 source-checkout 方式运行。
 - 🚧 公开 package、版本化 release、安装/升级路径。
 
 ### V2 — 团队可运营版本

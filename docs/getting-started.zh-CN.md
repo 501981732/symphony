@@ -31,6 +31,7 @@ IssuePilot 是本地单机 orchestrator。它会：
 5. 把 Issue label 从 `ai-running` 切到 `human-review`、`ai-failed` 或 `ai-blocked`。
 
 P0 是本地开发工具，不是 SaaS、集群或自动合并系统。MR 合并前必须人工 review。
+P0 source-checkout 使用方式已支持；打包安装、升级路径仍属于 V1 release 任务。
 
 ---
 

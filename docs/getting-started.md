@@ -31,6 +31,7 @@ IssuePilot is a local, single-machine orchestrator. It:
 5. Moves the Issue from `ai-running` to `human-review`, `ai-failed`, or `ai-blocked`.
 
 P0 is a local developer tool. It is not SaaS, not a worker cluster, and not an auto-merge system. Humans still review MRs before merging.
+P0 source-checkout usage is supported; packaged install/upgrade is still a V1 release task.
 
 ---
 
