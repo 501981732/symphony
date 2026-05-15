@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-15 — **V2 Phase 2 Dashboard Operations 补充设计 spec**：`docs/superpowers/specs/2026-05-15-issuepilot-v2-phase2-dashboard-operations-design.md`。基于 V2 总 spec §8 和原 Phase 2 plan，锁定两个原 plan 未完整解决的设计决策：(1) 用 Codex app-server 上游 `turn/interrupt` JSON-RPC request 做**真正的 cancel** 通路，替换原 plan 中 `runnerCancel: () => Promise.reject("not_implemented")` 占位；新增 `runner-codex-app-server` 的 `onTurnActive(cancel)` 钩子、orchestrator 端 `run-cancel-registry`、5s timeout + cancel_timeout / cancel_threw / not_registered 分类；(2) operator 身份收敛为 server 默认 `"system"`，dashboard client 不再读 `NEXT_PUBLIC_OPERATOR_DISPLAY_NAME`，HTTP route 仍读 `x-issuepilot-operator` header 为 V3 登录态留接口。spec 还显式标注对 dispatch cancelled outcome 处理的假设检查、stop 不直接写 GitLab labels 的不变量、`stopping` 中间态语义、以及与原 Phase 2 plan 的 6 项 diff 标注，供 writing-plans 阶段更新原 plan 使用。
+
 ### Fixed
 
 - 2026-05-15 — **V2 Phase 1 review Minor 收口（M1/M2/M4/M5/M6/M7/M8/M9 + service-header SSR）**：把 V2 review 出的 8 个 Minor 设计偏差和一个 pre-existing SSR hydration warning 一并清理掉，让 Phase 1 底座的 CLI / lease store / dashboard / 共享契约层都符合 spec 边角条款。验证：`pnpm lint`（11 task）、`pnpm typecheck`（20 task）、`pnpm test`（20 task，含 156 orchestrator 单测 + 51 dashboard + 38 e2e + smoke）全绿。
