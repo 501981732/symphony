@@ -366,12 +366,20 @@ V2 实现需要覆盖：
 - dashboard 按状态展示可用操作。
 - focused E2E 覆盖 retry 和 stop。
 
+实施计划：
+
+- `docs/superpowers/plans/2026-05-15-issuepilot-v2-dashboard-operations.md`
+
 ### Phase 3：CI 回流
 
 - GitLab pipeline lookup。
 - CI status event。
 - failed pipeline -> `ai-rework` 策略。
 - dashboard 显示 CI 状态。
+
+实施计划：
+
+- `docs/superpowers/plans/2026-05-15-issuepilot-v2-ci-feedback.md`
 
 ### Phase 4：Review Feedback Sweep
 
@@ -380,12 +388,20 @@ V2 实现需要覆盖：
 - `ai-rework` prompt 注入。
 - dashboard 展示 feedback 摘要。
 
+实施计划：
+
+- `docs/superpowers/plans/2026-05-15-issuepilot-v2-review-feedback-sweep.md`
+
 ### Phase 5：Workspace Retention
 
 - retention config。
 - cleanup planner。
 - cleanup events。
 - runbook 和 rollback 文档。
+
+实施计划：
+
+- `docs/superpowers/plans/2026-05-15-issuepilot-v2-workspace-retention.md`
 
 ## 17. 完成标准
 
