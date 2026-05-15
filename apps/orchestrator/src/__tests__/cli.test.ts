@@ -19,6 +19,19 @@ describe("CLI", () => {
     process.exitCode = 0;
   });
 
+  it("prints the package version", async () => {
+    const output: string[] = [];
+    const cli = buildCli();
+    cli.configureOutput({ writeOut: (text) => output.push(text) });
+    cli.exitOverride();
+
+    await expect(
+      cli.parseAsync(["--version"], { from: "user" }),
+    ).rejects.toMatchObject({ code: "commander.version" });
+
+    expect(output.join("")).toContain("0.1.0");
+  });
+
   it("validate fails for missing workflow", async () => {
     const cli = buildCli();
     const mockError = vi.spyOn(console, "error").mockImplementation(() => {});

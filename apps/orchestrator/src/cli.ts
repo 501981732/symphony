@@ -20,8 +20,10 @@ import {
   validateWorkflow,
   type DaemonHandle,
 } from "./daemon.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 export interface CliDeps {
+  version?: string | undefined;
   startDaemon?: typeof startDaemon | undefined;
   validateWorkflow?: typeof validateWorkflow | undefined;
   checkCodexAppServer?: typeof checkCodexAppServer | undefined;
@@ -79,7 +81,7 @@ export function buildCli(deps: CliDeps = {}): Command {
 
   const program = new Command("issuepilot")
     .description("IssuePilot — AI-driven GitLab issue orchestrator")
-    .version("0.0.0");
+    .version(deps.version ?? PACKAGE_VERSION);
 
   program
     .command("run")

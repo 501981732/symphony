@@ -1,6 +1,6 @@
 {
   "name": "issuepilot",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "IssuePilot P0 — GitLab issue driven Codex orchestrator.",
   "packageManager": "pnpm@10.33.2",
