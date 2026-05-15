@@ -56,8 +56,9 @@ is TypeScript-first and GitLab-first; the original Symphony spec and Elixir
 implementation remain in this repository as reference material.
 
 > [!WARNING]
-> IssuePilot is in active P0 development. The package APIs, CLI behavior, and
-> workflow file format may change before the first stable release.
+> IssuePilot has closed the P0 local loop and is in V1 local pilot hardening.
+> The tarball install path is usable, but release tags, archived smoke evidence,
+> and the stable local API/CLI compatibility window are still being locked down.
 
 ## Why IssuePilot?
 
@@ -102,7 +103,7 @@ it**:
 | Restart recovery | Tracker + filesystem driven                                    | Driven by labels + handoff note marker (`<!-- issuepilot:run:<runId> -->`)                         |
 | Security stance | Each implementation declares its own trust posture              | Rejects `danger-full-access` sandboxes, redacts tokens end-to-end, pins Codex cwd to the worktree  |
 | Open SPEC       | `SPEC.md` v1 (language-agnostic)                                | `SPEC.md` retained as reference; product spec lives in `docs/superpowers/specs/`                   |
-| Status          | Evaluation-only prototype; harden before production use         | P0 active development; fake E2E green and real GitLab smoke passing                                |
+| Status          | Evaluation-only prototype; harden before production use         | V1 local pilot usable; release lock still pending evidence/tag archival                            |
 
 If you want the Linear + Elixir reference implementation, jump straight to
 [`elixir/`](elixir/README.md) and [`SPEC.md`](SPEC.md). If you want the
@@ -140,10 +141,16 @@ Implemented in this repository:
   polls `/api/state` until ready, prints API + dashboard URLs, and forwards
   SIGINT/SIGTERM with a hard 5s SIGKILL escalation.
 
-Still stabilizing:
+Current V1 progress:
 
 - V1 local CLI packaging is available through `pnpm release:pack`; the generated
   tarball installs an `issuepilot` executable for local pilots.
+- `pnpm release:check` has passed, covering format, lint, typecheck, build, unit
+  tests, fake E2E, installed smoke, the smoke runner, and `git diff --check`.
+- Installed `issuepilot --version`, `issuepilot doctor`, `issuepilot validate`,
+  `issuepilot run`, and `issuepilot dashboard` have been verified locally.
+- The operator has confirmed the real GitLab smoke passed; Issue / MR /
+  dashboard evidence links still need to be archived.
 - The package is still a local tarball release, not a published npm registry
   package.
 
@@ -355,9 +362,9 @@ The IssuePilot roadmap lives in
 §20 — the section below is a summary so you can quickly see what's usable today
 and where the project is heading.
 
-### P0 — Local single-machine loop (current)
+### P0 — Local single-machine loop (closed)
 
-In active development; large parts are already usable in this repository:
+The local single-machine loop is complete:
 
 - ✅ Local daemon (orchestrator) with a Fastify HTTP API + SSE.
 - ✅ GitLab issue label state machine (`ai-ready` → `ai-running` →
@@ -378,6 +385,8 @@ In active development; large parts are already usable in this repository:
 - ✅ Installable local CLI tarball with installed `issuepilot run` and
   `issuepilot dashboard` startup paths.
 - ✅ Release evidence gate via `pnpm release:check`.
+- ✅ Real GitLab smoke has been confirmed by the operator; fixed evidence links
+  still need to be archived.
 - ✅ Source-checkout usage remains available for contributors and rollback.
 
 ### V1 — Stable local release
@@ -391,6 +400,8 @@ internal pilot teams without changing the core execution model.
   for daemon/API and an installed dashboard start command for the local UI.
 - ✅ Release gate that combines unit tests, fake E2E, smoke wrapper, installed
   CLI smoke, and `git diff --check`.
+- ✅ Installed daemon / dashboard startup paths and real GitLab smoke have passed
+  local pilot verification.
 - ✅ Operational docs for install, startup, auth, log redaction, and failed /
   blocked run debugging.
 - 🚧 Versioned tags with release notes, rollback notes, and compatibility

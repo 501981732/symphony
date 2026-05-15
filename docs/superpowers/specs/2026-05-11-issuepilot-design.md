@@ -975,7 +975,7 @@ README 只保留摘要；本节是 roadmap 的产品源头。
 - P0 event contract 收敛到 `@issuepilot/shared-contracts`，dashboard 不依赖
   runner raw payload。
 
-### V1：稳定本地发布（当前交付）
+### V1：稳定本地发布（本地试点可用）
 
 目标：不改变单机执行模型，把 P0 闭环变成可安装、可重复、适合内部试点团队使用
 的稳定版本。当前 V1 以本地 tarball 作为发布物，先证明安装命令体验；后续可在
@@ -990,10 +990,16 @@ README 只保留摘要；本节是 roadmap 的产品源头。
 - ✅ auth refresh、token rotation、日志脱敏、failed / blocked run 排障手册。
 - ✅ 文档收口：README、getting-started、smoke runbook、CHANGELOG 与本 spec 同步。
 - ✅ source-checkout 继续作为贡献者开发和紧急回滚路径保留。
+- ✅ 安装态 daemon / dashboard 启动路径已验证，真实 GitLab smoke 已由操作者确认通过。
 - 🚧 版本化 tag：包含 release notes、回滚说明和本地闭环兼容性预期。
-- 🚧 workflow schema、event contract、CLI 命令、dashboard API 进入稳定窗口。
+- 🚧 workflow schema、event contract、CLI 命令、dashboard API 进入稳定窗口；真实 smoke 的
+  Issue / MR / dashboard evidence 链接待归档。
 
 ### V2：团队可运营版本
+
+V2 的详细设计以
+`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
+为准。本节只保留产品路线摘要。
 
 目标：从“个人单机”升级为“团队共享”，可以在内网或团队机器上承载日常工作。
 
