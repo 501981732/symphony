@@ -9,7 +9,13 @@ interface ProjectListProps {
 
 function formatLastPoll(value: string | null): string {
   if (!value) return "not polled";
-  return new Date(value).toLocaleString();
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  // Use a stable UTC representation so server-rendered and client-hydrated
+  // markup match exactly. `toLocaleString()` reads the runtime's TZ + locale,
+  // which differs between Node and browser and triggers a React hydration
+  // mismatch warning (V2 review I6).
+  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
 }
 
 export function ProjectList({ projects }: ProjectListProps) {

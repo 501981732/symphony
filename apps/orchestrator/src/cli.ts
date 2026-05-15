@@ -144,11 +144,13 @@ export function buildCli(deps: CliDeps = {}): Command {
     .description("Start the orchestrator daemon")
     .option("--workflow <path>", "Path to workflow file")
     .option("--config <path>", "Path to V2 team config file")
-    .option("--port <number>", "HTTP API port", "4738")
+    .option(
+      "--port <number>",
+      "HTTP API port (default 4738; team mode falls back to issuepilot.team.yaml server.port)",
+    )
     .option(
       "--host <host>",
-      "HTTP API bind address (default 127.0.0.1; use 0.0.0.0 for container/remote smoke runs)",
-      "127.0.0.1",
+      "HTTP API bind address (default 127.0.0.1; team mode falls back to issuepilot.team.yaml server.host; use 0.0.0.0 for container/remote smoke runs)",
     )
     .action(async (opts) => {
       if (
@@ -164,17 +166,26 @@ export function buildCli(deps: CliDeps = {}): Command {
         return;
       }
 
-      const port = parsePort(opts.port);
-      if (port === null) {
-        console.error(`Error: invalid port: ${opts.port}`);
-        process.exitCode = 1;
-        return;
+      let explicitPort: number | undefined;
+      if (typeof opts.port === "string" && opts.port.length > 0) {
+        const parsed = parsePort(opts.port);
+        if (parsed === null) {
+          console.error(`Error: invalid port: ${opts.port}`);
+          process.exitCode = 1;
+          return;
+        }
+        explicitPort = parsed;
       }
-      const host = typeof opts.host === "string" ? opts.host.trim() : "";
-      if (!host) {
-        console.error("Error: --host must not be empty");
-        process.exitCode = 1;
-        return;
+
+      let explicitHost: string | undefined;
+      if (typeof opts.host === "string") {
+        const trimmed = opts.host.trim();
+        if (!trimmed) {
+          console.error("Error: --host must not be empty");
+          process.exitCode = 1;
+          return;
+        }
+        explicitHost = trimmed;
       }
 
       if (typeof opts.config === "string" && opts.config.length > 0) {
@@ -184,9 +195,15 @@ export function buildCli(deps: CliDeps = {}): Command {
           process.exitCode = 1;
           return;
         }
+        // In team mode we only forward explicit CLI overrides so the
+        // `issuepilot.team.yaml` `server: { host, port }` block remains
+        // authoritative when no flag is passed.
+        const teamOpts: StartTeamDaemonOptions = { configPath };
+        if (explicitPort !== undefined) teamOpts.port = explicitPort;
+        if (explicitHost !== undefined) teamOpts.host = explicitHost;
         let teamHandle: TeamDaemonHandle;
         try {
-          teamHandle = await teamDaemonStarter({ configPath, port, host });
+          teamHandle = await teamDaemonStarter(teamOpts);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.error(`Error: failed to start team daemon: ${message}`);
@@ -208,7 +225,13 @@ export function buildCli(deps: CliDeps = {}): Command {
       }
       let handle: DaemonHandle;
       try {
-        handle = await daemonStarter({ workflowPath, port, host });
+        // V1 single-workflow mode has no yaml host/port to fall back to, so we
+        // keep the original built-in defaults to preserve V1 release contracts.
+        handle = await daemonStarter({
+          workflowPath,
+          port: explicitPort ?? 4738,
+          host: explicitHost ?? "127.0.0.1",
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`Error: failed to start daemon: ${message}`);

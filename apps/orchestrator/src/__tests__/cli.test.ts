@@ -382,7 +382,16 @@ describe("CLI", () => {
 
   it("run starts team daemon when --config is provided", async () => {
     const configPath = path.join(tmpDir, "issuepilot.team.yaml");
-    fs.writeFileSync(configPath, "version: 1\nprojects: []\n");
+    fs.writeFileSync(
+      configPath,
+      [
+        "version: 1",
+        "projects:",
+        "  - id: platform-web",
+        "    name: Platform Web",
+        "    workflow: ./WORKFLOW.md",
+      ].join("\n"),
+    );
     const wait = vi.fn(async () => {});
     const startTeamDaemon = vi.fn(async () => ({
       host: "127.0.0.1",
@@ -396,15 +405,57 @@ describe("CLI", () => {
 
     await cli.parseAsync(["run", "--config", configPath], { from: "user" });
 
-    expect(startTeamDaemon).toHaveBeenCalledWith({
-      configPath,
-      host: "127.0.0.1",
-      port: 4738,
-    });
+    // Without an explicit --host/--port the CLI must not override the values
+    // in issuepilot.team.yaml; assert only configPath is forwarded.
+    expect(startTeamDaemon).toHaveBeenCalledWith({ configPath });
     expect(mockLog).toHaveBeenCalledWith(
       "IssuePilot team daemon ready: http://127.0.0.1:4738",
     );
     expect(wait).toHaveBeenCalled();
+    mockLog.mockRestore();
+  });
+
+  it("run forwards explicit --port/--host to startTeamDaemon as overrides", async () => {
+    const configPath = path.join(tmpDir, "issuepilot.team.yaml");
+    fs.writeFileSync(
+      configPath,
+      [
+        "version: 1",
+        "projects:",
+        "  - id: platform-web",
+        "    name: Platform Web",
+        "    workflow: ./WORKFLOW.md",
+      ].join("\n"),
+    );
+    const wait = vi.fn(async () => {});
+    const startTeamDaemon = vi.fn(async () => ({
+      host: "0.0.0.0",
+      port: 9999,
+      url: "http://0.0.0.0:9999",
+      stop: vi.fn(async () => {}),
+      wait,
+    }));
+    const cli = buildCli({ startTeamDaemon });
+    const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await cli.parseAsync(
+      [
+        "run",
+        "--config",
+        configPath,
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9999",
+      ],
+      { from: "user" },
+    );
+
+    expect(startTeamDaemon).toHaveBeenCalledWith({
+      configPath,
+      host: "0.0.0.0",
+      port: 9999,
+    });
     mockLog.mockRestore();
   });
 

@@ -193,8 +193,11 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
 
   const retention: TeamRetentionConfig = {
     successfulRunDays: parsed.retention?.successful_run_days ?? 7,
-    failedRunDays: parsed.retention?.failed_run_days ?? 14,
-    maxWorkspaceGb: parsed.retention?.max_workspace_gb ?? 20,
+    // Defaults mirror V2 spec §6/§11: failed/blocked workspaces stay for 30
+    // days to preserve failure forensics; max workspace usage caps at 50GB
+    // before the retention sweep starts trimming oldest terminal runs.
+    failedRunDays: parsed.retention?.failed_run_days ?? 30,
+    maxWorkspaceGb: parsed.retention?.max_workspace_gb ?? 50,
   };
 
   return {

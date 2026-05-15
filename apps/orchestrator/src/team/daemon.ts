@@ -146,8 +146,20 @@ export async function startTeamDaemon(
   const waitPromise = new Promise<void>((resolve) => {
     resolveWait = resolve;
   });
+
+  // Install signal handlers so Ctrl-C and `kill <pid>` resolve `wait()` and
+  // close Fastify gracefully. Without these the CLI's `await handle.wait()`
+  // would hang until the test/smoke harness's hard SIGKILL kicked in.
+  const onSignal = (): void => {
+    void stop();
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+
   const stop = (): Promise<void> => {
     if (!stopped) {
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
       stopped = app.close().then(() => {
         resolveWait?.();
       });

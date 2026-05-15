@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { IssueRef } from "@issuepilot/shared-contracts";
 import type { GitLabAdapter } from "@issuepilot/tracker-gitlab";
+import { branchName as workspaceBranchName, slugify } from "@issuepilot/workspace";
 
 import type { LeaseStore, RunLease } from "../runtime/leases.js";
 import type { RuntimeState } from "../runtime/state.js";
@@ -55,18 +56,22 @@ export interface TeamClaimedRun {
   leaseId: string;
 }
 
+/**
+ * Build a branch name using the shared workspace helper so V1 single-mode
+ * and V2 team-mode produce identical branches for the same issue. The V1
+ * helper also validates length and reserved characters (`..`, `:`, `~`,
+ * `^`, `\\`), keeping git operations safe.
+ */
 function deriveBranchName(
   workflowPrefix: string,
   issueIid: number,
   issueTitle: string,
 ): string {
-  const slug = issueTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  const suffix = slug.length > 0 ? `-${slug}` : "";
-  return `${workflowPrefix}/${issueIid}${suffix}`;
+  return workspaceBranchName({
+    prefix: workflowPrefix,
+    iid: issueIid,
+    titleSlug: slugify(issueTitle),
+  });
 }
 
 async function safeNotify(

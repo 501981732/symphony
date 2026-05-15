@@ -40,4 +40,26 @@ describe("ProjectList", () => {
       screen.getByText("workflow missing tracker.project_id"),
     ).toBeInTheDocument();
   });
+
+  it("renders Last poll in a stable UTC format to avoid SSR hydration mismatch", () => {
+    render(
+      <ProjectList
+        projects={[
+          {
+            id: "platform-web",
+            name: "Platform Web",
+            workflowPath: "/srv/platform-web/WORKFLOW.md",
+            gitlabProject: "group/platform-web",
+            enabled: true,
+            activeRuns: 0,
+            lastPollAt: "2026-05-15T01:23:45.000Z",
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText("Last poll: 2026-05-15 01:23:45Z"),
+    ).toBeInTheDocument();
+  });
 });
