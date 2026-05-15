@@ -216,8 +216,17 @@ describe("scanCiFeedbackOnce", () => {
     });
   });
 
-  it("does nothing besides ci_status_observed when pipeline is running/pending", async () => {
-    for (const status of ["running", "pending"] as const) {
+  it("does nothing besides ci_status_observed when pipeline is running/pending/unknown", async () => {
+    // `unknown` is treated as a wait state too: in practice it means
+    // either the pipeline has not been created yet (race with the MR
+    // landing) or the upstream returned a status string we have not
+    // mapped yet. Either way, prompting a reviewer immediately would
+    // spam the issue thread and — worse — would burn the per-run
+    // marker note slot, which then blocks the rework path from
+    // writing its "failing CI pipeline" note on the next tick. See the
+    // ci-feedback e2e "failed pipeline transitions to ai-rework"
+    // regression for the actual failure mode.
+    for (const status of ["running", "pending", "unknown"] as const) {
       const ctx = createDeps({ status });
       const runId = seedReviewRun(ctx.state);
 
@@ -231,6 +240,29 @@ describe("scanCiFeedbackOnce", () => {
         data: { status, action: "wait" },
       });
     }
+  });
+
+  it("lets the rework note land even if an earlier 'unknown' tick already wrote a marker note (regression)", async () => {
+    // Reproduces the e2e race: the scanner's first tick observed an
+    // empty pipelines table (pipeline still being created), so without
+    // the unknown→wait fix it would have written a manual-prompt note
+    // under `<!-- issuepilot:ci-feedback:<runId> -->`. The C1 dedup
+    // then prevented the next tick — which sees `failed` — from
+    // writing the "failing CI pipeline" rework note. Pinning the
+    // wait-only behaviour for `unknown` lets the rework note survive.
+    const ctx = createDeps({ status: "unknown" });
+    seedReviewRun(ctx.state);
+    await scanCiFeedbackOnce(ctx.deps);
+    expect(ctx.gitlab.createIssueNote).not.toHaveBeenCalled();
+
+    // Second tick: pipeline now resolves to failed.
+    ctx.gitlab.getPipelineStatus.mockResolvedValueOnce("failed");
+    await scanCiFeedbackOnce(ctx.deps);
+
+    expect(ctx.gitlab.createIssueNote).toHaveBeenCalledTimes(1);
+    expect(ctx.gitlab.createIssueNote.mock.calls[0]?.[1]).toContain(
+      "failing CI pipeline",
+    );
   });
 
   it("emits ci_status_observed (canceled) and prompts manual review without changing labels", async () => {

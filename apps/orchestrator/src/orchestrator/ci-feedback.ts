@@ -268,9 +268,16 @@ const REVIEW_RUN_STATUSES = new Set<string>(["completed"]);
  * - `failed` + `onFailure === "human-review"` → emit
  *   `ci_status_observed { action: noop }` to record the observation
  *   without changing labels.
- * - `running` / `pending` → emit `ci_status_observed { action: wait }`.
- * - `canceled` / `unknown` → emit `ci_status_observed { action: manual }`
- *   plus a prompt note for the reviewer.
+ * - `running` / `pending` / `unknown` → emit
+ *   `ci_status_observed { action: wait }`. `unknown` is treated as a
+ *   wait state because it usually means the pipeline has not been
+ *   created yet (race with the MR landing) or upstream returned a
+ *   status we have not mapped. Prompting on `unknown` would also burn
+ *   the per-run marker note slot before a real failure could write
+ *   its rework note.
+ * - `canceled` (and gitbeaker's `skipped` → canceled mapping) →
+ *   emit `ci_status_observed { action: manual }` plus a prompt note
+ *   for the reviewer.
  *
  * Label transitions always pass `requireCurrent: [handoffLabel]` so a
  * stale completion (issue already merged-closed or reopened by a human)
@@ -345,7 +352,15 @@ export async function scanCiFeedbackOnce(
       continue;
     }
 
-    if (status === "running" || status === "pending") {
+    // `unknown` is grouped with running/pending here so a transient
+    // "pipeline not created yet" race (the MR has just landed and the
+    // CI runner has not produced a pipeline row yet) or an upstream
+    // status string we have not mapped does not immediately burn the
+    // per-run marker note slot. If we wrote a manual-prompt note for
+    // `unknown`, the C1 dedup would then block the rework path from
+    // writing its "failing CI pipeline" note on the very next tick.
+    // See the ci-feedback e2e regression and the matching unit test.
+    if (status === "running" || status === "pending" || status === "unknown") {
       emit(deps, run, "ci_status_observed", {
         status,
         action: "wait",
@@ -404,10 +419,12 @@ export async function scanCiFeedbackOnce(
       continue;
     }
 
-    // canceled / unknown: prompt a reviewer, but only once per run —
-    // GitLab pipelines often dwell in `unknown` (no pipeline yet) or
-    // `canceled` while the human investigates, and we must not spam
-    // the issue thread.
+    // canceled (and the gitbeaker mapping of `skipped` → canceled):
+    // prompt a reviewer, but only once per run — humans often leave a
+    // canceled pipeline alone for a while, and we must not spam the
+    // issue thread. `unknown` is intentionally handled above as a
+    // wait state instead so the marker note slot is preserved for a
+    // later rework / lookup_failed scenario.
     if (!(await hasExistingCiNote(deps, run))) {
       await deps.gitlab.createIssueNote(
         run.issueIid,
