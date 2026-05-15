@@ -375,4 +375,53 @@ describe("driveLifecycle", () => {
       2,
     );
   });
+
+  it("returns a deterministic non-interactive response for user input requests", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+        ["turn/start", { turnId: "u1" }],
+      ]),
+      [
+        {
+          method: "turn/completed",
+          params: { turnId: "u1", stop: true },
+        },
+      ],
+    );
+    const events: string[] = [];
+
+    const resultPromise = driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: (type) => events.push(type),
+    });
+
+    await Promise.resolve();
+    await expect(
+      rpc.requestHandler("item/tool/requestUserInput", { turnId: "u1" }),
+    ).resolves.toMatchObject({
+      success: false,
+      contentItems: [
+        {
+          type: "inputText",
+          text: expect.stringContaining("non-interactive IssuePilot run"),
+        },
+      ],
+    });
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(events).toContain("turn_input_required");
+  });
 });

@@ -44,6 +44,10 @@ type TurnOutcome =
   | { kind: "cancelled" }
   | { kind: "timeout" };
 
+const NON_INTERACTIVE_INPUT_REPLY =
+  "This is a non-interactive IssuePilot run. Operator input is unavailable. " +
+  "If blocked, record the blocker and mark the issue ai-blocked.";
+
 function nestedId(
   params: Record<string, unknown> | undefined,
   key: string,
@@ -165,7 +169,15 @@ export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
 
     if (method === "item/tool/requestUserInput") {
       onEvent("turn_input_required", params);
-      throw new Error("IssuePilot P0 does not support interactive user input");
+      return {
+        success: false,
+        contentItems: [
+          {
+            type: "inputText",
+            text: NON_INTERACTIVE_INPUT_REPLY,
+          },
+        ],
+      };
     }
 
     if (method !== "item/tool/call") {

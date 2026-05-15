@@ -89,6 +89,23 @@ describe("classifyError", () => {
     expect(c.kind).toBe("retryable");
   });
 
+  it("classifies runner input-required outcomes as blocked", () => {
+    const c = classifyError({
+      status: "failed",
+      reason: "turn_input_required: user input requested",
+    });
+    expect(c.kind).toBe("blocked");
+    expect(c.code).toBe("codex_input_required");
+  });
+
+  it("classifies legacy user-input errors as blocked", () => {
+    const c = classifyError(
+      new Error("IssuePilot P0 does not support interactive user input"),
+    );
+    expect(c.kind).toBe("blocked");
+    expect(c.code).toBe("codex_input_required");
+  });
+
   // Regression: GitLabError carries a numeric `.status` (HTTP status code)
   // alongside `.category`. The old classifier read `.status` first and
   // routed every HTTP error into the runner-outcome branch as
