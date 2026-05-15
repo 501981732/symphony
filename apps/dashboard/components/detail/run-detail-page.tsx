@@ -1,6 +1,10 @@
 "use client";
 
-import type { IssuePilotEvent, RunRecord } from "@issuepilot/shared-contracts";
+import type {
+  IssuePilotEvent,
+  PipelineStatus,
+  RunRecord,
+} from "@issuepilot/shared-contracts";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
@@ -22,6 +26,15 @@ const STATUS_TONES: Record<RunRecord["status"], BadgeTone> = {
   completed: "success",
   failed: "danger",
   blocked: "violet",
+};
+
+const CI_TONES: Record<PipelineStatus, BadgeTone> = {
+  running: "info",
+  success: "success",
+  failed: "danger",
+  pending: "info",
+  canceled: "warning",
+  unknown: "neutral",
 };
 
 interface RunDetailPageProps {
@@ -191,6 +204,26 @@ export function RunDetailPage({
               ))}
             </div>
           </Field>
+          {run.latestCiStatus ? (
+            <Field label="Latest CI">
+              <div className="flex items-center gap-2">
+                <Badge
+                  tone={CI_TONES[run.latestCiStatus]}
+                  aria-label={`latest ci ${run.latestCiStatus}`}
+                >
+                  CI {run.latestCiStatus}
+                </Badge>
+                {run.latestCiCheckedAt ? (
+                  <time
+                    dateTime={run.latestCiCheckedAt}
+                    className="font-mono text-xs text-slate-500"
+                  >
+                    {run.latestCiCheckedAt}
+                  </time>
+                ) : null}
+              </div>
+            </Field>
+          ) : null}
           {run.lastError ? (
             <Field label="Failure">
               <span className="font-mono text-xs text-rose-700">

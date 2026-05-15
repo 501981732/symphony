@@ -1,6 +1,10 @@
 "use client";
 
-import type { RunRecord, RunStatus } from "@issuepilot/shared-contracts";
+import type {
+  PipelineStatus,
+  RunRecord,
+  RunStatus,
+} from "@issuepilot/shared-contracts";
 import { useMemo, useState } from "react";
 
 import { Badge, type BadgeTone } from "../ui/badge";
@@ -23,6 +27,15 @@ const STATUS_TONES: Record<RunStatus, BadgeTone> = {
   completed: "success",
   failed: "danger",
   blocked: "violet",
+};
+
+const CI_TONES: Record<PipelineStatus, BadgeTone> = {
+  running: "info",
+  success: "success",
+  failed: "danger",
+  pending: "info",
+  canceled: "warning",
+  unknown: "neutral",
 };
 
 function formatElapsed(startedAt: string, endedAt?: string): string {
@@ -193,7 +206,22 @@ export function RunsTable({
               </div>
             </TableCell>
             <TableCell>
-              <Badge tone={STATUS_TONES[run.status]}>{run.status}</Badge>
+              <div className="flex flex-wrap items-center gap-1">
+                <Badge tone={STATUS_TONES[run.status]}>{run.status}</Badge>
+                {run.latestCiStatus ? (
+                  <Badge
+                    tone={CI_TONES[run.latestCiStatus]}
+                    aria-label={`latest ci ${run.latestCiStatus}`}
+                    title={
+                      run.latestCiCheckedAt
+                        ? `Last checked ${run.latestCiCheckedAt}`
+                        : undefined
+                    }
+                  >
+                    CI {run.latestCiStatus}
+                  </Badge>
+                ) : null}
+              </div>
             </TableCell>
             <TableCell className="tabular-nums">{run.turnCount ?? 0}</TableCell>
             <TableCell
