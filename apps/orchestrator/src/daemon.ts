@@ -491,6 +491,35 @@ export async function startDaemon(
       });
   };
 
+  // Operator action services publish directly to the event bus (they do not
+  // have access to publishEvent's eventStore-aware path). Bridge those
+  // records into the eventStore so `/api/events?runId=...` and the
+  // dashboard's audit log can surface them alongside dispatch/codex events.
+  // The bus already received the record from actions.ts; this subscriber
+  // strictly appends to disk and never re-publishes.
+  eventBus.subscribe((record) => {
+    if (!record.type.startsWith("operator_action_")) return;
+    const existing = runIndex.get(record.runId);
+    const run = state.getRun(record.runId);
+    const issueIid =
+      existing?.issueIid ??
+      (typeof run?.["issue"] === "object" &&
+      run["issue"] !== null &&
+      "iid" in run["issue"]
+        ? Number((run["issue"] as { iid: unknown }).iid)
+        : undefined);
+    if (!issueIid || !Number.isFinite(issueIid)) return;
+    const key = existing ?? runKey(workflow, issueIid);
+    runIndex.set(record.runId, key);
+    void eventStore
+      .append(key.projectSlug, key.issueIid, record)
+      .catch((err) => {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT") return;
+        console.error(err);
+      });
+  });
+
   const publishHumanReviewEvent = (event: HumanReviewEvent): void => {
     syncHumanReviewFinalLabels(state, event);
     if (event.issueIid > 0) {

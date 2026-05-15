@@ -52,6 +52,7 @@ export interface ServerDeps {
     stop(input: {
       runId: string;
       operator: string;
+      cancelTimeoutMs?: number;
     }): Promise<OperatorActionResult>;
     archive(input: {
       runId: string;
@@ -136,6 +137,13 @@ function buildDashboardSummary(
   runs: Array<Record<string, unknown>>,
   handoffLabel: string,
 ): Record<string, number> {
+  // NOTE: `stopping` is intentionally not bucketed. It's a transient state
+  // produced only when `stopRun` fails to cancel (cancel_timeout etc.) and
+  // resolves quickly via `turnTimeoutMs` into `failed`. The dashboard summary
+  // contract `DASHBOARD_SUMMARY_VALUES` (spec §14) only tracks long-lived
+  // states. Surfacing `stopping` would require coordinated changes to
+  // `packages/shared-contracts` and the dashboard `SummaryCards` highlight
+  // map, which is out of Phase 2 scope.
   const summary = {
     running: 0,
     retrying: 0,
@@ -321,29 +329,75 @@ export async function createServer(
     return value;
   }
 
-  for (const action of ["retry", "stop", "archive"] as const) {
-    app.post<{ Params: { runId: string } }>(
-      `/api/runs/:runId/${action}`,
-      async (request, reply) => {
-        if (!deps.operatorActions) {
-          return reply
-            .code(503)
-            .send({ ok: false, code: "actions_unavailable" });
-        }
-        const operator = extractOperator(
-          request.headers as Record<string, unknown>,
-        );
-        const result = await deps.operatorActions[action]({
-          runId: request.params.runId,
-          operator,
-        });
-        if (result.ok) {
-          return reply.code(200).send({ ok: true });
-        }
-        return reply.code(statusFromCode(result.code)).send(result);
-      },
+  app.post<{
+    Params: { runId: string };
+  }>("/api/runs/:runId/retry", async (request, reply) => {
+    if (!deps.operatorActions) {
+      return reply.code(503).send({ ok: false, code: "actions_unavailable" });
+    }
+    const operator = extractOperator(
+      request.headers as Record<string, unknown>,
     );
-  }
+    const result = await deps.operatorActions.retry({
+      runId: request.params.runId,
+      operator,
+    });
+    if (result.ok) {
+      return reply.code(200).send({ ok: true });
+    }
+    return reply.code(statusFromCode(result.code)).send(result);
+  });
+
+  app.post<{
+    Params: { runId: string };
+    Querystring: { cancelTimeoutMs?: string };
+  }>("/api/runs/:runId/stop", async (request, reply) => {
+    if (!deps.operatorActions) {
+      return reply.code(503).send({ ok: false, code: "actions_unavailable" });
+    }
+    const operator = extractOperator(
+      request.headers as Record<string, unknown>,
+    );
+    const cancelTimeoutMs = parseOptionalPositiveInt(
+      request.query.cancelTimeoutMs,
+    );
+    if (
+      request.query.cancelTimeoutMs !== undefined &&
+      cancelTimeoutMs === undefined
+    ) {
+      return reply
+        .code(400)
+        .send({ error: "cancelTimeoutMs must be a positive integer" });
+    }
+    const result = await deps.operatorActions.stop({
+      runId: request.params.runId,
+      operator,
+      ...(cancelTimeoutMs !== undefined ? { cancelTimeoutMs } : {}),
+    });
+    if (result.ok) {
+      return reply.code(200).send({ ok: true });
+    }
+    return reply.code(statusFromCode(result.code)).send(result);
+  });
+
+  app.post<{
+    Params: { runId: string };
+  }>("/api/runs/:runId/archive", async (request, reply) => {
+    if (!deps.operatorActions) {
+      return reply.code(503).send({ ok: false, code: "actions_unavailable" });
+    }
+    const operator = extractOperator(
+      request.headers as Record<string, unknown>,
+    );
+    const result = await deps.operatorActions.archive({
+      runId: request.params.runId,
+      operator,
+    });
+    if (result.ok) {
+      return reply.code(200).send({ ok: true });
+    }
+    return reply.code(statusFromCode(result.code)).send(result);
+  });
 
   const host = opts.host ?? "127.0.0.1";
   const port = opts.port ?? 4738;

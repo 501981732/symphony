@@ -502,6 +502,7 @@ describe("Orchestrator HTTP API", () => {
 type ActionFn = (input: {
   runId: string;
   operator: string;
+  cancelTimeoutMs?: number;
 }) => Promise<OperatorActionResult>;
 
 function buildActions(partial: {
@@ -682,6 +683,44 @@ describe("operator action routes", () => {
 
       await app.inject({ method: "POST", url: "/api/runs/run-1/archive" });
       expect(archive).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST /stop forwards cancelTimeoutMs query parameter", async () => {
+    const stop = vi.fn<ActionFn>(async () => ({ ok: true }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ stop }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/stop?cancelTimeoutMs=750",
+      });
+      expect(resp.statusCode).toBe(200);
+      expect(stop).toHaveBeenCalledWith({
+        runId: "run-1",
+        operator: "system",
+        cancelTimeoutMs: 750,
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST /stop rejects invalid cancelTimeoutMs with 400", async () => {
+    const stop = vi.fn<ActionFn>(async () => ({ ok: true }));
+    const { app } = await buildTestApp(async () => [], {
+      operatorActions: buildActions({ stop }),
+    });
+    try {
+      const resp = await app.inject({
+        method: "POST",
+        url: "/api/runs/run-1/stop?cancelTimeoutMs=0",
+      });
+      expect(resp.statusCode).toBe(400);
+      expect(stop).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }

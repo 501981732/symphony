@@ -449,6 +449,31 @@ describe("startDaemon human-review event publishing", () => {
         add: ["ai-rework"],
         remove: ["ai-running", "ai-failed", "ai-blocked"],
       });
+
+      // The daemon's eventBus subscriber must bridge operator_action_*
+      // records into the per-run eventStore so `/api/events?runId=...`
+      // (the dashboard's audit log query) sees the retry attempt. Without
+      // this bridge actions.ts publishes only to the bus and the audit
+      // trail vanishes the moment the SSE client disconnects.
+      //
+      // The bridge's `eventStore.append` is fire-and-forget (matches the
+      // existing publishEvent pattern), so poll briefly for the records
+      // instead of asserting synchronously.
+      const deadline = Date.now() + 2_000;
+      let types: string[] = [];
+      while (Date.now() < deadline) {
+        const events = await serverDeps!.readEvents("run-9");
+        types = events.map((e) => e.type);
+        if (
+          types.includes("operator_action_requested") &&
+          types.includes("operator_action_succeeded")
+        ) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(types).toContain("operator_action_requested");
+      expect(types).toContain("operator_action_succeeded");
     } finally {
       await daemon.stop();
       await fs.rm(root, { recursive: true, force: true });

@@ -37,4 +37,34 @@ describe("HomePage", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("fetches archived runs so the Show archived toggle has something to reveal", async () => {
+    // RunsTable's `Show archived` toggle is gated on `runs.some(r =>
+    // r.archivedAt)`, and the orchestrator default-hides archived runs.
+    // Without `includeArchived: true` the toggle would never render even
+    // when archived runs exist server-side. Lock the contract in place.
+    vi.mocked(getState).mockResolvedValue({
+      service: {
+        status: "ready",
+        workflowPath: "/tmp/workflow.md",
+        gitlabProject: "group/project",
+        pollIntervalMs: 5000,
+        concurrency: 1,
+        lastConfigReloadAt: null,
+        lastPollAt: null,
+      },
+      summary: {
+        running: 0,
+        retrying: 0,
+        "human-review": 0,
+        failed: 0,
+        blocked: 0,
+      },
+    });
+    vi.mocked(listRuns).mockResolvedValue([]);
+
+    await HomePage();
+
+    expect(vi.mocked(listRuns)).toHaveBeenCalledWith({ includeArchived: true });
+  });
 });
