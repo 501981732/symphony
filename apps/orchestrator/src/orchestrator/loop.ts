@@ -15,6 +15,13 @@ export interface LoopDeps {
   claim(): Promise<Array<{ runId: string }>>;
   dispatch(runId: string): Promise<void>;
   reconcileRunning(): Promise<void>;
+  /**
+   * Optional CI feedback scanner (V2 Phase 3). When provided, it runs
+   * once per tick after reconciliation. Daemons turn this off by passing
+   * `undefined` when `ci.enabled` is false; the loop itself does not
+   * read workflow config.
+   */
+  scanCiFeedback?: (() => Promise<void>) | undefined;
   logError(err: unknown): void;
 }
 
@@ -82,6 +89,14 @@ export function startLoop(deps: LoopDeps): LoopHandle {
       await deps.reconcileRunning();
     } catch (err) {
       deps.logError(err);
+    }
+
+    if (deps.scanCiFeedback) {
+      try {
+        await deps.scanCiFeedback();
+      } catch (err) {
+        deps.logError(err);
+      }
     }
 
     const nowMs = Date.now();

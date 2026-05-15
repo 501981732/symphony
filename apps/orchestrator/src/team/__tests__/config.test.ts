@@ -116,6 +116,123 @@ describe("team config", () => {
     );
   });
 
+  it("omits the ci section by default so workflow defaults win", () => {
+    const config = parseTeamConfig(
+      [
+        "version: 1",
+        "projects:",
+        "  - id: platform-web",
+        "    name: Platform Web",
+        "    workflow: ./WORKFLOW.md",
+      ].join("\n"),
+      "/srv/issuepilot/issuepilot.team.yaml",
+    );
+
+    expect(config.ci).toBeNull();
+  });
+
+  it("reads team-wide ci overrides and fills missing keys with defaults", () => {
+    const config = parseTeamConfig(
+      [
+        "version: 1",
+        "ci:",
+        "  enabled: true",
+        "projects:",
+        "  - id: platform-web",
+        "    name: Platform Web",
+        "    workflow: ./WORKFLOW.md",
+      ].join("\n"),
+      "/srv/issuepilot/issuepilot.team.yaml",
+    );
+
+    expect(config.ci).toEqual({
+      enabled: true,
+      onFailure: "ai-rework",
+      waitForPipeline: true,
+    });
+  });
+
+  it("omits projects[].ci by default", () => {
+    const config = parseTeamConfig(
+      [
+        "version: 1",
+        "projects:",
+        "  - id: platform-web",
+        "    name: Platform Web",
+        "    workflow: ./WORKFLOW.md",
+      ].join("\n"),
+      "/srv/issuepilot/issuepilot.team.yaml",
+    );
+
+    expect(config.projects[0]?.ci).toBeNull();
+  });
+
+  it("parses projects[].ci and fills missing keys with defaults", () => {
+    const config = parseTeamConfig(
+      [
+        "version: 1",
+        "projects:",
+        "  - id: platform-web",
+        "    name: Platform Web",
+        "    workflow: ./WORKFLOW.md",
+        "    ci:",
+        "      enabled: true",
+        "      on_failure: human-review",
+      ].join("\n"),
+      "/srv/issuepilot/issuepilot.team.yaml",
+    );
+
+    expect(config.projects[0]?.ci).toEqual({
+      enabled: true,
+      onFailure: "human-review",
+      waitForPipeline: true,
+    });
+  });
+
+  it("rejects unsupported projects[].ci.on_failure values with snake_case zod path", () => {
+    let caught: unknown;
+    try {
+      parseTeamConfig(
+        [
+          "version: 1",
+          "projects:",
+          "  - id: platform-web",
+          "    name: Platform Web",
+          "    workflow: ./WORKFLOW.md",
+          "    ci:",
+          "      on_failure: ai-failed",
+        ].join("\n"),
+        "/srv/issuepilot/issuepilot.team.yaml",
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(TeamConfigError);
+    expect((caught as TeamConfigError).path).toBe("projects.0.ci.on_failure");
+  });
+
+  it("rejects unsupported ci.on_failure values with snake_case zod path", () => {
+    let caught: unknown;
+    try {
+      parseTeamConfig(
+        [
+          "version: 1",
+          "ci:",
+          "  on_failure: ai-failed",
+          "projects:",
+          "  - id: platform-web",
+          "    name: Platform Web",
+          "    workflow: ./WORKFLOW.md",
+        ].join("\n"),
+        "/srv/issuepilot/issuepilot.team.yaml",
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(TeamConfigError);
+    expect((caught as TeamConfigError).path).toBe("ci.on_failure");
+  });
+
   it("loads a config file from disk", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "team-config-"));
     const configPath = path.join(tmpDir, "issuepilot.team.yaml");

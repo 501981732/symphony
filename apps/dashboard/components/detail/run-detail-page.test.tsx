@@ -173,4 +173,34 @@ describe("RunDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(onRetry).toHaveBeenCalledWith(run.runId);
   });
+
+  it("renders Latest CI field with status badge and timestamp", () => {
+    render(
+      <RunDetailPage
+        run={{
+          ...run,
+          latestCiStatus: "failed",
+          latestCiCheckedAt: "2026-05-15T12:00:00.000Z",
+        }}
+        initialEvents={[]}
+        logsTail={[]}
+      />,
+    );
+
+    const badge = screen.getByLabelText("latest ci failed");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent("CI failed");
+    expect(badge.className).toMatch(/rose/);
+
+    const timestamp = screen.getByText("2026-05-15T12:00:00.000Z");
+    expect(timestamp.tagName.toLowerCase()).toBe("time");
+    expect(timestamp).toHaveAttribute("datetime", "2026-05-15T12:00:00.000Z");
+  });
+
+  it("omits the Latest CI field entirely when latestCiStatus is absent", () => {
+    render(<RunDetailPage run={run} initialEvents={[]} logsTail={[]} />);
+
+    expect(screen.queryByLabelText(/latest ci/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Latest CI$/)).not.toBeInTheDocument();
+  });
 });

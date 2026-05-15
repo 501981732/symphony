@@ -48,6 +48,11 @@ function workflow(projectId: string, workflowPath: string): WorkflowConfig {
       turnSandboxPolicy: { type: "workspaceWrite" },
     },
     hooks: {},
+    ci: {
+      enabled: false,
+      onFailure: "ai-rework",
+      waitForPipeline: true,
+    },
     pollIntervalMs: 10_000,
     promptTemplate: "Fix {{ issue.title }}",
     source: {
@@ -74,12 +79,14 @@ function teamConfig(): TeamConfig {
         name: "Platform Web",
         workflowPath: "/srv/platform-web/WORKFLOW.md",
         enabled: true,
+        ci: null,
       },
       {
         id: "infra-tools",
         name: "Infra Tools",
         workflowPath: "/srv/infra-tools/WORKFLOW.md",
         enabled: false,
+        ci: null,
       },
     ],
     retention: {
@@ -87,6 +94,7 @@ function teamConfig(): TeamConfig {
       failedRunDays: 14,
       maxWorkspaceGb: 20,
     },
+    ci: null,
     source: {
       path: "/srv/issuepilot/issuepilot.team.yaml",
       sha256: "sha",
@@ -138,6 +146,7 @@ describe("project registry", () => {
           name: "Platform Web",
           workflowPath: "/srv/platform-web/WORKFLOW.md",
           enabled: true,
+          ci: null,
         },
       ],
     };
@@ -150,6 +159,93 @@ describe("project registry", () => {
       enabled: false,
       disabledReason: "load-error",
       lastError: "workflow missing tracker.project_id",
+    });
+  });
+
+  it("uses workflow.ci verbatim when neither team nor project ci is set", async () => {
+    const loader: WorkflowLoaderLike = {
+      loadOnce: vi.fn(async (workflowPath: string) => {
+        const wf = workflow("group/platform-web", workflowPath);
+        wf.ci = {
+          enabled: true,
+          onFailure: "human-review",
+          waitForPipeline: false,
+        };
+        return wf;
+      }),
+    };
+
+    const registry = await createProjectRegistry(teamConfig(), loader);
+
+    expect(registry.project("platform-web")?.workflow.ci).toEqual({
+      enabled: true,
+      onFailure: "human-review",
+      waitForPipeline: false,
+    });
+  });
+
+  it("applies team.ci as the override when project.ci is null", async () => {
+    const loader: WorkflowLoaderLike = {
+      loadOnce: vi.fn(async (workflowPath: string) =>
+        workflow("group/platform-web", workflowPath),
+      ),
+    };
+
+    const config: TeamConfig = {
+      ...teamConfig(),
+      ci: {
+        enabled: true,
+        onFailure: "human-review",
+        waitForPipeline: false,
+      },
+    };
+
+    const registry = await createProjectRegistry(config, loader);
+
+    // workflow.ci ships with `{ enabled: false, onFailure: "ai-rework",
+    // waitForPipeline: true }`; team.ci must fully replace it.
+    expect(registry.project("platform-web")?.workflow.ci).toEqual({
+      enabled: true,
+      onFailure: "human-review",
+      waitForPipeline: false,
+    });
+  });
+
+  it("project.ci wins over team.ci when both are present", async () => {
+    const loader: WorkflowLoaderLike = {
+      loadOnce: vi.fn(async (workflowPath: string) =>
+        workflow("group/platform-web", workflowPath),
+      ),
+    };
+
+    const base = teamConfig();
+    const config: TeamConfig = {
+      ...base,
+      ci: {
+        enabled: true,
+        onFailure: "human-review",
+        waitForPipeline: false,
+      },
+      projects: base.projects.map((p) =>
+        p.id === "platform-web"
+          ? {
+              ...p,
+              ci: {
+                enabled: true,
+                onFailure: "ai-rework",
+                waitForPipeline: true,
+              },
+            }
+          : p,
+      ),
+    };
+
+    const registry = await createProjectRegistry(config, loader);
+
+    expect(registry.project("platform-web")?.workflow.ci).toEqual({
+      enabled: true,
+      onFailure: "ai-rework",
+      waitForPipeline: true,
     });
   });
 });

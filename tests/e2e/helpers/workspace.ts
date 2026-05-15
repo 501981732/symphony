@@ -63,6 +63,17 @@ export interface CreateE2EWorkspaceOptions {
    * path) want a much smaller value (~500 ms) so the e2e finishes quickly.
    */
   turnTimeoutMs?: number;
+  /**
+   * Enable the V2 Phase 3 CI feedback scanner. Defaults to `false` so
+   * happy-path / blocked-and-failed e2e tests don't accidentally start
+   * polling pipelines.
+   */
+  ciEnabled?: boolean;
+  /**
+   * Override `ci.on_failure`. Only meaningful when `ciEnabled` is true.
+   * Defaults to `"ai-rework"`.
+   */
+  ciOnFailure?: "ai-rework" | "human-review";
 }
 
 export async function createE2EWorkspace(
@@ -118,7 +129,9 @@ export async function createE2EWorkspace(
     .replaceAll("__REPO_URL__", bareRepo.bareDir)
     .replaceAll("__CODEX_CMD__", codexCmd)
     .replaceAll("__MAX_ATTEMPTS__", String(opts.maxAttempts ?? 1))
-    .replaceAll("__TURN_TIMEOUT_MS__", String(opts.turnTimeoutMs ?? 15_000));
+    .replaceAll("__TURN_TIMEOUT_MS__", String(opts.turnTimeoutMs ?? 15_000))
+    .replaceAll("__CI_ENABLED__", String(opts.ciEnabled ?? false))
+    .replaceAll("__CI_ON_FAILURE__", opts.ciOnFailure ?? "ai-rework");
   writeFileSync(workflowPath, rendered);
 
   return {

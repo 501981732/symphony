@@ -1,8 +1,11 @@
 import { describe, it, expect, expectTypeOf } from "vitest";
 
 import {
+  PIPELINE_STATUS_VALUES,
   RUN_STATUS_VALUES,
+  isPipelineStatus,
   isRunStatus,
+  type PipelineStatus,
   type RunRecord,
   type RunStatus,
 } from "../run.js";
@@ -103,6 +106,51 @@ describe("@issuepilot/shared-contracts/run", () => {
     };
 
     expect(run.archivedAt).toBe("2026-05-15T00:01:00.000Z");
+  });
+
+  it("PIPELINE_STATUS_VALUES enumerates the six tracker-coarsed statuses", () => {
+    expect(new Set(PIPELINE_STATUS_VALUES)).toEqual(
+      new Set([
+        "running",
+        "success",
+        "failed",
+        "pending",
+        "canceled",
+        "unknown",
+      ]),
+    );
+  });
+
+  it("isPipelineStatus narrows known strings and rejects unknown ones", () => {
+    expect(isPipelineStatus("success")).toBe(true);
+    expect(isPipelineStatus("failed")).toBe(true);
+    expect(isPipelineStatus("nope")).toBe(false);
+    expect(isPipelineStatus(undefined)).toBe(false);
+  });
+
+  it("allows RunRecord to carry latestCiStatus + latestCiCheckedAt", () => {
+    const run: RunRecord = {
+      runId: "run-1",
+      issue: {
+        id: "1",
+        iid: 1,
+        title: "Fix",
+        url: "https://gitlab.example.com/group/web/-/issues/1",
+        projectId: "group/web",
+        labels: ["human-review"],
+      },
+      status: "completed",
+      attempt: 1,
+      branch: "ai/1-fix",
+      workspacePath: "/tmp/run-1",
+      startedAt: "2026-05-15T00:00:00.000Z",
+      updatedAt: "2026-05-15T00:01:00.000Z",
+      latestCiStatus: "failed",
+      latestCiCheckedAt: "2026-05-15T00:01:30.000Z",
+    };
+
+    expect(run.latestCiStatus).toBe("failed");
+    expectTypeOf(run.latestCiStatus).toEqualTypeOf<PipelineStatus | undefined>();
   });
 
   it("RunRecord.mergeRequestUrl / endedAt / lastError / dashboard metadata are optional", () => {

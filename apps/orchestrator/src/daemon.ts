@@ -47,6 +47,7 @@ import {
   type OperatorActionDeps,
   type OperatorActionInput,
 } from "./operations/actions.js";
+import { scanCiFeedbackOnce } from "./orchestrator/ci-feedback.js";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
@@ -204,7 +205,29 @@ function fallbackEventIssue(
   };
 }
 
-function syncHumanReviewFinalLabels(
+/**
+ * Mirror the terminal label set we just observed in
+ * `reconcileHumanReview` back onto every RunRecord for the issue, and
+ * stamp `endedAt` on those runs so downstream scanners (V2 Phase 3 CI
+ * feedback, V2 Phase 4 review sweep) know the run has left the
+ * human-review loop and should stop being polled for pipelines / MR
+ * notes.
+ *
+ * We only act on the two events that actually retire the issue from
+ * `human-review`:
+ *
+ *   - `human_review_issue_closed` — MR was merged and IssuePilot
+ *     removed `human-review` and closed the GitLab Issue.
+ *   - `human_review_rework_requested` — MR was closed without merging
+ *     and labels flipped to `ai-rework`. The next claim will spawn a
+ *     fresh run; the current one is done.
+ *
+ * `human_review_mr_still_open` is *not* terminal: the reviewer is still
+ * looking at the MR and the scanner should keep polling pipelines so
+ * CI failures recycle the issue automatically (spec §9). Same with
+ * `human_review_mr_missing` — that's a diagnostic, not a terminal.
+ */
+export function syncHumanReviewFinalLabels(
   state: RuntimeState,
   event: HumanReviewEvent,
 ): void {
@@ -220,6 +243,8 @@ function syncHumanReviewFinalLabels(
   if (!labels.every((label): label is string => typeof label === "string")) {
     return;
   }
+
+  const endedAt = event.ts;
 
   for (const run of state.allRuns()) {
     const issue = run["issue"];
@@ -238,6 +263,9 @@ function syncHumanReviewFinalLabels(
         ...issue,
         labels: [...labels],
       },
+      // Only stamp endedAt once; preserve the earliest observation in
+      // case a later poll re-emits the terminal event (defensive).
+      endedAt: typeof run["endedAt"] === "string" ? run["endedAt"] : endedAt,
     });
   }
 }
@@ -491,14 +519,20 @@ export async function startDaemon(
       });
   };
 
-  // Operator action services publish directly to the event bus (they do not
-  // have access to publishEvent's eventStore-aware path). Bridge those
-  // records into the eventStore so `/api/events?runId=...` and the
-  // dashboard's audit log can surface them alongside dispatch/codex events.
-  // The bus already received the record from actions.ts; this subscriber
-  // strictly appends to disk and never re-publishes.
+  // Operator action services and the CI feedback scanner both publish
+  // directly to the event bus (they do not have access to publishEvent's
+  // eventStore-aware path). Bridge those records into the eventStore so
+  // `/api/events?runId=...` and the dashboard's audit log can surface them
+  // alongside dispatch/codex events. The bus already received the record
+  // from the caller; this subscriber strictly appends to disk and never
+  // re-publishes.
   eventBus.subscribe((record) => {
-    if (!record.type.startsWith("operator_action_")) return;
+    if (
+      !record.type.startsWith("operator_action_") &&
+      !record.type.startsWith("ci_status_")
+    ) {
+      return;
+    }
     const existing = runIndex.get(record.runId);
     const run = state.getRun(record.runId);
     const issueIid =
@@ -929,6 +963,29 @@ export async function startDaemon(
         },
       );
     },
+    scanCiFeedback: workflow.ci.enabled
+      ? async () => {
+          await scanCiFeedbackOnce({
+            state,
+            eventBus,
+            gitlab: {
+              findMergeRequestBySourceBranch:
+                gitlab.findMergeRequestBySourceBranch,
+              getPipelineStatus: gitlab.getPipelineStatus,
+              transitionLabels: gitlab.transitionLabels,
+              createIssueNote: gitlab.createIssueNote,
+              findWorkpadNote: gitlab.findWorkpadNote,
+            },
+            workflow: {
+              tracker: {
+                handoffLabel: workflow.tracker.handoffLabel,
+                reworkLabel: workflow.tracker.reworkLabel,
+              },
+              ci: workflow.ci,
+            },
+          });
+        }
+      : undefined,
     reconcileRunning: async () => {
       const runningLabel = workflow.tracker.runningLabel;
       const failedLabel = workflow.tracker.failedLabel;

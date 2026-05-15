@@ -49,6 +49,12 @@ describe("parseWorkflowFile", () => {
     expect(cfg.hooks.beforeRun).toMatch(/git fetch origin/);
     expect(cfg.hooks.afterRun).toMatch(/pnpm test/);
 
+    expect(cfg.ci).toEqual({
+      enabled: false,
+      onFailure: "ai-rework",
+      waitForPipeline: true,
+    });
+
     expect(cfg.promptTemplate).toMatch(/Issue: \{\{ issue.identifier \}\}/);
     expect(cfg.promptTemplate).toMatch(/You are the AI engineer/);
 
@@ -90,6 +96,31 @@ describe("parseWorkflowFile", () => {
     expect(cfg.hooks.afterCreate).toBeUndefined();
     expect(cfg.hooks.beforeRun).toBeUndefined();
     expect(cfg.hooks.afterRun).toBeUndefined();
+
+    expect(cfg.ci).toEqual({
+      enabled: false,
+      onFailure: "ai-rework",
+      waitForPipeline: true,
+    });
+  });
+
+  it("ci.enabled 与 on_failure 自定义值会被透传", async () => {
+    const cfg = await parseWorkflowFile(fixture("workflow.ci-enabled.md"));
+
+    expect(cfg.ci).toEqual({
+      enabled: true,
+      onFailure: "human-review",
+      waitForPipeline: false,
+    });
+  });
+
+  it("ci.on_failure 仅接受 ai-rework / human-review 枚举", async () => {
+    await expect(
+      parseWorkflowFile(fixture("workflow.ci-bad-on-failure.md")),
+    ).rejects.toMatchObject({
+      name: "WorkflowConfigError",
+      path: "ci.on_failure",
+    });
   });
 
   it("缺少 tracker 时抛 WorkflowConfigError 且包含字段路径", async () => {

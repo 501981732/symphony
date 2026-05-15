@@ -255,6 +255,62 @@ describe("startLoop", () => {
     await loop.stop();
   });
 
+  it("runs scanCiFeedback after reconcileRunning when injected", async () => {
+    const sequence: string[] = [];
+    const deps = createFakeLoopDeps({
+      reconcileRunning: vi.fn(async () => {
+        sequence.push("reconcileRunning");
+      }),
+      scanCiFeedback: vi.fn(async () => {
+        sequence.push("scanCiFeedback");
+      }),
+      claim: vi.fn(async () => {
+        sequence.push("claim");
+        return [];
+      }),
+    });
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(sequence).toEqual([
+      "reconcileRunning",
+      "scanCiFeedback",
+      "claim",
+    ]);
+
+    await loop.stop();
+  });
+
+  it("does not invoke scanCiFeedback when omitted", async () => {
+    const deps = createFakeLoopDeps();
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(
+      (deps as { scanCiFeedback?: unknown }).scanCiFeedback,
+    ).toBeUndefined();
+    await loop.stop();
+  });
+
+  it("logs scanCiFeedback errors and continues the tick", async () => {
+    const deps = createFakeLoopDeps({
+      scanCiFeedback: vi.fn(async () => {
+        throw new Error("ci lookup down");
+      }),
+    });
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(deps.logError).toHaveBeenCalled();
+    expect(deps.claim).toHaveBeenCalled();
+    expect(deps.dispatch).toHaveBeenCalledTimes(2);
+
+    await loop.stop();
+  });
+
   it("stop waits for inflight dispatches", async () => {
     let dispatchResolved = false;
     const deps = createFakeLoopDeps({

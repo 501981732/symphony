@@ -151,4 +151,52 @@ describe("RunsTable", () => {
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(onRetry).toHaveBeenCalledWith("r-1");
   });
+
+  it("renders a CI badge for latestCiStatus and skips it when absent", () => {
+    const { rerender } = render(
+      <RunsTable
+        runs={[
+          fixture({
+            runId: "r-ci-fail",
+            latestCiStatus: "failed",
+            latestCiCheckedAt: "2026-05-15T12:00:00.000Z",
+          }),
+        ]}
+      />,
+    );
+    const failedBadge = screen.getByLabelText("latest ci failed");
+    expect(failedBadge).toBeInTheDocument();
+    expect(failedBadge).toHaveTextContent("CI failed");
+    expect(failedBadge.className).toMatch(/rose/);
+    expect(failedBadge).toHaveAttribute(
+      "title",
+      "Last checked 2026-05-15T12:00:00.000Z",
+    );
+
+    rerender(<RunsTable runs={[fixture({ runId: "r-no-ci" })]} />);
+    expect(screen.queryByLabelText(/latest ci/)).not.toBeInTheDocument();
+  });
+
+  it("uses emerald tone for success and sky for running pipelines", () => {
+    render(
+      <RunsTable
+        runs={[
+          fixture({
+            runId: "r-ci-success",
+            latestCiStatus: "success",
+            issue: { ...fixture().issue, iid: 1 },
+          }),
+          fixture({
+            runId: "r-ci-running",
+            latestCiStatus: "running",
+            issue: { ...fixture().issue, iid: 2 },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByLabelText("latest ci success").className).toMatch(
+      /emerald/,
+    );
+    expect(screen.getByLabelText("latest ci running").className).toMatch(/sky/);
+  });
 });

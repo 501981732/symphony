@@ -422,7 +422,11 @@ run IssuePilot on its day-to-day work.
 - Multi-project workflow configuration in a single daemon.
 - Concurrency lifted from 1 to 2–5, with slot scheduling and lease policy.
 - ✅ Dashboard gains `retry`, `stop`, and `archive run` actions (V2 Phase 2).
-- CI status ingestion + automatic flip of CI failures back to `ai-rework`.
+- ✅ CI status ingestion + automatic flip of CI failures back to `ai-rework`
+  (V2 Phase 3; opt-in via `ci.enabled: true` in `WORKFLOW.md`). Note: the
+  scanner is wired into the orchestrator loop only at daemon startup —
+  toggling `ci.enabled` requires restarting `issuepilot run` for the change
+  to take effect.
 - MR / PR review feedback sweep (feed human review comments back into the
   next agent turn).
 - Review workflow polish: surface the structured handoff / failure / closing
