@@ -31,12 +31,12 @@ app-server** 这两个外部系统是否能在本机闭环。
 - Codex CLI 已登录，能跑 `codex app-server`（注意是 `app-server`
   子命令，不是默认的 TUI）
 
-跑一次 `pnpm exec issuepilot doctor` 验证（`apps/orchestrator/dist/bin.js`
-build 后即可调用）：
+安装本地 V1 CLI 后跑一次 `issuepilot doctor` 验证：
 
 ```bash
-pnpm -F @issuepilot/orchestrator build
-pnpm exec issuepilot doctor
+pnpm release:pack
+npm install -g ./dist/release/issuepilot-0.1.0.tgz
+issuepilot doctor
 ```
 
 期望全部 `[OK]`。
@@ -158,11 +158,13 @@ git push -u origin chore/issuepilot-workflow
 ```bash
 cd /path/to/issuepilot
 pnpm install
-pnpm -w turbo run build
+pnpm release:pack
+npm install -g ./dist/release/issuepilot-0.1.0.tgz
 ```
 
-> 第一次跑 smoke 之前 **必须** build orchestrator，因为
-> `pnpm smoke` 会启动 `apps/orchestrator/dist/bin.js`。
+> 贡献者也可以继续使用 source-checkout 路径：`pnpm build` 后执行
+> `pnpm exec issuepilot ...` 或 `pnpm smoke ...`。真实 release smoke 优先验证
+> 安装后的 `issuepilot` 命令。
 
 ### 2.2 拷贝目标项目 workflow 路径
 
@@ -178,32 +180,20 @@ WORKFLOW_PATH="$HOME/issuepilot-smoke/WORKFLOW.md"
 终端 A：
 
 ```bash
-# 选择一种方式提供 GitLab 凭据（详见 docs/getting-started.zh-CN.md §5.0）：
+# 选择一种方式提供 GitLab 凭据（详见 docs/getting-started.zh-CN.md §5）：
 #   A) export GITLAB_TOKEN="<token>"            # PAT/Group Token
-#   B) pnpm exec issuepilot auth login --hostname <host>   # OAuth Device Flow
-pnpm smoke --workflow "$WORKFLOW_PATH"
+#   B) issuepilot auth login --hostname <host>  # OAuth Device Flow
+issuepilot run --workflow "$WORKFLOW_PATH"
 ```
 
-`pnpm smoke` 只负责启动 orchestrator daemon、等待 `/api/state` ready，
-并打印 API / Dashboard URL。GitLab Issue、MR 和 dashboard 内容仍需操作者按
-下方 checklist 人工核验。
+安装态 `issuepilot run` 负责启动 orchestrator daemon。GitLab Issue、MR 和
+dashboard 内容仍需操作者按下方 checklist 人工核验。
 
 成功输出形如：
 
 ```text
-[smoke] starting orchestrator daemon on 127.0.0.1:4738…
-======================================================
- IssuePilot daemon ready
-------------------------------------------------------
- API:        http://127.0.0.1:4738
- Dashboard:  http://localhost:3000
- Workflow:   /home/you/issuepilot-smoke/WORKFLOW.md
- Project:    group/issuepilot-smoke
- Poll every: 10000ms
- Concurrency:1
-------------------------------------------------------
- Walk through the §18.3 smoke checklist now. Press Ctrl+C to stop.
-======================================================
+IssuePilot daemon listening on http://127.0.0.1:4738
+Workflow loaded: /home/you/issuepilot-smoke/WORKFLOW.md
 ```
 
 `Ctrl+C` 会优雅退出 daemon。
@@ -211,13 +201,13 @@ pnpm smoke --workflow "$WORKFLOW_PATH"
 终端 B：
 
 ```bash
-pnpm dev:dashboard
+issuepilot dashboard
 ```
 
 打开 `http://localhost:3000`，应该能看到 orchestrator 概览页。
 
-> 如果端口冲突：`pnpm smoke --workflow ... --port 4839 \
-> --dashboard-url http://localhost:3000`。
+> 如果端口冲突：`issuepilot run --workflow ... --port 4839`，同时用
+> `issuepilot dashboard --api-url http://127.0.0.1:4839` 指向同一 API。
 
 ---
 
@@ -280,10 +270,14 @@ pnpm dev:dashboard
 ## Smoke Evidence Template
 
 - Date:
+- IssuePilot version:
+- Package artifact:
+- Install command:
 - Issue URL:
 - MR URL:
 - Workflow path:
-- Command:
+- Orchestrator command:
+- Dashboard command:
 - API URL:
 - Dashboard URL:
 - Handoff note marker:
@@ -340,14 +334,13 @@ rm -rf ~/.issuepilot/repos/group__issuepilot-smoke
 
 - **403 / 401**：`GITLAB_TOKEN` 没 export 也没跑 `issuepilot auth login`；
   或 token 没 `api` scope；或 sandbox 项目对该 token 不可见。OAuth 凭据可
-  用 `pnpm exec issuepilot auth status` 查看到期时间与 scope。
+  用 `issuepilot auth status` 查看到期时间与 scope。
 
 - **dashboard 401 / CORS**：dashboard 走的是 `http://127.0.0.1:4738`，
   和 `--host` 必须一致。如果你跑在容器/远程机器上，临时让
-  `--host 0.0.0.0`（`pnpm smoke` 会把 `--host` 透传给 orchestrator
-  CLI 的 `--host`，daemon 会真正绑到该地址；同时记得让 dashboard 的
-  `NEXT_PUBLIC_API_BASE` 指向同一地址）。
+  `--host 0.0.0.0`；同时记得用 `issuepilot dashboard --api-url ...`
+  指向同一地址。
 
-- **`pnpm smoke` 卡在 readiness 失败**：如果 readiness 探测失败，
-  smoke wrapper 会发 SIGTERM 给 daemon 然后等最多 5s。仍未退出会自动
-  升级到 SIGKILL，所以命令一定会返回控制权（不会无限 hang）。
+- **release smoke 要求固定证据**：先跑 `pnpm release:check` 验证本地包、安装态
+  CLI、fake E2E 和 smoke runner；再用本 runbook 跑真实 GitLab 项目并补齐
+  Smoke Evidence Template。

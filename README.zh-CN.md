@@ -119,9 +119,9 @@ GitLab + TypeScript 路线、并打算在内部团队范围内试运行，那么
 
 仍在稳定中：
 
-- P0 source-checkout 使用方式已支持，可用于本地试点。
-- V1 目标是可安装的本地 CLI release，让用户安装 IssuePilot 后可以用
-  `issuepilot run` 启动，而不是必须在仓库 checkout 中运行。
+- V1 本地 CLI 打包已经可通过 `pnpm release:pack` 生成；生成的 tarball 会安装
+  `issuepilot` 可执行命令，供本地试点使用。
+- 当前仍是本地 tarball release，还不是发布到 npm registry 的公开包。
 
 ## 工作方式
 
@@ -177,18 +177,19 @@ SPEC.md                          原 Symphony 语言无关 spec
 
 > 详细步骤见 **[使用指南（中文）](docs/getting-started.zh-CN.md)**，以下是最短路径。
 
-**第一步：安装依赖并构建**
+**第一步：构建并安装本地 V1 包**
 
 ```bash
 corepack enable
 pnpm install
-pnpm -F @issuepilot/orchestrator build
+pnpm release:pack
+npm install -g ./dist/release/issuepilot-0.1.0.tgz
 ```
 
 **第二步：检查本机环境**
 
 ```bash
-pnpm exec issuepilot doctor
+issuepilot doctor
 ```
 
 期望全部 `[OK]`：Node.js ≥22、git、codex app-server、`~/.issuepilot/state` 可写。
@@ -201,17 +202,17 @@ pnpm exec issuepilot doctor
 
 ```bash
 export GITLAB_TOKEN="<your-token>"
-pnpm exec issuepilot validate --workflow /path/to/target-project/WORKFLOW.md
+issuepilot validate --workflow /path/to/target-project/WORKFLOW.md
 ```
 
 **第五步：启动 daemon + dashboard**
 
 ```bash
 # 终端 A — 启动 orchestrator（自动等 ready 后打印 API / Dashboard URL）
-pnpm smoke --workflow /path/to/target-project/WORKFLOW.md
+issuepilot run --workflow /path/to/target-project/WORKFLOW.md
 
 # 终端 B — 启动 dashboard
-pnpm dev:dashboard
+issuepilot dashboard
 ```
 
 打开 `http://localhost:3000`，给目标项目的某个 Issue 打上 `ai-ready` label，IssuePilot 即自动接管。
@@ -243,14 +244,15 @@ pnpm test
 pnpm build
 pnpm lint
 pnpm format:check
+pnpm release:check
 pnpm --filter @issuepilot/workflow test
 pnpm --filter @issuepilot/orchestrator test
 ```
 
-构建后，可以从 workspace 根目录运行 CLI：
+贡献者开发时，也可以继续从 workspace 根目录运行 CLI：
 
 ```bash
-pnpm -F @issuepilot/orchestrator build
+pnpm build
 pnpm exec issuepilot doctor
 pnpm exec issuepilot validate --workflow path/to/workflow.md
 ```
@@ -358,25 +360,27 @@ Request，不替代代码审查。
 - ✅ 结构化 closing note：IssuePilot 移除 `human-review` 并关闭 Issue 时写入。
 - ✅ 只读 Next.js dashboard（overview + run detail + SSE timeline）。
 - ✅ fake GitLab + fake Codex 全闭环 E2E + 真实 GitLab smoke runbook。
-- ✅ 本地试点可使用 P0 source-checkout 方式运行。
-- 🚧 稳定 V1 发布前，release evidence 和文档仍在收口。
+- ✅ 可安装本地 CLI tarball，支持安装态 `issuepilot run` 与
+  `issuepilot dashboard` 启动路径。
+- ✅ `pnpm release:check` 作为 release evidence 门禁。
+- ✅ source-checkout 方式继续作为贡献者开发和紧急回滚路径保留。
 
 ### V1 — 稳定本地发布
 
 目标：不改变单机执行模型，把当前闭环变成可安装、可重复、适合内部试点团队使用
 的稳定版本。
 
-- 通过 npm-compatible package tooling 提供可安装 CLI 分发，安装后暴露
+- ✅ 通过 npm-compatible package tooling 提供可安装 CLI 分发，安装后暴露
   `issuepilot` 可执行命令。
-- 安装后的本地启动路径：`issuepilot run --workflow ...` 启动 daemon/API，并提供
+- ✅ 安装后的本地启动路径：`issuepilot run --workflow ...` 启动 daemon/API，并提供
   已安装的 dashboard 启动命令。
-- 版本化 tag，包含 release notes、回滚说明和本地闭环兼容性预期。
-- 本地闭环所需的 workflow schema、event contract、CLI 命令和 dashboard API
+- ✅ release gate 组合单测、fake E2E、smoke wrapper、安装态 CLI smoke 和
+  `git diff --check`。
+- ✅ auth refresh、token rotation、日志脱敏、failed / blocked run 排障的运维文档。
+- 🚧 版本化 tag，包含 release notes、回滚说明和本地闭环兼容性预期。
+- 🚧 本地闭环所需的 workflow schema、event contract、CLI 命令和 dashboard API
   稳定下来。
-- release gate 组合单测、fake E2E、smoke wrapper 和固定字段的真实 GitLab
-  evidence。
-- auth refresh、token rotation、日志脱敏、failed / blocked run 排障的运维文档。
-- source-checkout 继续作为贡献者开发和紧急回滚路径保留。
+- ✅ source-checkout 继续作为贡献者开发和紧急回滚路径保留。
 
 ### V2 — 团队可运营版本
 
