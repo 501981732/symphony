@@ -38,6 +38,13 @@ export interface LeaseStore {
   heartbeat(leaseId: string, ttlMs: number): Promise<RunLease | null>;
   expireStale(): Promise<RunLease[]>;
   active(): Promise<RunLease[]>;
+  /**
+   * Cached count of leases in `active` state from the most recent file read.
+   * Provided as a synchronous accessor so callers like the server snapshot
+   * getter can include it in `/api/state` without re-entering the IO queue.
+   * Returns `0` before the first IO operation has completed.
+   */
+  activeCount(): number;
 }
 
 interface CreateLeaseStoreOptions {
@@ -81,7 +88,10 @@ async function readLeaseFile(filePath: string): Promise<LeaseFile> {
 
 async function writeLeaseFile(filePath: string, file: LeaseFile): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  // crypto.randomUUID() avoids tmp-name collisions when two writes land in the
+  // same millisecond inside the same pid (e.g. two scheduler passes finishing
+  // back-to-back under a shared mutex still serialise tmp creation per write).
+  const tmpPath = `${filePath}.tmp-${crypto.randomUUID()}`;
   await fs.writeFile(tmpPath, JSON.stringify(file, null, 2), "utf8");
   await fs.rename(tmpPath, filePath);
 }
@@ -102,6 +112,23 @@ export function createLeaseStore(
   const owner = options.owner ?? defaultOwner();
   const now = options.now ?? (() => new Date());
 
+  // Promise-chain mutex. Every public method appends to `queue` so reads and
+  // writes against the JSON file are strictly serialised within this pid. The
+  // V2 spec accepts that we do not provide cross-process consistency yet, but
+  // intra-process race-free behaviour is required for `Promise.all(...)` style
+  // multi-project poll passes (spec §17 #2: "并发 2 没有重复 claim 同一 issue").
+  let queue: Promise<unknown> = Promise.resolve();
+  function serialise<T>(operation: () => Promise<T>): Promise<T> {
+    const next = queue.then(operation, operation);
+    queue = next.catch(() => undefined);
+    return next;
+  }
+
+  let cachedActiveCount = 0;
+  function refreshActiveCount(file: LeaseFile, at: Date): void {
+    cachedActiveCount = activeLeases(file, at).length;
+  }
+
   function expireInPlace(file: LeaseFile, currentTime: Date): RunLease[] {
     const expired: RunLease[] = [];
     for (const lease of file.leases) {
@@ -114,85 +141,116 @@ export function createLeaseStore(
   }
 
   return {
-    async acquire(input) {
-      const file = await readLeaseFile(options.filePath);
-      const currentTime = now();
-      expireInPlace(file, currentTime);
-
-      const active = activeLeases(file, currentTime);
-      if (active.length >= input.maxConcurrentRuns) {
-        await writeLeaseFile(options.filePath, file);
-        return null;
-      }
-
-      const projectActive = active.filter(
-        (lease) => lease.projectId === input.projectId,
-      );
-      if (projectActive.length >= input.maxConcurrentRunsPerProject) {
-        await writeLeaseFile(options.filePath, file);
-        return null;
-      }
-
-      const sameIssue = active.find(
-        (lease) =>
-          lease.projectId === input.projectId &&
-          lease.issueId === input.issueId,
-      );
-      if (sameIssue) {
-        await writeLeaseFile(options.filePath, file);
-        return null;
-      }
-
-      const acquiredAt = currentTime.toISOString();
-      const expiresAt = new Date(currentTime.getTime() + input.ttlMs).toISOString();
-      const lease: RunLease = {
-        leaseId: crypto.randomUUID(),
-        projectId: input.projectId,
-        issueId: input.issueId,
-        runId: input.runId,
-        branchName: input.branchName,
-        acquiredAt,
-        expiresAt,
-        heartbeatAt: acquiredAt,
-        owner,
-        status: "active",
-      };
-      file.leases.push(lease);
-      await writeLeaseFile(options.filePath, file);
-      return lease;
+    activeCount() {
+      return cachedActiveCount;
     },
 
-    async release(leaseId) {
-      const file = await readLeaseFile(options.filePath);
-      const lease = file.leases.find((l) => l.leaseId === leaseId);
-      if (!lease || lease.status !== "active") return;
-      lease.status = "released";
-      await writeLeaseFile(options.filePath, file);
-    },
+    acquire(input) {
+      return serialise(async () => {
+        const file = await readLeaseFile(options.filePath);
+        const currentTime = now();
+        const expired = expireInPlace(file, currentTime);
+        const active = activeLeases(file, currentTime);
+        cachedActiveCount = active.length;
 
-    async heartbeat(leaseId, ttlMs) {
-      const file = await readLeaseFile(options.filePath);
-      const lease = file.leases.find((l) => l.leaseId === leaseId);
-      if (!lease || lease.status !== "active") return null;
-      const currentTime = now();
-      lease.heartbeatAt = currentTime.toISOString();
-      lease.expiresAt = new Date(currentTime.getTime() + ttlMs).toISOString();
-      await writeLeaseFile(options.filePath, file);
-      return lease;
-    },
+        // Acquire failure must only rewrite the lease file if expireInPlace
+        // actually mutated state. Otherwise repeated unsuccessful acquires
+        // would churn the file every poll cycle.
+        const denyReason = (() => {
+          if (active.length >= input.maxConcurrentRuns) return "global-cap";
+          const projectActive = active.filter(
+            (lease) => lease.projectId === input.projectId,
+          );
+          if (projectActive.length >= input.maxConcurrentRunsPerProject) {
+            return "project-cap";
+          }
+          const sameIssue = active.find(
+            (lease) =>
+              lease.projectId === input.projectId &&
+              lease.issueId === input.issueId,
+          );
+          if (sameIssue) return "issue-conflict";
+          return null;
+        })();
 
-    async expireStale() {
-      const file = await readLeaseFile(options.filePath);
-      const expired = expireInPlace(file, now());
-      if (expired.length > 0) {
+        if (denyReason !== null) {
+          if (expired.length > 0) {
+            await writeLeaseFile(options.filePath, file);
+          }
+          return null;
+        }
+
+        const acquiredAt = currentTime.toISOString();
+        const expiresAt = new Date(
+          currentTime.getTime() + input.ttlMs,
+        ).toISOString();
+        const lease: RunLease = {
+          leaseId: crypto.randomUUID(),
+          projectId: input.projectId,
+          issueId: input.issueId,
+          runId: input.runId,
+          branchName: input.branchName,
+          acquiredAt,
+          expiresAt,
+          heartbeatAt: acquiredAt,
+          owner,
+          status: "active",
+        };
+        file.leases.push(lease);
         await writeLeaseFile(options.filePath, file);
-      }
-      return expired;
+        refreshActiveCount(file, currentTime);
+        return lease;
+      });
     },
 
-    async active() {
-      const file = await readLeaseFile(options.filePath);
-      return activeLeases(file, now());
+    release(leaseId) {
+      return serialise(async () => {
+        const file = await readLeaseFile(options.filePath);
+        const lease = file.leases.find((l) => l.leaseId === leaseId);
+        if (!lease || lease.status !== "active") return;
+        lease.status = "released";
+        await writeLeaseFile(options.filePath, file);
+        refreshActiveCount(file, now());
+      });
+    },
+
+    heartbeat(leaseId, ttlMs) {
+      return serialise(async () => {
+        const file = await readLeaseFile(options.filePath);
+        const lease = file.leases.find((l) => l.leaseId === leaseId);
+        if (!lease || lease.status !== "active") return null;
+        const currentTime = now();
+        lease.heartbeatAt = currentTime.toISOString();
+        lease.expiresAt = new Date(
+          currentTime.getTime() + ttlMs,
+        ).toISOString();
+        await writeLeaseFile(options.filePath, file);
+        refreshActiveCount(file, currentTime);
+        return lease;
+      });
+    },
+
+    expireStale() {
+      return serialise(async () => {
+        const file = await readLeaseFile(options.filePath);
+        const currentTime = now();
+        const expired = expireInPlace(file, currentTime);
+        if (expired.length > 0) {
+          await writeLeaseFile(options.filePath, file);
+        }
+        refreshActiveCount(file, currentTime);
+        return expired;
+      });
+    },
+
+    active() {
+      return serialise(async () => {
+        const file = await readLeaseFile(options.filePath);
+        const currentTime = now();
+        const result = activeLeases(file, currentTime);
+        cachedActiveCount = result.length;
+        return result;
+      });
     },
   };
 }
