@@ -61,20 +61,20 @@ function defaultOwner(): string {
   return `${os.hostname()}:${process.pid}`;
 }
 
+async function quarantineCorruptFile(filePath: string): Promise<string> {
+  // Move the broken file aside so the next write does not silently overwrite
+  // forensic state. Naming pattern intentionally matches V2 review M5 so the
+  // Phase 5 workspace retention runbook can recognise these artefacts.
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const quarantinePath = `${filePath}.corrupt-${stamp}`;
+  await fs.rename(filePath, quarantinePath);
+  return quarantinePath;
+}
+
 async function readLeaseFile(filePath: string): Promise<LeaseFile> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(filePath, "utf8");
-    if (raw.trim().length === 0) return { leases: [] };
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "leases" in parsed &&
-      Array.isArray((parsed as { leases: unknown }).leases)
-    ) {
-      return parsed as LeaseFile;
-    }
-    return { leases: [] };
+    raw = await fs.readFile(filePath, "utf8");
   } catch (err) {
     if (
       err instanceof Error &&
@@ -84,6 +84,32 @@ async function readLeaseFile(filePath: string): Promise<LeaseFile> {
     }
     throw err;
   }
+  if (raw.trim().length === 0) return { leases: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      const moved = await quarantineCorruptFile(filePath).catch(() => null);
+      // Emit on stderr so operators see the bad-file path without forcing a
+      // logger dependency on this leaf module.
+      // eslint-disable-next-line no-console -- intentional operator-facing notice
+      console.warn(
+        `IssuePilot: lease file at ${filePath} was unreadable JSON; quarantined to ${moved ?? "<failed>"} and started a fresh store.`,
+      );
+      return { leases: [] };
+    }
+    throw err;
+  }
+  if (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    "leases" in parsed &&
+    Array.isArray((parsed as { leases: unknown }).leases)
+  ) {
+    return parsed as LeaseFile;
+  }
+  return { leases: [] };
 }
 
 async function writeLeaseFile(filePath: string, file: LeaseFile): Promise<void> {
@@ -147,6 +173,11 @@ export function createLeaseStore(
 
     acquire(input) {
       return serialise(async () => {
+        if (!Number.isFinite(input.ttlMs) || input.ttlMs <= 0) {
+          throw new Error(
+            `lease acquire requires ttlMs > 0 (received ${input.ttlMs})`,
+          );
+        }
         const file = await readLeaseFile(options.filePath);
         const currentTime = now();
         const expired = expireInPlace(file, currentTime);
@@ -216,6 +247,11 @@ export function createLeaseStore(
 
     heartbeat(leaseId, ttlMs) {
       return serialise(async () => {
+        if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
+          throw new Error(
+            `lease heartbeat requires ttlMs > 0 (received ${ttlMs})`,
+          );
+        }
         const file = await readLeaseFile(options.filePath);
         const lease = file.leases.find((l) => l.leaseId === leaseId);
         if (!lease || lease.status !== "active") return null;

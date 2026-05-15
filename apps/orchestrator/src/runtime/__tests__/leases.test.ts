@@ -192,6 +192,65 @@ describe("file backed lease store", () => {
     );
   });
 
+  it("rejects non-positive ttlMs on acquire and heartbeat", async () => {
+    const store = await createStore();
+    await expect(
+      store.acquire({
+        projectId: "platform-web",
+        issueId: "1",
+        runId: "run-1",
+        branchName: "ai/1",
+        ttlMs: 0,
+        maxConcurrentRuns: 2,
+        maxConcurrentRunsPerProject: 1,
+      }),
+    ).rejects.toThrow(/ttlMs/);
+    await expect(
+      store.acquire({
+        projectId: "platform-web",
+        issueId: "1",
+        runId: "run-1",
+        branchName: "ai/1",
+        ttlMs: -10,
+        maxConcurrentRuns: 2,
+        maxConcurrentRunsPerProject: 1,
+      }),
+    ).rejects.toThrow(/ttlMs/);
+
+    const ok = await store.acquire({
+      projectId: "platform-web",
+      issueId: "1",
+      runId: "run-1",
+      branchName: "ai/1",
+      ttlMs: 60_000,
+      maxConcurrentRuns: 2,
+      maxConcurrentRunsPerProject: 1,
+    });
+    await expect(store.heartbeat(ok!.leaseId, 0)).rejects.toThrow(/ttlMs/);
+  });
+
+  it("quarantines a corrupt lease file and recovers with an empty store", async () => {
+    const filePath = path.join(tmpDir, "leases.json");
+    await fs.writeFile(filePath, "{not valid json");
+    const store = await createStore();
+
+    const lease = await store.acquire({
+      projectId: "platform-web",
+      issueId: "1",
+      runId: "run-1",
+      branchName: "ai/1",
+      ttlMs: 60_000,
+      maxConcurrentRuns: 2,
+      maxConcurrentRunsPerProject: 1,
+    });
+    expect(lease).not.toBeNull();
+
+    const entries = await fs.readdir(tmpDir);
+    expect(
+      entries.find((name) => name.startsWith("leases.json.corrupt-")),
+    ).toBeDefined();
+  });
+
   it("does not rewrite the lease file when acquire fails without expiring leases", async () => {
     const store = await createStore();
 

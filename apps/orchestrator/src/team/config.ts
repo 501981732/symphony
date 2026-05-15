@@ -97,26 +97,23 @@ const rawConfigSchema = z.object({
   retention: rawRetentionSchema,
 });
 
-function formatZodIssuePath(issue: { path: ReadonlyArray<PropertyKey> }): string {
-  return issue.path.map((p) => String(p)).join(".");
+function camelToSnake(segment: string): string {
+  return segment.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
 }
 
-// zod v4 reports `max_concurrent_runs: 6` as "too_big" on
-// scheduler.max_concurrent_runs; re-emit it with the snake_case path so the
-// caller-facing message stays stable and matches the team YAML field name.
-function rephrasePathForMessage(issuePath: string): string {
+// zod v4 reports issues using the JS field names from the parsed schema
+// (camelCase after our normalisation), but our YAML keys are snake_case. We
+// convert every string segment so error messages always point at the actual
+// field in `issuepilot.team.yaml`, including new fields added later without
+// updating a hard-coded translation list.
+function humanisePath(issuePath: ReadonlyArray<PropertyKey>): string {
   return issuePath
-    .split(".")
-    .map((segment, index, all) => {
-      if (index === all.length - 1) {
-        if (segment === "maxConcurrentRuns") return "max_concurrent_runs";
-        if (segment === "maxConcurrentRunsPerProject") {
-          return "max_concurrent_runs_per_project";
-        }
-        if (segment === "leaseTtlMs") return "lease_ttl_ms";
-        if (segment === "pollIntervalMs") return "poll_interval_ms";
-      }
-      return segment;
+    .map((p) => {
+      if (typeof p === "number") return String(p);
+      const s = String(p);
+      // Preserve already-snake fields and pure digit indices verbatim.
+      if (/^[a-z0-9_]+$/.test(s)) return s;
+      return camelToSnake(s);
     })
     .join(".");
 }
@@ -149,7 +146,7 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
   } catch (err) {
     throw new TeamConfigError(
       `failed to parse YAML: ${err instanceof Error ? err.message : String(err)}`,
-      "",
+      "(yaml)",
       { cause: err },
     );
   }
@@ -160,13 +157,11 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
   } catch (err) {
     if (err instanceof ZodError) {
       const first = err.issues[0];
-      const issuePath = first ? formatZodIssuePath(first) : "";
+      const issuePath = first ? humanisePath(first.path) : "(root)";
       const message = first?.message ?? "invalid team config";
-      throw new TeamConfigError(
-        `${rephrasePathForMessage(issuePath)}: ${message}`,
-        rephrasePathForMessage(issuePath),
-        { cause: err },
-      );
+      throw new TeamConfigError(`${issuePath}: ${message}`, issuePath, {
+        cause: err,
+      });
     }
     throw err;
   }

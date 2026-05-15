@@ -77,6 +77,45 @@ describe("team config", () => {
     ).toThrow(/scheduler.max_concurrent_runs/);
   });
 
+  it("surfaces malformed YAML with the (yaml) path placeholder", () => {
+    let caught: unknown;
+    try {
+      parseTeamConfig(
+        "version: 1\nprojects:\n  - id: : bad\n",
+        "/srv/issuepilot/issuepilot.team.yaml",
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(TeamConfigError);
+    expect((caught as TeamConfigError).path).toBe("(yaml)");
+  });
+
+  it("converts camelCase zod paths back to snake_case for YAML readability", () => {
+    let caught: unknown;
+    try {
+      parseTeamConfig(
+        [
+          "version: 1",
+          "scheduler:",
+          "  lease_ttl_ms: 500",
+          "projects:",
+          "  - id: platform-web",
+          "    name: Platform Web",
+          "    workflow: ./platform-web/WORKFLOW.md",
+        ].join("\n"),
+        "/srv/issuepilot/issuepilot.team.yaml",
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(TeamConfigError);
+    expect((caught as TeamConfigError).path).toBe("scheduler.lease_ttl_ms");
+    expect((caught as TeamConfigError).message).toMatch(
+      /scheduler\.lease_ttl_ms/,
+    );
+  });
+
   it("loads a config file from disk", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "team-config-"));
     const configPath = path.join(tmpDir, "issuepilot.team.yaml");
