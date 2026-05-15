@@ -415,6 +415,9 @@ internal pilot teams without changing the core execution model.
 Goal: graduate from "single machine" to "shared team machine" so a team can
 run IssuePilot on its day-to-day work.
 
+- 🚧 Phase 1 foundation: experimental `issuepilot run --config
+  /path/to/issuepilot.team.yaml` team mode for multi-project loading,
+  lease-backed scheduling, and project-aware dashboard state.
 - Deployable to a shared team box or intranet service (multi-user friendly).
 - Multi-project workflow configuration in a single daemon.
 - Concurrency lifted from 1 to 2–5, with slot scheduling and lease policy.

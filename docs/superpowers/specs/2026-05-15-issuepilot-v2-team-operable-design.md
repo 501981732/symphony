@@ -355,6 +355,10 @@ V2 实现需要覆盖：
 - scheduler 多项目并发。
 - dashboard overview 按 project 分组。
 
+实施计划：
+
+- `docs/superpowers/plans/2026-05-15-issuepilot-v2-team-runtime-foundation.md`
+
 ### Phase 2：Dashboard Operations
 
 - retry / stop / archive API。

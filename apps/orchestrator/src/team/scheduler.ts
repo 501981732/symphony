@@ -4,6 +4,7 @@ import type { GitLabAdapter } from "@issuepilot/tracker-gitlab";
 
 import type { LeaseStore } from "../runtime/leases.js";
 import type { RuntimeState } from "../runtime/state.js";
+
 import type { TeamSchedulerConfig } from "./config.js";
 import type { RegisteredProject } from "./registry.js";
 

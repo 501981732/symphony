@@ -394,6 +394,9 @@ Request，不替代代码审查。
 
 目标：从"个人单机"升级到"团队共享"，能在内网或团队机器上跑日常工作。
 
+- 🚧 Phase 1 foundation：实验性 `issuepilot run --config
+  /path/to/issuepilot.team.yaml` team mode，用于多项目加载、lease-backed
+  调度和 project-aware dashboard state。
 - 部署到团队共享机器或内网服务（multi-user 友好）。
 - 单 daemon 支持多项目 workflow 配置。
 - 并发从 1 扩展到 2–5，配套槽位调度与租约策略。

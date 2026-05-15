@@ -8,7 +8,11 @@ import {
   type RuntimeState,
 } from "../runtime/state.js";
 import { createServer } from "../server/index.js";
-import { loadTeamConfig as defaultLoadTeamConfig, type TeamConfig } from "./config.js";
+
+import {
+  loadTeamConfig as defaultLoadTeamConfig,
+  type TeamConfig,
+} from "./config.js";
 import {
   createProjectRegistry as defaultCreateProjectRegistry,
   type ProjectRegistry,
