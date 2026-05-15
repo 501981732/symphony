@@ -32,10 +32,22 @@ export interface ServerDeps {
   handoffLabel?: string;
   pollIntervalMs: number;
   concurrency: number;
-  /** V2 team runtime rollups; included verbatim in `/api/state`. */
-  runtime?: TeamRuntimeSummary;
-  /** V2 team project rollups; included verbatim in `/api/state`. */
-  projects?: ProjectSummary[];
+  /**
+   * V2 team runtime rollups, included verbatim in `/api/state`. Accepts a
+   * value or a getter; the getter form is evaluated on every request so the
+   * snapshot reflects current lease/poll state instead of the initial value
+   * captured at daemon start.
+   */
+  runtime?: TeamRuntimeSummary | (() => TeamRuntimeSummary);
+  /** V2 team project rollups; same value-or-getter semantics as `runtime`. */
+  projects?: ProjectSummary[] | (() => ProjectSummary[]);
+}
+
+function resolveSnapshotField<T>(
+  value: T | (() => T) | undefined,
+): T | undefined {
+  if (value === undefined) return undefined;
+  return typeof value === "function" ? (value as () => T)() : value;
 }
 
 function parseOptionalPositiveInt(
@@ -154,6 +166,8 @@ export async function createServer(
   });
 
   app.get("/api/state", async () => {
+    const runtime = resolveSnapshotField(deps.runtime);
+    const projects = resolveSnapshotField(deps.projects);
     return {
       service: {
         status: "ready",
@@ -168,8 +182,8 @@ export async function createServer(
         deps.state.allRuns(),
         deps.handoffLabel ?? "human-review",
       ),
-      ...(deps.runtime ? { runtime: deps.runtime } : {}),
-      ...(deps.projects ? { projects: deps.projects } : {}),
+      ...(runtime ? { runtime } : {}),
+      ...(projects ? { projects } : {}),
     };
   });
 

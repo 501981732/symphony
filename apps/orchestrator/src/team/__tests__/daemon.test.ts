@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { LeaseStore } from "../../runtime/leases.js";
 import type { ServerDeps } from "../../server/index.js";
 import type { TeamConfig } from "../config.js";
 import { startTeamDaemon } from "../daemon.js";
@@ -82,14 +83,25 @@ afterEach(() => {
 describe("startTeamDaemon", () => {
   it("starts a project-aware server shell using parsed team config", async () => {
     const loadTeamConfig = vi.fn(async () => baseConfig());
+    let summariesValue = [...summaries];
     const registry: ProjectRegistry = {
       enabledProjects: () => [],
       project: () => undefined,
-      summaries: () => summaries,
+      summaries: () => summariesValue,
       updateProjectPoll: () => {},
       updateProjectActiveRuns: () => {},
     };
     const createProjectRegistry = vi.fn(async () => registry);
+    let cachedActive = 0;
+    const leaseStore: LeaseStore = {
+      acquire: vi.fn(async () => null),
+      release: vi.fn(async () => undefined),
+      heartbeat: vi.fn(async () => null),
+      expireStale: vi.fn(async () => []),
+      active: vi.fn(async () => []),
+      activeCount: () => cachedActive,
+    };
+    const createLeaseStore = vi.fn(() => leaseStore);
     const createServer = vi.fn(async (deps: ServerDeps) => {
       createdDeps = deps;
       const close = vi.fn(async () => {
@@ -106,7 +118,12 @@ describe("startTeamDaemon", () => {
 
     const handle = await startTeamDaemon(
       { configPath: "/srv/issuepilot.team.yaml", host: "127.0.0.1", port: 4738 },
-      { loadTeamConfig, createProjectRegistry, createServer },
+      {
+        loadTeamConfig,
+        createProjectRegistry,
+        createServer,
+        createLeaseStore,
+      },
     );
 
     expect(handle.url).toBe("http://127.0.0.1:4738");
@@ -115,14 +132,37 @@ describe("startTeamDaemon", () => {
       workflowPath: "/srv/issuepilot/issuepilot.team.yaml",
       gitlabProject: "team",
       concurrency: 2,
-      runtime: {
-        mode: "team",
-        maxConcurrentRuns: 2,
-        activeLeases: 0,
-        projectCount: 2,
-      },
-      projects: summaries,
     });
+    expect(typeof createdDeps?.runtime).toBe("function");
+    expect(typeof createdDeps?.projects).toBe("function");
+
+    const runtimeGetter = createdDeps!.runtime as () => {
+      mode: string;
+      activeLeases: number;
+      projectCount: number;
+    };
+    const projectsGetter = createdDeps!.projects as () => typeof summaries;
+    expect(runtimeGetter()).toEqual({
+      mode: "team",
+      maxConcurrentRuns: 2,
+      activeLeases: 0,
+      projectCount: 2,
+    });
+    expect(projectsGetter()).toEqual(summaries);
+
+    cachedActive = 1;
+    summariesValue = [
+      { ...summaries[0]!, activeRuns: 1, lastPollAt: "2026-05-15T01:00:00.000Z" },
+      summaries[1]!,
+    ];
+    expect(runtimeGetter().activeLeases).toBe(1);
+    expect(projectsGetter()[0]?.activeRuns).toBe(1);
+
+    expect(createLeaseStore).toHaveBeenCalled();
+    const leaseOpts = createLeaseStore.mock.calls[0]?.[0] as {
+      filePath: string;
+    };
+    expect(leaseOpts.filePath).toMatch(/leases-/);
 
     await handle.stop();
     expect(createdApp?.close).toHaveBeenCalled();

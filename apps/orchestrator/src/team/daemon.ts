@@ -1,8 +1,13 @@
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { createEventBus, type EventBus } from "@issuepilot/observability";
 import { createWorkflowLoader } from "@issuepilot/workflow";
 
+import {
+  createLeaseStore as defaultCreateLeaseStore,
+  type LeaseStore,
+} from "../runtime/leases.js";
 import {
   createRuntimeState,
   type RuntimeState,
@@ -48,7 +53,25 @@ export interface StartTeamDaemonDeps {
       ) => Promise<ProjectRegistry>)
     | undefined;
   createServer?: typeof createServer | undefined;
+  createLeaseStore?:
+    | ((opts: { filePath: string; now?: () => Date }) => LeaseStore)
+    | undefined;
   state?: RuntimeState | undefined;
+}
+
+/**
+ * Derive a deterministic lease file path for a team config. The first 12 chars
+ * of the config sha256 keep multiple team daemons (e.g. one for staging, one
+ * for production) from clobbering each other's lease state under the shared
+ * `~/.issuepilot/state` directory.
+ */
+function deriveLeaseFilePath(config: TeamConfig): string {
+  return path.join(
+    os.homedir(),
+    ".issuepilot",
+    "state",
+    `leases-${config.source.sha256.slice(0, 12)}.json`,
+  );
 }
 
 type TeamEvent = {
@@ -74,17 +97,21 @@ export async function startTeamDaemon(
   const createRegistry =
     deps.createProjectRegistry ?? defaultCreateProjectRegistry;
   const createServerImpl = deps.createServer ?? createServer;
+  const createLeaseStoreImpl =
+    deps.createLeaseStore ?? defaultCreateLeaseStore;
 
   const config = await loadConfig(configPath);
   const workflowLoader = createWorkflowLoader();
   const registry = await createRegistry(config, workflowLoader);
   const state = deps.state ?? createRuntimeState();
   const eventBus: EventBus<TeamEvent> = createEventBus<TeamEvent>();
+  const leaseStore = createLeaseStoreImpl({
+    filePath: deriveLeaseFilePath(config),
+  });
 
   const host = options.host ?? config.server.host;
   const port = options.port ?? config.server.port;
 
-  const summaries = registry.summaries();
   const app = await createServerImpl(
     {
       state,
@@ -94,13 +121,16 @@ export async function startTeamDaemon(
       handoffLabel: "human-review",
       pollIntervalMs: config.scheduler.pollIntervalMs,
       concurrency: config.scheduler.maxConcurrentRuns,
-      runtime: {
+      // Evaluate runtime/projects on every `/api/state` request so dashboard
+      // counters reflect current lease and poll state instead of a snapshot
+      // captured at daemon start (V2 review C5/C6).
+      runtime: () => ({
         mode: "team",
         maxConcurrentRuns: config.scheduler.maxConcurrentRuns,
-        activeLeases: 0,
-        projectCount: summaries.length,
-      },
-      projects: summaries,
+        activeLeases: leaseStore.activeCount(),
+        projectCount: registry.summaries().length,
+      }),
+      projects: () => registry.summaries(),
       readEvents: async () => [],
       readLogsTail: async () => [],
     },

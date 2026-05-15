@@ -3,7 +3,7 @@ import type {
   ProjectSummary,
   TeamRuntimeSummary,
 } from "@issuepilot/shared-contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createRuntimeState } from "../../runtime/state.js";
 import { createServer } from "../index.js";
@@ -29,8 +29,8 @@ async function buildTestApp(
       runId: string,
       opts?: { limit?: number },
     ) => Promise<string[]>;
-    runtime?: TeamRuntimeSummary;
-    projects?: ProjectSummary[];
+    runtime?: TeamRuntimeSummary | (() => TeamRuntimeSummary);
+    projects?: ProjectSummary[] | (() => ProjectSummary[]);
   } = {},
 ) {
   const state = createRuntimeState();
@@ -143,6 +143,50 @@ describe("Orchestrator HTTP API", () => {
         { id: "infra-tools", activeRuns: 0 },
       ],
     });
+  });
+
+  it("GET /api/state evaluates runtime/projects getters on each request", async () => {
+    await app.close();
+    let activeLeases = 0;
+    let activeRuns = 0;
+    const runtimeGetter = vi.fn(
+      (): TeamRuntimeSummary => ({
+        mode: "team",
+        maxConcurrentRuns: 2,
+        activeLeases,
+        projectCount: 1,
+      }),
+    );
+    const projectsGetter = vi.fn(
+      (): ProjectSummary[] => [
+        {
+          id: "platform-web",
+          name: "Platform Web",
+          workflowPath: "/srv/platform-web/WORKFLOW.md",
+          gitlabProject: "group/platform-web",
+          enabled: true,
+          activeRuns,
+          lastPollAt: null,
+        },
+      ],
+    );
+    const setup = await buildTestApp(async () => [], {
+      runtime: runtimeGetter,
+      projects: projectsGetter,
+    });
+    app = setup.app;
+
+    const first = await app.inject({ method: "GET", url: "/api/state" });
+    expect(JSON.parse(first.body).runtime.activeLeases).toBe(0);
+    expect(JSON.parse(first.body).projects[0].activeRuns).toBe(0);
+
+    activeLeases = 1;
+    activeRuns = 2;
+    const second = await app.inject({ method: "GET", url: "/api/state" });
+    expect(JSON.parse(second.body).runtime.activeLeases).toBe(1);
+    expect(JSON.parse(second.body).projects[0].activeRuns).toBe(2);
+    expect(runtimeGetter).toHaveBeenCalledTimes(2);
+    expect(projectsGetter).toHaveBeenCalledTimes(2);
   });
 
   it("GET /api/state redacts response fields", async () => {
