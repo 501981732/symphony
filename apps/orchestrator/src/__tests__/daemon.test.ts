@@ -53,6 +53,11 @@ function createWorkflow(root: string): WorkflowConfig {
       turnSandboxPolicy: { type: "workspaceWrite" },
     },
     hooks: {},
+    ci: {
+      enabled: false,
+      onFailure: "ai-rework",
+      waitForPipeline: true,
+    },
     pollIntervalMs: 10_000,
     promptTemplate: "Fix issue {{issue.iid}}",
     source: {

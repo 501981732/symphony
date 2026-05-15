@@ -47,6 +47,7 @@ import {
   type OperatorActionDeps,
   type OperatorActionInput,
 } from "./operations/actions.js";
+import { scanCiFeedbackOnce } from "./orchestrator/ci-feedback.js";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
@@ -929,6 +930,28 @@ export async function startDaemon(
         },
       );
     },
+    scanCiFeedback: workflow.ci.enabled
+      ? async () => {
+          await scanCiFeedbackOnce({
+            state,
+            eventBus,
+            gitlab: {
+              findMergeRequestBySourceBranch:
+                gitlab.findMergeRequestBySourceBranch,
+              getPipelineStatus: gitlab.getPipelineStatus,
+              transitionLabels: gitlab.transitionLabels,
+              createIssueNote: gitlab.createIssueNote,
+            },
+            workflow: {
+              tracker: {
+                handoffLabel: workflow.tracker.handoffLabel,
+                reworkLabel: workflow.tracker.reworkLabel,
+              },
+              ci: workflow.ci,
+            },
+          });
+        }
+      : undefined,
     reconcileRunning: async () => {
       const runningLabel = workflow.tracker.runningLabel;
       const failedLabel = workflow.tracker.failedLabel;
