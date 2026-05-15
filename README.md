@@ -46,7 +46,7 @@ issue after that MR is manually merged.
   restart without requiring an external database.
 - **Complements harness engineering** — designed for mature repos that already
   ship an agent harness; IssuePilot focuses on scheduling and isolation while
-  `.agents/workflow.md` in your repo owns the prompt and policy.
+  `WORKFLOW.md` in your repo owns the prompt and policy.
 - **Open SPEC + reference implementation** — `SPEC.md` and the Symphony Elixir
   reference implementation remain in the repository, so teams can build their
   own variants in other languages from the same contract.
@@ -93,7 +93,7 @@ it**:
 | Positioning     | Public prototype; recommended to fork and harden internally     | Internal P0 product direction; targeting day-to-day use by an engineering team                     |
 | Issue tracker   | Linear                                                          | GitLab (SaaS and self-managed, Group Access Token or Personal Token)                               |
 | State machine   | Linear issue **status** (state-based)                           | GitLab **labels** (`ai-ready` / `ai-running` / `human-review` / …)                                 |
-| Workflow file   | `WORKFLOW.md` at the repo root                                  | `.agents/workflow.md` (YAML front matter + Markdown prompt)                                        |
+| Workflow file   | `WORKFLOW.md` at the repo root                                  | `WORKFLOW.md` (YAML front matter + Markdown prompt)                                        |
 | Language        | Elixir / OTP                                                    | TypeScript / Node.js 22 LTS                                                                        |
 | Runtime         | Single Elixir service + optional status surface                 | Orchestrator daemon (Fastify) + read-only Next.js dashboard (Tailwind/shadcn)                      |
 | Workspace       | Per-issue workspace                                             | Bare mirror + git worktree under `~/.issuepilot/{repos,workspaces,state}`                          |
@@ -179,7 +179,7 @@ apps/
 
 packages/
   core/                          Shared domain primitives
-  workflow/                      .agents/workflow.md parser and renderer
+  workflow/                      WORKFLOW.md parser and renderer
   tracker-gitlab/                GitLab issue, label, note, MR, pipeline adapter
   workspace/                     Mirror, worktree, branch, hook, and cleanup logic
   runner-codex-app-server/       Codex app-server JSON-RPC integration
@@ -236,11 +236,15 @@ pnpm exec issuepilot validate --workflow path/to/workflow.md
 IssuePilot expects each target repository to provide an agent contract file:
 
 ```text
-.agents/workflow.md
+WORKFLOW.md
 ```
 
 The file contains YAML front matter for machine-readable configuration and a
 Markdown body used as the agent prompt.
+
+`WORKFLOW.md` is the long-term default to stay aligned with the root
+`SPEC.md`. Legacy `.agents/workflow.md` can still be passed explicitly with
+`--workflow` during migration.
 
 Minimal shape:
 

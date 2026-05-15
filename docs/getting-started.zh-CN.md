@@ -7,14 +7,14 @@
 最快路径只需要记住两件事：
 
 - **IssuePilot 仓库**：你在这里安装、登录、启动 orchestrator 和 dashboard。
-- **目标项目仓库**：真正要被 AI 修改的业务仓库，里面需要放 `.agents/workflow.md`。
+- **目标项目仓库**：真正要被 AI 修改的业务仓库，里面需要放 `WORKFLOW.md`。
 
 ```text
 /path/to/issuepilot
   运行：pnpm smoke / pnpm dev:dashboard / pnpm exec issuepilot ...
 
 /path/to/target-project
-  存放：.agents/workflow.md
+  存放：WORKFLOW.md
   被 IssuePilot 创建 worktree 后修改
 ```
 
@@ -94,21 +94,23 @@ ssh -T git@gitlabee.chehejia.com
 
 ---
 
-## 4. 配置 `.agents/workflow.md`
+## 4. 配置 `WORKFLOW.md`
 
-在 **目标项目仓库**根目录创建 `.agents/workflow.md`，并提交到目标项目默认分支。
+在 **目标项目仓库**根目录创建 `WORKFLOW.md`，并提交到目标项目默认分支。
 这里只放配置，不在目标项目里启动 IssuePilot。
+
+`WORKFLOW.md` 是默认 workflow 路径。迁移期仍可通过显式 `--workflow`
+传入旧的 `.agents/workflow.md`，新项目应使用根目录文件。
 
 ```bash
 cd /path/to/target-project
-mkdir -p .agents
-$EDITOR .agents/workflow.md
+$EDITOR WORKFLOW.md
 ```
 
 创建后拿到它的绝对路径，并复制这条路径。后续在 IssuePilot 仓库启动 daemon 时，`--workflow` 需要传这个路径：
 
 ```bash
-WORKFLOW_PATH="$(pwd)/.agents/workflow.md"
+WORKFLOW_PATH="$(pwd)/WORKFLOW.md"
 echo "$WORKFLOW_PATH"
 
 # macOS：复制到剪贴板，方便粘到后面的命令里
@@ -183,7 +185,7 @@ Description:
 提交 workflow：
 
 ```bash
-git add .agents/workflow.md
+git add WORKFLOW.md
 git commit -m "chore(issuepilot): add workflow"
 git push origin main
 ```
@@ -281,7 +283,7 @@ export GITLAB_TOKEN="<gitlab.chehejia.com token>"
 export GITLABEE_TOKEN="<gitlabee.chehejia.com token>"
 ```
 
-不要把 token 写进 `.agents/workflow.md`、Issue、prompt 或日志。
+不要把 token 写进 `WORKFLOW.md`、Issue、prompt 或日志。
 
 ---
 
@@ -292,14 +294,14 @@ export GITLABEE_TOKEN="<gitlabee.chehejia.com token>"
 ```bash
 cd /path/to/issuepilot
 # 如果这是新终端，把第 4 节复制的绝对路径重新放进变量
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
 ```
 
 成功时应该看到：
 
 ```text
-Workflow loaded: /path/to/target-project/.agents/workflow.md
+Workflow loaded: /path/to/target-project/WORKFLOW.md
 GitLab project: group/project
 Validation passed.
 ```
@@ -325,7 +327,7 @@ Validation passed.
 
 ```bash
 cd /path/to/issuepilot
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm smoke --workflow "$WORKFLOW_PATH"
 ```
 
@@ -333,7 +335,7 @@ pnpm smoke --workflow "$WORKFLOW_PATH"
 
 ```bash
 cd /path/to/issuepilot
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm exec issuepilot run --workflow "$WORKFLOW_PATH" --port 4738 --host 127.0.0.1
 ```
 
@@ -415,7 +417,7 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:4839 pnpm dev:dashboard
 ```bash
 # 环境检查
 cd /path/to/issuepilot
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm exec issuepilot doctor
 
 # OAuth 登录
@@ -467,7 +469,7 @@ dashboard 只是前端。必须另开一个终端启动 orchestrator：
 
 ```bash
 cd /path/to/issuepilot
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm smoke --workflow "$WORKFLOW_PATH"
 ```
 

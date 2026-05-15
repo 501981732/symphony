@@ -104,7 +104,7 @@ packages/
     领域模型、调度状态、orchestration contracts、事件类型。
 
   workflow/
-    .agents/workflow.md 解析、校验、默认值、环境变量解析和 prompt 渲染。
+    WORKFLOW.md 解析、校验、默认值、环境变量解析和 prompt 渲染。
 
   tracker-gitlab/
     GitLab Issue、label、note、Merge Request、pipeline adapter。
@@ -148,7 +148,7 @@ P0 不引入数据库。本地状态存放在 `~/.issuepilot/state`。
 P0 是一个本地 daemon：
 
 ```bash
-pnpm issuepilot run --workflow .agents/workflow.md --port 4738
+pnpm issuepilot run --workflow WORKFLOW.md --port 4738
 ```
 
 这个命令启动：
@@ -157,7 +157,9 @@ pnpm issuepilot run --workflow .agents/workflow.md --port 4738
 - Codex app-server runner 管理
 - 本地 JSON/JSONL 事件存储
 - 本地 API server
-- Next.js dashboard，默认地址 `http://127.0.0.1:4738`
+
+P0 源码 checkout 模式下，Next.js dashboard 单独通过 `pnpm dev:dashboard`
+启动，默认读取 `http://127.0.0.1:4738` 的 orchestrator API。
 
 P0 dashboard 只读，不提供操作按钮。
 
@@ -166,8 +168,12 @@ P0 dashboard 只读，不提供操作按钮。
 每个目标仓库拥有自己的 agent 契约文件：
 
 ```text
-.agents/workflow.md
+WORKFLOW.md
 ```
+
+`WORKFLOW.md` 是长期默认入口，保持与根目录开源 `SPEC.md` 一致。
+`.agents/workflow.md` 仅作为显式 `--workflow` 路径或 P0 迁移期兼容路径；
+当未显式指定 workflow 时，daemon 优先读取仓库根 `WORKFLOW.md`。
 
 文件结构：
 
@@ -894,7 +900,7 @@ M1：TypeScript skeleton
 
 M2：Workflow loader
 
-- 解析 `.agents/workflow.md`
+- 解析 `WORKFLOW.md`
 - 校验 config
 - 渲染 prompt
 - hot reload + last-known-good fallback
@@ -1051,8 +1057,8 @@ P0 完成标准：
 建议命令：
 
 ```bash
-issuepilot run --workflow .agents/workflow.md --port 4738
-issuepilot validate --workflow .agents/workflow.md
+issuepilot run --workflow WORKFLOW.md --port 4738
+issuepilot validate --workflow WORKFLOW.md
 issuepilot doctor
 issuepilot auth login --hostname gitlab.example.com   # OAuth Device Flow，token 存入 ~/.issuepilot/credentials
 issuepilot auth status [--hostname <host>]            # 显示当前登录状态、scope、token 到期时间

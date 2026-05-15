@@ -7,14 +7,14 @@ This guide is for engineers running IssuePilot for the first time. The goal is t
 Keep two repos separate:
 
 - **IssuePilot repo**: where you install, authenticate, and run the orchestrator + dashboard.
-- **Target project repo**: the product repo Codex will modify. This repo needs `.agents/workflow.md`.
+- **Target project repo**: the product repo Codex will modify. This repo needs `WORKFLOW.md`.
 
 ```text
 /path/to/issuepilot
   run: pnpm smoke / pnpm dev:dashboard / pnpm exec issuepilot ...
 
 /path/to/target-project
-  stores: .agents/workflow.md
+  stores: WORKFLOW.md
   gets modified through IssuePilot-created worktrees
 ```
 
@@ -94,21 +94,22 @@ ssh -T git@gitlabee.chehejia.com
 
 ---
 
-## 4. Add `.agents/workflow.md`
+## 4. Add `WORKFLOW.md`
 
-Create `.agents/workflow.md` at the root of the **target project repo**, then commit it to the target project's default branch.
+Create `WORKFLOW.md` at the root of the **target project repo**, then commit it to the target project's default branch.
 This step only creates the target project's config; do not start IssuePilot from the target project repo.
+
+`WORKFLOW.md` is the default workflow path. Legacy `.agents/workflow.md` can still be passed explicitly with `--workflow`, but new projects should use the root file.
 
 ```bash
 cd /path/to/target-project
-mkdir -p .agents
-$EDITOR .agents/workflow.md
+$EDITOR WORKFLOW.md
 ```
 
 After creating it, get its absolute path and copy that path. Later, when starting the daemon from the IssuePilot repo, `--workflow` receives this path:
 
 ```bash
-WORKFLOW_PATH="$(pwd)/.agents/workflow.md"
+WORKFLOW_PATH="$(pwd)/WORKFLOW.md"
 echo "$WORKFLOW_PATH"
 
 # macOS: copy to clipboard so you can paste it into later commands
@@ -183,7 +184,7 @@ Requirements:
 Commit the workflow:
 
 ```bash
-git add .agents/workflow.md
+git add WORKFLOW.md
 git commit -m "chore(issuepilot): add workflow"
 git push origin main
 ```
@@ -281,7 +282,7 @@ export GITLAB_TOKEN="<gitlab.chehejia.com token>"
 export GITLABEE_TOKEN="<gitlabee.chehejia.com token>"
 ```
 
-Never put tokens in `.agents/workflow.md`, Issues, prompts, or logs.
+Never put tokens in `WORKFLOW.md`, Issues, prompts, or logs.
 
 ---
 
@@ -292,14 +293,14 @@ Run this in the **IssuePilot repo**:
 ```bash
 cd /path/to/issuepilot
 # If this is a new terminal, put the copied absolute path back into the variable.
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm exec issuepilot validate --workflow "$WORKFLOW_PATH"
 ```
 
 Successful output:
 
 ```text
-Workflow loaded: /path/to/target-project/.agents/workflow.md
+Workflow loaded: /path/to/target-project/WORKFLOW.md
 GitLab project: group/project
 Validation passed.
 ```
@@ -325,7 +326,7 @@ Recommended: use the smoke wrapper, which waits until the daemon is ready.
 
 ```bash
 cd /path/to/issuepilot
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm smoke --workflow "$WORKFLOW_PATH"
 ```
 
@@ -333,7 +334,7 @@ Direct start also works:
 
 ```bash
 cd /path/to/issuepilot
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm exec issuepilot run --workflow "$WORKFLOW_PATH" --port 4738 --host 127.0.0.1
 ```
 
@@ -415,7 +416,7 @@ Failed runs are preserved. Forensics live at:
 ```bash
 # Environment check
 cd /path/to/issuepilot
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm exec issuepilot doctor
 
 # OAuth login
@@ -467,7 +468,7 @@ The dashboard is only the frontend. Start the orchestrator in another terminal:
 
 ```bash
 cd /path/to/issuepilot
-export WORKFLOW_PATH="/path/to/target-project/.agents/workflow.md"
+export WORKFLOW_PATH="/path/to/target-project/WORKFLOW.md"
 pnpm smoke --workflow "$WORKFLOW_PATH"
 ```
 

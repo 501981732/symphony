@@ -68,10 +68,13 @@ pnpm exec issuepilot doctor
 
 ---
 
-## 1. 配置 `.agents/workflow.md`
+## 1. 配置 `WORKFLOW.md`
 
-在 sandbox 项目里新建文件 `.agents/workflow.md`（与本仓库无关，是
+在 sandbox 项目里新建文件 `WORKFLOW.md`（与本仓库无关，是
 **目标项目**里的文件），内容参考 spec §6：
+
+`WORKFLOW.md` 是默认 workflow 文件名。迁移期仍可通过 `--workflow`
+显式传入旧的 `.agents/workflow.md`，但 smoke 项目应使用根目录文件。
 
 ```md
 ---
@@ -139,9 +142,8 @@ Description:
 
 ```bash
 git checkout -b chore/issuepilot-workflow
-mkdir -p .agents
-$EDITOR .agents/workflow.md
-git add .agents/workflow.md
+$EDITOR WORKFLOW.md
+git add WORKFLOW.md
 git commit -m "chore(issuepilot): seed workflow.md"
 git push -u origin chore/issuepilot-workflow
 # 然后在 GitLab 上 fast-forward 合到 main，或直接给自己开 MR 合并
@@ -168,7 +170,7 @@ pnpm -w turbo run build
 mkdir -p ~/issuepilot-smoke
 git clone git@gitlab.example.com:group/issuepilot-smoke.git \
   ~/issuepilot-smoke
-WORKFLOW_PATH="$HOME/issuepilot-smoke/.agents/workflow.md"
+WORKFLOW_PATH="$HOME/issuepilot-smoke/WORKFLOW.md"
 ```
 
 ### 2.3 启动 orchestrator + dashboard
@@ -182,6 +184,10 @@ WORKFLOW_PATH="$HOME/issuepilot-smoke/.agents/workflow.md"
 pnpm smoke --workflow "$WORKFLOW_PATH"
 ```
 
+`pnpm smoke` 只负责启动 orchestrator daemon、等待 `/api/state` ready，
+并打印 API / Dashboard URL。GitLab Issue、MR 和 dashboard 内容仍需操作者按
+下方 checklist 人工核验。
+
 成功输出形如：
 
 ```text
@@ -191,7 +197,7 @@ pnpm smoke --workflow "$WORKFLOW_PATH"
 ------------------------------------------------------
  API:        http://127.0.0.1:4738
  Dashboard:  http://localhost:3000
- Workflow:   /home/you/issuepilot-smoke/.agents/workflow.md
+ Workflow:   /home/you/issuepilot-smoke/WORKFLOW.md
  Project:    group/issuepilot-smoke
  Poll every: 10000ms
  Concurrency:1
