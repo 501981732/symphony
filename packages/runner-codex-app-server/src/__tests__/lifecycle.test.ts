@@ -226,6 +226,50 @@ describe("driveLifecycle", () => {
     expect(result.failureReason).toContain("something went wrong");
   });
 
+  it("does not lose turn notifications emitted immediately after turn/start", async () => {
+    const rpc = createFakeRpc(
+      new Map([
+        ["initialize", { serverInfo: { name: "codex", version: "1.0" } }],
+        ["thread/start", { threadId: "t1" }],
+      ]),
+    );
+    (rpc.request as ReturnType<typeof vi.fn>).mockImplementation(
+      async (method: string) => {
+        if (method === "initialize")
+          return { serverInfo: { name: "codex", version: "1.0" } };
+        if (method === "thread/start") return { threadId: "t1" };
+        if (method === "turn/start") {
+          rpc.notifHandler("turn/failed", {
+            turnId: "u1",
+            error: "failed before wait registered",
+          });
+          return { turnId: "u1" };
+        }
+        throw new Error(`Unexpected: ${method}`);
+      },
+    );
+
+    const result = await driveLifecycle({
+      rpc,
+      maxTurns: 1,
+      prompt: "Fix",
+      title: "Fix",
+      cwd: "/tmp/ws",
+      threadName: "test",
+      sandboxType: "workspace-write",
+      approvalPolicy: "never",
+      turnSandboxPolicy: { type: "workspaceWrite" },
+      turnTimeoutMs: 5000,
+      tools: [],
+      onEvent: () => {},
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      failureReason: "failed before wait registered",
+    });
+  });
+
   it("stops after maxTurns if no stop signal", async () => {
     let turnCount = 0;
     const rpc = createFakeRpc(

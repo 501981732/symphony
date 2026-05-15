@@ -38,11 +38,18 @@ interface DynamicToolCallParams {
   turnId: string;
 }
 
+interface QueuedNotification {
+  method: string;
+  params: unknown;
+}
+
 type TurnOutcome =
   | { kind: "completed"; stop: boolean }
   | { kind: "failed"; error: string }
   | { kind: "cancelled" }
   | { kind: "timeout" };
+
+type NotificationConsumer = (method: string, params: unknown) => boolean;
 
 const NON_INTERACTIVE_INPUT_REPLY =
   "This is a non-interactive IssuePilot run. Operator input is unavailable. " +
@@ -109,50 +116,91 @@ function normalizeSandboxPolicy(
   return policy;
 }
 
+function notificationOutcome(
+  method: string,
+  params: unknown,
+  turnId: string,
+  onEvent: (type: string, data?: unknown) => void,
+): TurnOutcome | undefined {
+  const p = params as Record<string, unknown> | undefined;
+  const currentTurnId = eventTurnId(p);
+
+  if (method === "turn/completed" && currentTurnId === turnId) {
+    onEvent("turn_completed", params);
+    return { kind: "completed", stop: p?.["stop"] !== false };
+  }
+  if (method === "turn/failed" && currentTurnId === turnId) {
+    onEvent("turn_failed", params);
+    return {
+      kind: "failed",
+      error: String(p?.["error"] ?? "unknown"),
+    };
+  }
+  if (method === "turn/cancelled" && currentTurnId === turnId) {
+    onEvent("turn_cancelled", params);
+    return { kind: "cancelled" };
+  }
+  if (method === "turn/timeout" && currentTurnId === turnId) {
+    onEvent("turn_timeout", params);
+    return { kind: "timeout" };
+  }
+
+  onEvent(method.replace(/\//g, "_"), params);
+  return undefined;
+}
+
 function waitForTurn(
-  rpc: RpcClient,
+  queuedNotifications: QueuedNotification[],
+  setNotificationConsumer: (consumer: NotificationConsumer | null) => void,
   turnId: string,
   timeoutMs: number,
   onEvent: (type: string, data?: unknown) => void,
 ): Promise<TurnOutcome> {
   return new Promise<TurnOutcome>((resolve) => {
+    let settled = false;
     const timer = setTimeout(() => {
+      settled = true;
+      setNotificationConsumer(null);
       resolve({ kind: "timeout" });
     }, timeoutMs);
 
-    rpc.onNotification((method, params) => {
-      const p = params as Record<string, unknown> | undefined;
-      const currentTurnId = eventTurnId(p);
+    const settle = (outcome: TurnOutcome): void => {
+      if (settled) return;
+      settled = true;
+      setNotificationConsumer(null);
+      clearTimeout(timer);
+      resolve(outcome);
+    };
 
-      if (method === "turn/completed" && currentTurnId === turnId) {
-        clearTimeout(timer);
-        onEvent("turn_completed", params);
-        resolve({ kind: "completed", stop: p?.["stop"] !== false });
-      } else if (method === "turn/failed" && currentTurnId === turnId) {
-        clearTimeout(timer);
-        onEvent("turn_failed", params);
-        resolve({
-          kind: "failed",
-          error: String(p?.["error"] ?? "unknown"),
-        });
-      } else if (method === "turn/cancelled" && currentTurnId === turnId) {
-        clearTimeout(timer);
-        onEvent("turn_cancelled", params);
-        resolve({ kind: "cancelled" });
-      } else if (method === "turn/timeout" && currentTurnId === turnId) {
-        clearTimeout(timer);
-        onEvent("turn_timeout", params);
-        resolve({ kind: "timeout" });
-      } else {
-        onEvent(method.replace(/\//g, "_"), params);
+    const consume: NotificationConsumer = (method, params) => {
+      const outcome = notificationOutcome(method, params, turnId, onEvent);
+      if (outcome) {
+        settle(outcome);
       }
-    });
+      return true;
+    };
+
+    while (queuedNotifications.length > 0 && !settled) {
+      const next = queuedNotifications.shift()!;
+      consume(next.method, next.params);
+    }
+
+    if (!settled) {
+      setNotificationConsumer(consume);
+    }
   });
 }
 
 export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
   const { rpc, onEvent } = input;
   const toolsByName = new Map(input.tools.map((tool) => [tool.name, tool]));
+  const queuedNotifications: QueuedNotification[] = [];
+  let notificationConsumer: NotificationConsumer | null = null;
+
+  rpc.onNotification((method, params) => {
+    if (notificationConsumer?.(method, params)) return;
+    queuedNotifications.push({ method, params });
+  });
 
   rpc.onRequest(async (method, params) => {
     if (
@@ -253,7 +301,10 @@ export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
     onEvent("turn_started", { turnId });
 
     const outcome = await waitForTurn(
-      rpc,
+      queuedNotifications,
+      (consumer) => {
+        notificationConsumer = consumer;
+      },
       turnId,
       input.turnTimeoutMs,
       onEvent,
