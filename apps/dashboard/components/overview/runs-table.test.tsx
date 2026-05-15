@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RunRecord } from "@issuepilot/shared-contracts";
 
@@ -112,5 +112,43 @@ describe("RunsTable", () => {
 
     fireEvent.click(issueHeader);
     expect(issueHeader).toHaveAttribute("aria-sort", "descending");
+  });
+
+  it("hides archived runs by default and toggles them via Show archived", () => {
+    const archived = fixture({
+      runId: "r-archived",
+      status: "completed",
+      archivedAt: "2026-05-15T00:00:00.000Z",
+      issue: { ...fixture().issue, iid: 99, title: "archived run" },
+    });
+    const active = fixture({
+      runId: "r-active",
+      status: "completed",
+      issue: { ...fixture().issue, iid: 1, title: "active run" },
+    });
+    render(<RunsTable runs={[active, archived]} />);
+
+    expect(screen.getByText("active run")).toBeInTheDocument();
+    expect(screen.queryByText("archived run")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /show archived/i }));
+    expect(screen.getByText("archived run")).toBeInTheDocument();
+  });
+
+  it("renders RunActions Retry for a failed run", () => {
+    render(<RunsTable runs={[fixture({ status: "failed" })]} />);
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("invokes the supplied onRetry callback when Retry is clicked", () => {
+    const onRetry = vi.fn();
+    render(
+      <RunsTable
+        runs={[fixture({ runId: "r-1", status: "failed" })]}
+        onRetry={onRetry}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(onRetry).toHaveBeenCalledWith("r-1");
   });
 });

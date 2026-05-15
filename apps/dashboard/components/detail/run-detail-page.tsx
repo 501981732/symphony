@@ -1,9 +1,12 @@
 "use client";
 
 import type { IssuePilotEvent, RunRecord } from "@issuepilot/shared-contracts";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
+import { ApiError, archiveRun, retryRun, stopRun } from "../../lib/api";
 import { useEventStream } from "../../lib/use-event-stream";
+import { RunActions } from "../overview/run-actions";
 import { Badge, type BadgeTone } from "../ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 
@@ -25,18 +28,73 @@ interface RunDetailPageProps {
   run: RunRecord;
   initialEvents: IssuePilotEvent[];
   logsTail: string[];
+  /**
+   * Optional operator-action callbacks. When supplied, RunActions surfaces
+   * Retry / Stop / Archive in the page header. The parent owns the API call
+   * + refresh, keeping this component declarative.
+   */
+  onRetry?: (runId: string) => void;
+  onStop?: (runId: string) => void;
+  onArchive?: (runId: string) => void;
+  /** Disable header buttons while a request is in flight. */
+  actionsPending?: boolean;
 }
 
 export function RunDetailPage({
   run,
   initialEvents,
   logsTail,
+  onRetry,
+  onStop,
+  onArchive,
+  actionsPending,
 }: RunDetailPageProps) {
+  const router = useRouter();
   const [events, setEvents] = useState<IssuePilotEvent[]>(initialEvents);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pending, startAction] = useTransition();
 
   useEffect(() => {
     setEvents(initialEvents);
   }, [initialEvents]);
+
+  const performAction = useCallback(
+    (
+      runId: string,
+      action: (id: string) => Promise<{ ok: true }>,
+      label: string,
+    ): void => {
+      startAction(async () => {
+        try {
+          await action(runId);
+          setActionError(null);
+          router.refresh();
+        } catch (err) {
+          if (err instanceof ApiError) {
+            const detail = err.reason
+              ? `${err.code ?? "error"}:${err.reason}`
+              : (err.code ?? `HTTP ${err.status}`);
+            setActionError(`${label} failed (${detail})`);
+          } else {
+            setActionError(
+              err instanceof Error
+                ? `${label} failed: ${err.message}`
+                : `${label} failed`,
+            );
+          }
+        }
+      });
+    },
+    [router],
+  );
+
+  const handleRetry =
+    onRetry ?? ((id: string) => performAction(id, retryRun, "retry"));
+  const handleStop =
+    onStop ?? ((id: string) => performAction(id, stopRun, "stop"));
+  const handleArchive =
+    onArchive ?? ((id: string) => performAction(id, archiveRun, "archive"));
+  const buttonsDisabled = actionsPending ?? pending;
 
   useEventStream<IssuePilotEvent>({
     runId: run.runId,
@@ -62,9 +120,26 @@ export function RunDetailPage({
         </a>
       </nav>
 
+      {actionError ? (
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          {actionError}
+        </p>
+      ) : null}
+
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
           <CardTitle>Run {run.runId}</CardTitle>
+          <RunActions
+            run={{
+              runId: run.runId,
+              status: run.status,
+              ...(run.archivedAt ? { archivedAt: run.archivedAt } : {}),
+            }}
+            onRetry={handleRetry}
+            onStop={handleStop}
+            onArchive={handleArchive}
+            pending={buttonsDisabled}
+          />
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
           <Field label="Issue">
