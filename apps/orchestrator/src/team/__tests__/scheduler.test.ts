@@ -3,19 +3,11 @@ import type { GitLabAdapter } from "@issuepilot/tracker-gitlab";
 import type { WorkflowConfig } from "@issuepilot/workflow";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  createLeaseStore as createRealLeaseStore,
-  type LeaseStore,
-  type RunLease,
-} from "../../runtime/leases.js";
+import type { LeaseStore, RunLease } from "../../runtime/leases.js";
 import { createRuntimeState } from "../../runtime/state.js";
 import type { TeamSchedulerConfig } from "../config.js";
 import type { RegisteredProject } from "../registry.js";
 import { claimTeamProjectOnce } from "../scheduler.js";
-
-// Silence the unused import: cover the real factory so it remains exercised
-// by the test bundle even though we use a fake store for these unit tests.
-void createRealLeaseStore;
 
 function workflow(): WorkflowConfig {
   return {
@@ -78,7 +70,7 @@ function project(): RegisteredProject {
   };
 }
 
-function issueRef(): IssueRef {
+function issueRef(overrides: Partial<IssueRef> = {}): IssueRef {
   return {
     id: "gid://gitlab/Issue/1",
     iid: 1,
@@ -86,6 +78,7 @@ function issueRef(): IssueRef {
     url: "https://gitlab.example.com/group/platform-web/-/issues/1",
     projectId: "group/platform-web",
     labels: ["ai-ready"],
+    ...overrides,
   };
 }
 
@@ -120,13 +113,18 @@ function makeAdapter(
   };
 }
 
-function makeLeaseStore(lease: RunLease | null): LeaseStore {
+function makeLeaseStore(
+  lease: RunLease | null,
+  overrides: Partial<LeaseStore> = {},
+): LeaseStore {
   return {
     acquire: vi.fn(async () => lease),
     release: vi.fn(async () => undefined),
     heartbeat: vi.fn(async () => null),
     expireStale: vi.fn(async () => []),
     active: vi.fn(async () => (lease ? [lease] : [])),
+    activeCount: () => (lease ? 1 : 0),
+    ...overrides,
   };
 }
 
@@ -189,5 +187,110 @@ describe("claimTeamProjectOnce", () => {
 
     expect(claimed).toEqual([]);
     expect(gitlab.transitionLabels).not.toHaveBeenCalled();
+  });
+
+  it("releases the lease and continues with the next candidate when transitionLabels fails", async () => {
+    const gitlab = makeAdapter({
+      listCandidateIssues: vi.fn(async () => [
+        issueRef({ iid: 1 }),
+        issueRef({ iid: 2, id: "gid://gitlab/Issue/2", title: "Other" }),
+      ]),
+      transitionLabels: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("HTTP 409 stale label"))
+        .mockResolvedValueOnce({ labels: ["ai-running"] }),
+    });
+    const state = createRuntimeState();
+    const leaseStore = makeLeaseStore(exampleLease);
+    const onClaimError = vi.fn();
+
+    const claimed = await claimTeamProjectOnce({
+      project: project(),
+      gitlab,
+      state,
+      leaseStore,
+      scheduler: schedulerConfig,
+      onClaimError,
+    });
+
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]?.issueIid).toBe(2);
+    expect(leaseStore.release).toHaveBeenCalledWith("lease-1");
+    expect(gitlab.transitionLabels).toHaveBeenCalledTimes(2);
+    expect(onClaimError).toHaveBeenCalledWith(
+      expect.objectContaining({ issue: expect.objectContaining({ iid: 1 }) }),
+    );
+  });
+
+  it("preserves the original transitionLabels error when release() itself throws", async () => {
+    const transitionError = new Error("HTTP 502 bad gateway");
+    const gitlab = makeAdapter({
+      transitionLabels: vi.fn(async () => {
+        throw transitionError;
+      }),
+    });
+    const state = createRuntimeState();
+    const leaseStore = makeLeaseStore(exampleLease, {
+      release: vi.fn(async () => {
+        throw new Error("disk full");
+      }),
+    });
+    const onClaimError = vi.fn();
+
+    await claimTeamProjectOnce({
+      project: project(),
+      gitlab,
+      state,
+      leaseStore,
+      scheduler: schedulerConfig,
+      onClaimError,
+    });
+
+    expect(onClaimError).toHaveBeenCalledWith(
+      expect.objectContaining({ error: transitionError }),
+    );
+  });
+
+  it("rolls back the lease and labels when getIssue fails after transitionLabels", async () => {
+    const gitlab = makeAdapter({
+      transitionLabels: vi
+        .fn()
+        .mockResolvedValueOnce({ labels: ["ai-running"] })
+        .mockResolvedValueOnce({ labels: ["ai-ready"] }),
+      getIssue: vi.fn(async () => {
+        throw new Error("HTTP 503 fetching issue");
+      }),
+    });
+    const state = createRuntimeState();
+    const leaseStore = makeLeaseStore(exampleLease);
+    const onClaimError = vi.fn();
+
+    const claimed = await claimTeamProjectOnce({
+      project: project(),
+      gitlab,
+      state,
+      leaseStore,
+      scheduler: schedulerConfig,
+      onClaimError,
+    });
+
+    expect(claimed).toEqual([]);
+    expect(leaseStore.release).toHaveBeenCalledWith("lease-1");
+    expect(gitlab.transitionLabels).toHaveBeenCalledTimes(2);
+    // Second call should revert ai-running back to the original active label.
+    expect(gitlab.transitionLabels).toHaveBeenNthCalledWith(
+      2,
+      1,
+      expect.objectContaining({
+        add: ["ai-ready"],
+        remove: ["ai-running"],
+      }),
+    );
+    expect(onClaimError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issue: expect.objectContaining({ iid: 1 }),
+        phase: "fetch-issue",
+      }),
+    );
   });
 });
