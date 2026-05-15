@@ -266,6 +266,50 @@ describe("CLI", () => {
     mockLog.mockRestore();
   });
 
+  it("dashboard starts with configured port and API URL", async () => {
+    const spawnDashboard = vi.fn(async () => ({
+      wait: async () => undefined,
+    }));
+    const cli = buildCli({ spawnDashboard });
+
+    await cli.parseAsync(
+      [
+        "dashboard",
+        "--port",
+        "3333",
+        "--api-url",
+        "http://127.0.0.1:4738",
+      ],
+      { from: "user" },
+    );
+
+    expect(spawnDashboard).toHaveBeenCalledWith({
+      port: 3333,
+      host: "127.0.0.1",
+      apiUrl: "http://127.0.0.1:4738",
+    });
+  });
+
+  it("dashboard rejects invalid port", async () => {
+    const spawnDashboard = vi.fn(async () => ({
+      wait: async () => undefined,
+    }));
+    const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cli = buildCli({ spawnDashboard });
+
+    await cli.parseAsync(["dashboard", "--port", "70000"], {
+      from: "user",
+    });
+
+    expect(process.exitCode).toBe(1);
+    expect(spawnDashboard).not.toHaveBeenCalled();
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining("invalid port"),
+    );
+    mockError.mockRestore();
+    process.exitCode = 0;
+  });
+
   it("run fails for missing workflow", async () => {
     const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
     const cli = buildCli();
