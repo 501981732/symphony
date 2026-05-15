@@ -20,6 +20,15 @@ export interface DriveInput {
   turnTimeoutMs: number;
   tools: ToolSchema[];
   onEvent: (type: string, data?: unknown) => void;
+  /**
+   * Optional hook invoked at the start of each turn. The supplied closure
+   * issues a `turn/interrupt` JSON-RPC request bound to the current
+   * `(threadId, turnId)`. After the turn settles (any outcome), calling the
+   * closure becomes a noop so callers do not need to track turn state. The
+   * hook may be called multiple times if `maxTurns > 1` — each turn receives
+   * a fresh closure tied to its own turnId.
+   */
+  onTurnActive?: (cancel: () => Promise<void>) => void;
 }
 
 export interface DriveResult {
@@ -131,6 +140,11 @@ function notificationOutcome(
 
   if (method === "turn/completed" && currentTurnId === turnId) {
     onEvent("turn_completed", params);
+    const turnStatus = (p?.["turn"] as { status?: unknown } | undefined)
+      ?.status;
+    if (turnStatus === "interrupted") {
+      return { kind: "cancelled" };
+    }
     return { kind: "completed", stop: p?.["stop"] !== false };
   }
   if (method === "turn/failed" && currentTurnId === turnId) {
@@ -305,6 +319,13 @@ export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
     turnsUsed++;
     onEvent("turn_started", { turnId });
 
+    let turnSettled = false;
+    const cancelTurn = async (): Promise<void> => {
+      if (turnSettled) return;
+      await rpc.request("turn/interrupt", { threadId, turnId });
+    };
+    input.onTurnActive?.(cancelTurn);
+
     const outcome = await waitForTurn(
       queuedNotifications,
       (consumer) => {
@@ -314,6 +335,7 @@ export async function driveLifecycle(input: DriveInput): Promise<DriveResult> {
       input.turnTimeoutMs,
       onEvent,
     );
+    turnSettled = true;
 
     if (outcome.kind === "completed" && outcome.stop) {
       return { status: "completed", turnsUsed, lastTurnId, threadId };
