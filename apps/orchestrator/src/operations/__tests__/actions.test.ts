@@ -1,6 +1,6 @@
 import { createEventBus } from "@issuepilot/observability";
 import type { IssuePilotInternalEvent } from "@issuepilot/shared-contracts";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createRuntimeState, type RunEntry } from "../../runtime/state.js";
 import { createRunCancelRegistry } from "../../runtime/run-cancel-registry.js";

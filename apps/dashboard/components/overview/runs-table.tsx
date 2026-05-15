@@ -17,6 +17,7 @@ const STATUS_TONES: Record<RunStatus, BadgeTone> = {
   claimed: "info",
   running: "info",
   retrying: "warning",
+  stopping: "warning",
   completed: "success",
   failed: "danger",
   blocked: "violet",

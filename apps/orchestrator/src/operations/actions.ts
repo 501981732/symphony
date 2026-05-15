@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { EventBus } from "@issuepilot/observability";
 import type { IssuePilotInternalEvent } from "@issuepilot/shared-contracts";
 
-import type { RuntimeState } from "../runtime/state.js";
 import type { RunCancelRegistry } from "../runtime/run-cancel-registry.js";
+import type { RuntimeState } from "../runtime/state.js";
 
 /**
  * The three operator-initiated actions exposed by the dashboard. See V2
