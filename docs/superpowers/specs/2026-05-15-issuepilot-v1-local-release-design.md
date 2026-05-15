@@ -1,4 +1,4 @@
-# IssuePilot V1 本地稳定发布设计
+# IssuePilot V1 可安装本地发布设计
 
 日期：2026-05-15
 状态：待用户评审
@@ -14,38 +14,40 @@
 
 IssuePilot P0 已经完成 GitLab Issue 到 Codex app-server run、MR handoff、
 human-review closure、事件记录和只读 dashboard 的本地闭环。P0 gap 收口后，
-当前主要风险不再是核心功能缺失，而是“如何把这套本地闭环稳定、重复地跑起来”。
+下一个关键目标不只是“从源码 checkout 能跑”，而是让使用者可以通过安装命令获得
+`issuepilot` CLI，并用稳定命令启动本地 daemon 和 dashboard。
 
-V1 的目标不是引入团队服务能力，也不是立刻做 npm 或 tarball 分发。当前使用者仍
-以单人 source checkout 为主，因此 V1 应该把现有使用方式固化成一个可验证、可回滚、
-文档清楚的本地稳定版本。
+因此 V1 不再定义为单纯的 source-checkout 稳定版，而是定义为 **可安装的本地发布版**。
+source-checkout 仍保留给贡献者开发、调试和紧急回滚，但不是 V1 的主要用户入口。
 
 ## 2. 目标
 
-V1 交付一个 **stable source-checkout release**：
+V1 交付一个 installable local release。目标使用路径是：
 
-```text
-git clone
-pnpm install
-pnpm build
-pnpm smoke --workflow /path/to/target-project/WORKFLOW.md
-pnpm dev:dashboard
+```bash
+# 安装方式可由实现阶段确定为 npm registry、internal registry 或本地 tarball
+npm install -g <issuepilot-package>
+
+issuepilot doctor
+issuepilot validate --workflow /path/to/target-project/WORKFLOW.md
+issuepilot run --workflow /path/to/target-project/WORKFLOW.md
+issuepilot dashboard
 ```
 
 V1 完成后，一个使用者应该能够：
 
-1. 从仓库 checkout 指定 tag 或 commit。
-2. 按 README / getting-started 在本地完成安装、构建和环境检查。
-3. 用 `pnpm release:check` 跑完整本地 release gate。
-4. 用 `pnpm smoke` 对真实 GitLab sandbox 做人工验收。
-5. 遇到问题时按文档定位 auth、workflow、daemon、runner、workspace、event logs。
-6. 如需回滚，切回上一 tag 或 commit 后重新安装构建。
+1. 通过安装命令获得 `issuepilot` 可执行命令。
+2. 不进入 IssuePilot 源码仓库，也能运行 `issuepilot doctor`、`validate`、`run`。
+3. 使用已安装命令启动本地 dashboard。
+4. 按 README / getting-started 完成安装、配置、启动和真实 GitLab smoke。
+5. 用 `pnpm release:check` 在发布前验证构建、测试、打包和本地安装 smoke。
+6. 遇到问题时按文档定位 auth、workflow、daemon、runner、workspace、event logs。
+7. 如需回滚，安装上一版本 package 或切回源码 checkout 的上一 tag。
 
 ## 3. 非目标
 
 V1 不做以下内容：
 
-- npm package、global install、`pnpm dlx` 或 standalone tarball。
 - 多项目 workflow 配置。
 - 团队共享 daemon 或多用户 dashboard。
 - dashboard 写操作，例如 `retry`、`stop`、`archive run`。
@@ -59,18 +61,46 @@ V1 不做以下内容：
 
 ## 4. 分发形态
 
-V1 采用 source-checkout 形态：
+V1 的分发目标是 npm-compatible package tooling。实现阶段可以在以下两种路径中
+选择风险更低的一种：
 
-- 仓库根 `package.json` 仍可保持 `private: true`。
-- root version 从 `0.0.0` 进入第一个本地稳定版本，例如 `0.1.0`。
-- 用 git tag 表达版本边界，例如 `v0.1.0`。
-- README 明确 source checkout 是 V1 支持路径。
-- package 分发只作为 roadmap，不在 V1 实现。
+1. **registry package**：发布到 npm 或 internal registry，用户通过
+   `npm install -g <package>` 或 `pnpm add -g <package>` 安装。
+2. **local tarball**：用 `pnpm pack` 生成 tarball，用户通过
+   `npm install -g ./issuepilot-*.tgz` 安装。
 
-这个选择降低 packaging 风险，避免在 CLI bin、workspace package export、dashboard
-build assets 和 publish 权限上提前投入。
+V1 必须满足：
 
-## 5. V1 Release Gate
+- 安装后 PATH 中存在 `issuepilot` 命令。
+- `issuepilot --version` 输出 package 版本。
+- `issuepilot doctor` 可在任意目录运行。
+- `issuepilot run --workflow <path>` 可启动 orchestrator daemon/API。
+- dashboard 有安装后启动方式，不要求用户进入源码仓库运行 `pnpm dev:dashboard`。
+- source-checkout 仍可作为开发路径，但 README 的 V1 主路径应以安装命令为准。
+
+## 5. CLI 和 Dashboard 边界
+
+当前 `apps/orchestrator` 已经声明 `bin.issuepilot = ./dist/bin.js`。V1 需要把这个能力
+从 workspace 内部命令升级成可安装 CLI。
+
+V1 的本地进程模型保持 P0 决策：
+
+- `issuepilot run` 启动 orchestrator daemon/API。
+- dashboard 仍是本地只读 UI，不提供写操作。
+- dashboard 可以通过 `issuepilot dashboard` 或等价已安装命令启动。
+- `issuepilot run` 不强制托管 dashboard 子进程，避免把 Next.js 生命周期、端口冲突、
+  日志转发和退出信号耦合进 daemon。
+
+如果实现阶段发现 bundling Next.js dashboard 风险过高，允许 V1 降级为：
+
+```bash
+issuepilot dashboard --api http://127.0.0.1:4738
+```
+
+该命令内部可以启动预构建 dashboard，也可以启动一个轻量静态 dashboard server；
+但用户入口必须是已安装的 `issuepilot` 命令，而不是 `pnpm dev:dashboard`。
+
+## 6. V1 Release Gate
 
 新增统一检查命令：
 
@@ -85,60 +115,77 @@ pnpm release:check
 3. `pnpm typecheck`
 4. `pnpm build`
 5. `pnpm test`
-6. `pnpm test:smoke`
-7. `git diff --check`
-
-如果局部脚本已经包含重复任务，可以在实现计划中优化为 turbo pipeline 或组合脚本，
-但 V1 对外暴露的入口应是一个稳定的 `release:check`。
+6. package 打包检查，例如 `pnpm pack` 或 publish dry-run。
+7. 本地安装 smoke：在临时目录安装打包产物并运行 `issuepilot --version`、
+   `issuepilot doctor`、`issuepilot validate --workflow <fixture>`。
+8. `pnpm test:smoke`
+9. `git diff --check`
 
 真实 GitLab smoke 不进入自动脚本，因为它依赖外部 GitLab sandbox、token、SSH key
 和 Codex 登录态。V1 只要求 smoke runbook 提供固定 evidence 字段。
 
-## 6. 版本和变更记录
+## 7. 版本和变更记录
 
 V1 需要新增或更新：
 
 - `CHANGELOG.md`
-- README / README.zh-CN 的当前状态和 V1 说明
-- getting-started 中的 source-checkout 使用路径
+- package version，例如 `0.1.0`
+- README / README.zh-CN 的安装路径和启动命令
+- getting-started 的安装版 quickstart
 - smoke runbook 的 release evidence 字段
 
 `CHANGELOG.md` 至少记录：
 
 - `0.1.0` 版本目标
 - P0 gap closure 摘要
-- V1 source-checkout 支持边界
+- V1 installable CLI 支持边界
 - 已知非目标
 - 验证命令
 
-## 7. 文档边界
+## 8. 文档边界
 
 V1 文档应保持这些说法一致：
 
 - `WORKFLOW.md` 是目标仓库默认 workflow 文件。
-- IssuePilot 仓库负责运行 orchestrator、dashboard 和 smoke wrapper。
+- 用户主入口是安装后的 `issuepilot` 命令。
+- IssuePilot CLI 负责启动 orchestrator、dashboard 和本地诊断命令。
 - 目标项目仓库负责持有 `WORKFLOW.md` 和被 agent 修改的代码。
-- `pnpm smoke` 启动 orchestrator daemon，并等待 API ready。
-- dashboard 仍通过 `pnpm dev:dashboard` 单独启动。
+- `issuepilot run --workflow ...` 启动 orchestrator daemon，并等待 API ready。
+- dashboard 通过已安装命令启动。
 - MR merge 由人类完成，IssuePilot 只负责 merged 后收尾。
-- V1 不承诺 package install。
 - V1 不要求本地状态迁移；单人试点期间如遇不可恢复状态，可以停止 daemon 后清理
   具体 workspace 或 repo cache。
+- source-checkout 是开发/回滚路径，不是 V1 用户主路径。
 
-## 8. 错误处理和回滚
+## 9. 错误处理和回滚
 
-V1 的回滚策略保持简单：
+V1 的回滚策略：
+
+```bash
+npm uninstall -g <issuepilot-package>
+npm install -g <previous-issuepilot-package>
+```
+
+如果使用本地 tarball：
+
+```bash
+npm uninstall -g <issuepilot-package>
+npm install -g ./issuepilot-previous.tgz
+```
+
+如果回滚到源码 checkout：
 
 ```bash
 git fetch --tags
 git checkout <previous-tag-or-commit>
 pnpm install
 pnpm build
+pnpm exec issuepilot run --workflow /path/to/target-project/WORKFLOW.md
 ```
 
 如果本地 run 卡住或状态异常：
 
-1. 停止 `pnpm smoke` / daemon。
+1. 停止 `issuepilot run` / daemon。
 2. 检查 `~/.issuepilot/state` 下对应 run record 和 event log。
 3. 检查目标 GitLab Issue labels、handoff note、MR 状态。
 4. 必要时手动移除 `ai-running`，切回 `ai-ready`、`ai-rework` 或人工处理。
@@ -146,16 +193,18 @@ pnpm build
 
 这不是正式迁移指南，只是本地单人试点的排障边界。
 
-## 9. 测试策略
+## 10. 测试策略
 
-V1 需要覆盖三层验证：
+V1 需要覆盖四层验证：
 
 1. 自动检查：`pnpm release:check`。
-2. 针对性测试：修改 package 时继续运行对应 `pnpm --filter ... test/typecheck`。
-3. 人工真实 smoke：按 runbook 填写固定 evidence。
+2. 打包检查：package 产物包含 CLI、运行时代码、dashboard 产物和必要 package metadata。
+3. 本地安装 smoke：从打包产物安装后运行 `issuepilot --version`、`doctor`、`validate`。
+4. 人工真实 smoke：按 runbook 填写固定 evidence。
 
 Release evidence 建议包含：
 
+- 安装命令和版本输出
 - Issue URL
 - MR URL
 - Dashboard run URL
@@ -165,15 +214,17 @@ Release evidence 建议包含：
 - 最终 labels / issue state
 - 已知风险或人工介入点
 
-## 10. 完成标准
+## 11. 完成标准
 
 V1 完成时应满足：
 
-1. `package.json` 提供 `pnpm release:check`。
-2. README / README.zh-CN / getting-started 与 V1 source-checkout 边界一致。
-3. `CHANGELOG.md` 存在并记录 `0.1.0`。
-4. smoke runbook 有固定 release evidence 模板。
-5. 主设计 spec §20 与本 V1 设计一致。
-6. `pnpm release:check` 本地通过。
-7. PR 描述包含 V1 release gate 和未进入 V1 的能力清单。
+1. 安装后可以直接运行 `issuepilot --version`、`doctor`、`validate`、`run`。
+2. 安装后可以启动本地 dashboard。
+3. `package.json` 提供 `pnpm release:check`。
+4. README / README.zh-CN / getting-started 与 V1 安装路径一致。
+5. `CHANGELOG.md` 存在并记录 `0.1.0`。
+6. smoke runbook 有固定 release evidence 模板。
+7. 主设计 spec §20 与本 V1 设计一致。
+8. `pnpm release:check` 本地通过。
+9. PR 描述包含 V1 release gate 和未进入 V1 的能力清单。
 

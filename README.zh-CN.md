@@ -119,9 +119,9 @@ GitLab + TypeScript 路线、并打算在内部团队范围内试运行，那么
 
 仍在稳定中：
 
-- P0 source-checkout 使用方式已支持；V1 会用 release gate、release notes 和回滚说明
-  稳定这条路径。
-- 公开 package 和安装/升级流程延后到 V1 之后。
+- P0 source-checkout 使用方式已支持，可用于本地试点。
+- V1 目标是可安装的本地 CLI release，让用户安装 IssuePilot 后可以用
+  `issuepilot run` 启动，而不是必须在仓库 checkout 中运行。
 
 ## 工作方式
 
@@ -366,15 +366,17 @@ Request，不替代代码审查。
 目标：不改变单机执行模型，把当前闭环变成可安装、可重复、适合内部试点团队使用
 的稳定版本。
 
-- 稳定 source-checkout release：`git clone`、`pnpm install`、`pnpm build`、
-  `pnpm smoke`。
+- 通过 npm-compatible package tooling 提供可安装 CLI 分发，安装后暴露
+  `issuepilot` 可执行命令。
+- 安装后的本地启动路径：`issuepilot run --workflow ...` 启动 daemon/API，并提供
+  已安装的 dashboard 启动命令。
 - 版本化 tag，包含 release notes、回滚说明和本地闭环兼容性预期。
 - 本地闭环所需的 workflow schema、event contract、CLI 命令和 dashboard API
   稳定下来。
 - release gate 组合单测、fake E2E、smoke wrapper 和固定字段的真实 GitLab
   evidence。
 - auth refresh、token rotation、日志脱敏、failed / blocked run 排障的运维文档。
-- npm package、standalone tarball 或 internal registry 分发延后到 V1 之后。
+- source-checkout 继续作为贡献者开发和紧急回滚路径保留。
 
 ### V2 — 团队可运营版本
 

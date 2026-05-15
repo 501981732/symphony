@@ -142,9 +142,9 @@ Implemented in this repository:
 
 Still stabilizing:
 
-- P0 source-checkout usage is supported; V1 stabilizes this path with a release
-  gate, release notes, and rollback guidance.
-- Public packaging and install/upgrade flows are deferred until after V1.
+- P0 source-checkout usage is supported for local pilots.
+- V1 targets an installable local CLI release so users can install IssuePilot
+  and start it with `issuepilot run` instead of running from the repo checkout.
 
 ## How It Works
 
@@ -348,11 +348,13 @@ In active development; large parts are already usable in this repository:
 
 ### V1 — Stable local release
 
-Goal: make the current single-machine loop installable, repeatable, and safe
-for internal pilot teams without changing the core execution model.
+Goal: make the current single-machine loop installable, repeatable, and safe for
+internal pilot teams without changing the core execution model.
 
-- Stable source-checkout release: `git clone`, `pnpm install`, `pnpm build`,
-  `pnpm smoke`.
+- Installable CLI distribution through npm-compatible package tooling, with
+  `issuepilot` as the executable command.
+- Installed startup path for the local loop: `issuepilot run --workflow ...`
+  for daemon/API and an installed dashboard start command for the local UI.
 - Versioned tags with release notes, rollback notes, and compatibility
   expectations for the local loop.
 - Stable workflow schema, event contract, CLI commands, and dashboard API for
@@ -361,8 +363,7 @@ for internal pilot teams without changing the core execution model.
   real-GitLab evidence fields.
 - Operational docs for auth refresh, token rotation, log redaction, and
   debugging failed / blocked runs.
-- npm package, standalone tarball, or internal registry distribution deferred
-  until after V1.
+- Source-checkout remains supported for contributors and emergency rollback.
 
 ### V2 — Team-operable release
 
