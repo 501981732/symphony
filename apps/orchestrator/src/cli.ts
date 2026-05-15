@@ -25,11 +25,19 @@ import {
   type DashboardHandle,
   type DashboardOptions,
 } from "./dashboard.js";
+import {
+  startTeamDaemon,
+  type StartTeamDaemonOptions,
+  type TeamDaemonHandle,
+} from "./team/daemon.js";
 import { PACKAGE_VERSION } from "./version.js";
 
 export interface CliDeps {
   version?: string | undefined;
   startDaemon?: typeof startDaemon | undefined;
+  startTeamDaemon?:
+    | ((opts: StartTeamDaemonOptions) => Promise<TeamDaemonHandle>)
+    | undefined;
   validateWorkflow?: typeof validateWorkflow | undefined;
   checkCodexAppServer?: typeof checkCodexAppServer | undefined;
   spawnDashboard?:
@@ -80,6 +88,7 @@ function resolveWorkflowPath(
 
 export function buildCli(deps: CliDeps = {}): Command {
   const daemonStarter = deps.startDaemon ?? startDaemon;
+  const teamDaemonStarter = deps.startTeamDaemon ?? startTeamDaemon;
   const workflowValidator = deps.validateWorkflow ?? validateWorkflow;
   const codexCheck = deps.checkCodexAppServer ?? checkCodexAppServer;
   const dashboardStarter = deps.spawnDashboard ?? startDashboard;
@@ -134,6 +143,7 @@ export function buildCli(deps: CliDeps = {}): Command {
     .command("run")
     .description("Start the orchestrator daemon")
     .option("--workflow <path>", "Path to workflow file")
+    .option("--config <path>", "Path to V2 team config file")
     .option("--port <number>", "HTTP API port", "4738")
     .option(
       "--host <host>",
@@ -141,9 +151,19 @@ export function buildCli(deps: CliDeps = {}): Command {
       "127.0.0.1",
     )
     .action(async (opts) => {
-      const resolvedWorkflow = resolveWorkflowPath(opts.workflow);
-      if (resolvedWorkflow.warning) console.warn(resolvedWorkflow.warning);
-      const workflowPath = resolvedWorkflow.path;
+      if (
+        typeof opts.workflow === "string" &&
+        opts.workflow.length > 0 &&
+        typeof opts.config === "string" &&
+        opts.config.length > 0
+      ) {
+        console.error(
+          "Error: --workflow and --config cannot be used together",
+        );
+        process.exitCode = 1;
+        return;
+      }
+
       const port = parsePort(opts.port);
       if (port === null) {
         console.error(`Error: invalid port: ${opts.port}`);
@@ -156,6 +176,31 @@ export function buildCli(deps: CliDeps = {}): Command {
         process.exitCode = 1;
         return;
       }
+
+      if (typeof opts.config === "string" && opts.config.length > 0) {
+        const configPath = path.resolve(opts.config);
+        if (!fs.existsSync(configPath)) {
+          console.error(`Error: team config file not found: ${configPath}`);
+          process.exitCode = 1;
+          return;
+        }
+        let teamHandle: TeamDaemonHandle;
+        try {
+          teamHandle = await teamDaemonStarter({ configPath, port, host });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`Error: failed to start team daemon: ${message}`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log(`IssuePilot team daemon ready: ${teamHandle.url}`);
+        await teamHandle.wait();
+        return;
+      }
+
+      const resolvedWorkflow = resolveWorkflowPath(opts.workflow);
+      if (resolvedWorkflow.warning) console.warn(resolvedWorkflow.warning);
+      const workflowPath = resolvedWorkflow.path;
       if (!fs.existsSync(workflowPath)) {
         console.error(`Error: workflow file not found: ${workflowPath}`);
         process.exitCode = 1;

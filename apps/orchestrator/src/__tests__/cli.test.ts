@@ -380,6 +380,73 @@ describe("CLI", () => {
     });
   });
 
+  it("run starts team daemon when --config is provided", async () => {
+    const configPath = path.join(tmpDir, "issuepilot.team.yaml");
+    fs.writeFileSync(configPath, "version: 1\nprojects: []\n");
+    const wait = vi.fn(async () => {});
+    const startTeamDaemon = vi.fn(async () => ({
+      host: "127.0.0.1",
+      port: 4738,
+      url: "http://127.0.0.1:4738",
+      stop: vi.fn(async () => {}),
+      wait,
+    }));
+    const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cli = buildCli({ startTeamDaemon });
+
+    await cli.parseAsync(["run", "--config", configPath], { from: "user" });
+
+    expect(startTeamDaemon).toHaveBeenCalledWith({
+      configPath,
+      host: "127.0.0.1",
+      port: 4738,
+    });
+    expect(mockLog).toHaveBeenCalledWith(
+      "IssuePilot team daemon ready: http://127.0.0.1:4738",
+    );
+    expect(wait).toHaveBeenCalled();
+    mockLog.mockRestore();
+  });
+
+  it("run rejects passing --workflow and --config together", async () => {
+    const configPath = path.join(tmpDir, "issuepilot.team.yaml");
+    fs.writeFileSync(configPath, "version: 1\nprojects: []\n");
+    const wfPath = path.join(tmpDir, "WORKFLOW.md");
+    fs.writeFileSync(wfPath, "---\ntitle: test\n---\n");
+
+    const startDaemon = vi.fn(async () => ({
+      host: "127.0.0.1",
+      port: 4738,
+      url: "http://127.0.0.1:4738",
+      state: {} as never,
+      stop: async () => undefined,
+      wait: async () => undefined,
+    }));
+    const startTeamDaemon = vi.fn(async () => ({
+      host: "127.0.0.1",
+      port: 4738,
+      url: "http://127.0.0.1:4738",
+      stop: async () => undefined,
+      wait: async () => undefined,
+    }));
+    const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cli = buildCli({ startDaemon, startTeamDaemon });
+
+    await cli.parseAsync(
+      ["run", "--workflow", wfPath, "--config", configPath],
+      { from: "user" },
+    );
+
+    expect(process.exitCode).toBe(1);
+    expect(startDaemon).not.toHaveBeenCalled();
+    expect(startTeamDaemon).not.toHaveBeenCalled();
+    expect(mockError).toHaveBeenCalledWith(
+      "Error: --workflow and --config cannot be used together",
+    );
+    mockError.mockRestore();
+    process.exitCode = 0;
+  });
+
   describe("auth subcommands", () => {
     it("auth login forwards hostname/scope/client-id to authLogin", async () => {
       const authLogin = vi.fn(async () => ({}));
