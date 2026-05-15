@@ -18,6 +18,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
     "test:smoke": "vitest run --config vitest.config.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "release:pack": "tsx scripts/release/package-local.ts",
     "dev:orchestrator": "pnpm --filter @issuepilot/orchestrator dev",
     "dev:dashboard": "pnpm --filter @issuepilot/dashboard dev"
   },
