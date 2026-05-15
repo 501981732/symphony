@@ -47,4 +47,38 @@ export interface OrchestratorStateSnapshot {
   };
   /** Spec §14 counters shown in the dashboard overview. */
   summary: DashboardSummary;
+  /** V2 team runtime metadata; absent in single-workflow mode. */
+  runtime?: TeamRuntimeSummary;
+  /** V2 per-project rollups; absent in single-workflow mode. */
+  projects?: ProjectSummary[];
+}
+
+/**
+ * Per-project rollup used by the V2 team-operable dashboard.
+ *
+ * `enabled === false` means the project was declared in the team config but
+ * could not be activated (disabled flag or workflow load failure); in that
+ * case `lastError` carries the most recent load failure message.
+ */
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  workflowPath: string;
+  gitlabProject: string;
+  enabled: boolean;
+  activeRuns: number;
+  lastPollAt: string | null;
+  lastError?: string;
+}
+
+/**
+ * Aggregate counters for the V2 team runtime. `mode` reflects which daemon
+ * entrypoint produced the snapshot (`single` for the V1 `--workflow` path,
+ * `team` for the V2 `--config` path).
+ */
+export interface TeamRuntimeSummary {
+  mode: "single" | "team";
+  maxConcurrentRuns: number;
+  activeLeases: number;
+  projectCount: number;
 }

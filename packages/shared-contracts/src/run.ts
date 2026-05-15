@@ -54,4 +54,8 @@ export interface RunRecord {
     code: string;
     message: string;
   };
+  /** V2 team mode: stable project id from `issuepilot.team.yaml`. */
+  projectId?: string;
+  /** V2 team mode: human-readable project name shown on the dashboard. */
+  projectName?: string;
 }

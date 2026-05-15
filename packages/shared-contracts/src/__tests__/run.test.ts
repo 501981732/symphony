@@ -52,6 +52,31 @@ describe("@issuepilot/shared-contracts/run", () => {
       .toEqualTypeOf<string>();
   });
 
+  it("allows runs to carry team project metadata", () => {
+    const run: RunRecord = {
+      runId: "run-1",
+      status: "running",
+      attempt: 1,
+      issue: {
+        id: "1",
+        iid: 1,
+        title: "Fix checkout",
+        url: "https://gitlab.example.com/group/platform-web/-/issues/1",
+        projectId: "group/platform-web",
+        labels: ["ai-running"],
+      },
+      branch: "ai/1-fix",
+      workspacePath: "/tmp/issuepilot/platform-web/1",
+      projectId: "platform-web",
+      projectName: "Platform Web",
+      startedAt: "2026-05-15T00:00:00.000Z",
+      updatedAt: "2026-05-15T00:00:01.000Z",
+    };
+
+    expect(run.projectId).toBe("platform-web");
+    expect(run.projectName).toBe("Platform Web");
+  });
+
   it("RunRecord.mergeRequestUrl / endedAt / lastError / dashboard metadata are optional", () => {
     expectTypeOf<RunRecord>()
       .toHaveProperty("mergeRequestUrl")

@@ -61,4 +61,57 @@ describe("@issuepilot/shared-contracts/state", () => {
       .toHaveProperty("summary")
       .toEqualTypeOf<DashboardSummary>();
   });
+
+  it("accepts a team runtime snapshot with project summaries", () => {
+    const snapshot: OrchestratorStateSnapshot = {
+      service: {
+        status: "ready",
+        workflowPath: "/srv/issuepilot/team.yaml",
+        gitlabProject: "team",
+        pollIntervalMs: 10000,
+        concurrency: 2,
+        lastConfigReloadAt: "2026-05-15T00:00:00.000Z",
+        lastPollAt: "2026-05-15T00:00:01.000Z",
+      },
+      summary: {
+        running: 1,
+        retrying: 0,
+        "human-review": 1,
+        failed: 0,
+        blocked: 0,
+      },
+      runtime: {
+        mode: "team",
+        maxConcurrentRuns: 2,
+        activeLeases: 1,
+        projectCount: 2,
+      },
+      projects: [
+        {
+          id: "platform-web",
+          name: "Platform Web",
+          workflowPath: "/srv/platform-web/WORKFLOW.md",
+          gitlabProject: "group/platform-web",
+          enabled: true,
+          activeRuns: 1,
+          lastPollAt: "2026-05-15T00:00:01.000Z",
+        },
+        {
+          id: "infra-tools",
+          name: "Infra Tools",
+          workflowPath: "/srv/infra-tools/WORKFLOW.md",
+          gitlabProject: "group/infra-tools",
+          enabled: true,
+          activeRuns: 0,
+          lastPollAt: null,
+        },
+      ],
+    };
+
+    expect(snapshot.runtime?.mode).toBe("team");
+    expect(snapshot.projects?.map((project) => project.id)).toEqual([
+      "platform-web",
+      "infra-tools",
+    ]);
+  });
 });
