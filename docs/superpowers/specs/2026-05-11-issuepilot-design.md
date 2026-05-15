@@ -888,7 +888,7 @@ Dashboard/API：
 12. 验证 dashboard timeline。
 ```
 
-## 19. V1/P0 实现里程碑
+## 19. P0 实现里程碑
 
 M1：TypeScript skeleton
 
@@ -953,48 +953,86 @@ M8：端到端验证
 
 ## 20. 后续版本路线图
 
-V1/P0：本地单机闭环
+本路线图区分 P0、V1、V2，避免把“当前可试运行能力”和“稳定发布能力”混在一起。
+README 只保留摘要；本节是 roadmap 的产品源头。
 
-- 本地 daemon
-- GitLab Issue label 驱动
-- Codex app-server runner
-- git worktree workspace
-- 自动创建 MR 和结构化 handoff note
-- 人工 merge MR 后自动关闭 GitLab issue
-- 只读 Next.js dashboard
-- fake E2E + real GitLab smoke test
+### P0：本地单机闭环（当前阶段）
 
-V2：团队可运营版本
+目标：证明 GitLab Issue 到 MR、人工 merge 后自动关闭 Issue 的本地闭环成立。
+P0 支持 source checkout 方式试运行，不承诺稳定 package / upgrade 体验。
 
-- 部署到团队共享机器或内网服务
-- 支持多项目 workflow 配置
-- 并发从 1 扩展到 2-5
-- dashboard 增加基础操作：retry、stop、archive run
-- CI 状态读取和失败自动回流到 ai-rework
-- PR/MR review feedback sweep
-- 更完整的运行报告：diff summary、测试结果、风险点、耗时
-- workspace 清理和保留策略
+- 本地 daemon：orchestrator + Fastify HTTP API + SSE。
+- GitLab Issue label 驱动：`ai-ready`、`ai-running`、`human-review`、
+  `ai-rework`、`ai-failed`、`ai-blocked`。
+- Codex app-server runner：thread / turn 生命周期、非交互 input fallback、
+  notification 缓冲和标准化事件。
+- git workspace：bare mirror + worktree，失败现场和 event logs 保留。
+- 自动创建或更新 MR，写结构化 handoff note，并支持 marker 驱动的重启恢复。
+- 失败 / 阻塞路径写结构化 failure / blocked note。
+- 人工 merge MR 后，IssuePilot 写 closing note、移除 `human-review` 并关闭
+  GitLab Issue。
+- 只读 Next.js dashboard：overview、run detail、timeline、tool calls、logs。
+- fake GitLab + fake Codex E2E，以及真实 GitLab smoke runbook / smoke wrapper。
+- P0 event contract 收敛到 `@issuepilot/shared-contracts`，dashboard 不依赖
+  runner raw payload。
 
-V3：生产化执行平台
+### V1：稳定本地发布
 
-- 多 worker 支持，本机、SSH worker、容器 worker 可插拔
-- Docker 或 Kubernetes sandbox
-- token、时长、并发预算控制
-- 权限模型：项目级、团队级、管理员级
-- Webhook + poll 混合调度
-- 更强的 GitLab 审计和 secret redaction
-- Postgres/SQLite 持久化 run history
-- OpenTelemetry、Loki/Grafana 或内部观测平台集成
+目标：不改变单机执行模型，把 P0 闭环变成可安装、可重复、适合内部试点团队使用
+的稳定版本。
 
-V4：智能研发工作台
+- 公开或内部 package 分发：npm package、standalone tarball 或 internal registry
+  package 三选一。
+- 版本化 release：包含升级说明、回滚说明和兼容性预期。
+- workflow schema、event contract、CLI 命令、dashboard API 进入稳定窗口。
+- release gate 固定化：unit tests、fake E2E、smoke wrapper、真实 GitLab evidence
+  字段全部纳入发布检查。
+- source-checkout 和 packaged install 两种使用路径并行维护。
+- `~/.issuepilot` 本地状态迁移指南：credentials、repos、workspaces、state 的兼容
+  和清理策略。
+- auth refresh、token rotation、日志脱敏、failed / blocked run 排障手册。
+- 文档收口：README、getting-started、smoke runbook、CHANGELOG 与本 spec 同步。
 
-- 自动拆分大 Issue 为子任务
-- 跨 Issue 依赖和 blocker 分析
-- 多 agent 协作和 reviewer agent
-- 自动生成验收材料：截图、录屏、Playwright walkthrough
-- agent 成功率、返工率、CI 通过率、review 命中率评估
-- workflow/skills 推荐和持续改进机制
-- 支持更多执行器，例如 Claude Code 或内部 coding agent
+### V2：团队可运营版本
+
+目标：从“个人单机”升级为“团队共享”，可以在内网或团队机器上承载日常工作。
+
+- 部署到团队共享机器或内网服务，支持多用户读状态。
+- 单 daemon 支持多项目 workflow 配置。
+- 并发从 1 扩展到 2-5，加入槽位调度和 lease 策略。
+- dashboard 增加基础操作：`retry`、`stop`、`archive run`。
+- CI 状态读取，CI 失败自动回流到 `ai-rework`。
+- PR/MR review feedback sweep，把人工 review 评论喂给下一轮 agent。
+- review 工作流打磨：dashboard 和报告中直接展示 handoff / failure / closing note
+  的结构化字段。
+- 可选自动 merge 策略，满足 CI / approval 后执行；默认仍保留人工 merge。
+- 更完整的运行报告：diff summary、测试结果、风险点、耗时分解。
+- workspace 清理和保留策略：按状态、时间和大小分级处理。
+
+### V3：生产化执行平台
+
+目标：作为内部“AI 工程执行平台”运行，具备权限、预算和可观测性。
+
+- 多 worker 支持：本机、SSH worker、容器 worker 可插拔。
+- Docker 或 Kubernetes sandbox。
+- token、时长、并发、成本预算控制。
+- 权限模型：项目级、团队级、管理员级。
+- Webhook + poll 混合调度，降低轮询延迟。
+- 更强的 GitLab 审计和 secret redaction。
+- Postgres/SQLite 持久化 run history。
+- OpenTelemetry、Loki/Grafana 或内部观测平台集成。
+
+### V4：智能研发工作台
+
+目标：超越“单 Issue 单 run”，成为面向研发流程的智能工作台。
+
+- 自动拆分大 Issue 为子任务，并对子任务编排执行。
+- 跨 Issue 依赖和 blocker 分析。
+- 多 agent 协作和 reviewer agent。
+- 自动生成验收材料：截图、录屏、Playwright walkthrough。
+- agent 成功率、返工率、CI 通过率、review 命中率评估。
+- workflow/skills 推荐和持续改进机制。
+- 支持更多执行器，例如 Claude Code 或内部 coding agent。
 
 ## 21. MVP Definition of Done
 

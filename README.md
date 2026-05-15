@@ -244,10 +244,6 @@ WORKFLOW.md
 The file contains YAML front matter for machine-readable configuration and a
 Markdown body used as the agent prompt.
 
-`WORKFLOW.md` is the long-term default to stay aligned with the root
-`SPEC.md`. Legacy `.agents/workflow.md` can still be passed explicitly with
-`--workflow` during migration.
-
 Minimal shape:
 
 ```md
@@ -327,7 +323,7 @@ The IssuePilot roadmap lives in
 §20 — the section below is a summary so you can quickly see what's usable today
 and where the project is heading.
 
-### V1 / P0 — Local single-machine loop (current)
+### P0 — Local single-machine loop (current)
 
 In active development; large parts are already usable in this repository:
 
@@ -348,7 +344,25 @@ In active development; large parts are already usable in this repository:
 - ✅ Read-only Next.js dashboard (overview + run detail + SSE timeline).
 - ✅ Fake GitLab + fake Codex end-to-end harness + real GitLab smoke runbook.
 - ✅ P0 source-checkout usage for local pilots.
-- 🚧 Public packaging, versioned releases, install/upgrade paths.
+- 🚧 Release evidence and docs are still being tightened before a stable V1.
+
+### V1 — Stable local release
+
+Goal: make the current single-machine loop installable, repeatable, and safe
+for internal pilot teams without changing the core execution model.
+
+- Public or internal package distribution (npm package, standalone tarball, or
+  internal registry package).
+- Versioned releases with upgrade notes, rollback notes, and compatibility
+  expectations.
+- Stable workflow schema, event contract, CLI commands, and dashboard API for
+  the local loop.
+- Release gate that combines unit tests, fake E2E, smoke wrapper, and fixed
+  real-GitLab evidence fields.
+- Source-checkout and packaged-install docs kept side by side.
+- Basic migration guide for existing local state under `~/.issuepilot`.
+- Operational docs for auth refresh, token rotation, log redaction, and
+  debugging failed / blocked runs.
 
 ### V2 — Team-operable release
 

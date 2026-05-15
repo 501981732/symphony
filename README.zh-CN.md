@@ -266,9 +266,6 @@ WORKFLOW.md
 该文件由两部分组成：YAML front matter 作为机器可读配置，Markdown body
 作为传给 agent 的 prompt。
 
-`WORKFLOW.md` 是长期默认入口，用于和根目录开源 `SPEC.md` 保持一致。
-迁移期仍可通过显式 `--workflow` 传入旧的 `.agents/workflow.md`。
-
 最小结构：
 
 ```md
@@ -345,7 +342,7 @@ Request，不替代代码审查。
 [`docs/superpowers/specs/2026-05-11-issuepilot-design.md`](docs/superpowers/specs/2026-05-11-issuepilot-design.md)
 §20 为准；本节只做摘要，便于先快速判断"现在能用到什么、未来会扩到哪里"。
 
-### V1 / P0 — 本地单机闭环（当前阶段）
+### P0 — 本地单机闭环（当前阶段）
 
 进行中，部分能力已经在仓库内可用：
 
@@ -362,7 +359,23 @@ Request，不替代代码审查。
 - ✅ 只读 Next.js dashboard（overview + run detail + SSE timeline）。
 - ✅ fake GitLab + fake Codex 全闭环 E2E + 真实 GitLab smoke runbook。
 - ✅ 本地试点可使用 P0 source-checkout 方式运行。
-- 🚧 公开 package、版本化 release、安装/升级路径。
+- 🚧 稳定 V1 发布前，release evidence 和文档仍在收口。
+
+### V1 — 稳定本地发布
+
+目标：不改变单机执行模型，把当前闭环变成可安装、可重复、适合内部试点团队使用
+的稳定版本。
+
+- 公开或内部 package 分发（npm package、standalone tarball 或 internal registry
+  package）。
+- 版本化 release，包含升级说明、回滚说明和兼容性预期。
+- 本地闭环所需的 workflow schema、event contract、CLI 命令和 dashboard API
+  稳定下来。
+- release gate 组合单测、fake E2E、smoke wrapper 和固定字段的真实 GitLab
+  evidence。
+- source-checkout 和 packaged install 两种文档并行维护。
+- `~/.issuepilot` 下已有本地状态的基础迁移指南。
+- auth refresh、token rotation、日志脱敏、failed / blocked run 排障的运维文档。
 
 ### V2 — 团队可运营版本
 
