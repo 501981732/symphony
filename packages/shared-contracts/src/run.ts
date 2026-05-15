@@ -65,4 +65,38 @@ export interface RunRecord {
    * `?includeArchived=true` to include them.
    */
   archivedAt?: string;
+  /**
+   * Latest CI pipeline classification observed by the human-review
+   * scanner (V2 Phase 3). Maps to {@link PIPELINE_STATUS_VALUES}; absent
+   * means no CI status was ever recorded (CI feedback disabled or run
+   * never reached `human-review`).
+   */
+  latestCiStatus?: PipelineStatus;
+  /**
+   * ISO-8601 timestamp captured at the last CI poll for this run.
+   * Always set together with {@link RunRecord.latestCiStatus}.
+   */
+  latestCiCheckedAt?: string;
 }
+
+/**
+ * Coarse-grained CI pipeline classification surfaced by
+ * `@issuepilot/tracker-gitlab` `getPipelineStatus`. Mirrors the
+ * `PipelineStatus` type living in the tracker package, duplicated here
+ * to keep the dashboard / shared-contracts consumers free of a tracker
+ * dependency. Keep both lists in sync.
+ */
+export const PIPELINE_STATUS_VALUES = [
+  "running",
+  "success",
+  "failed",
+  "pending",
+  "canceled",
+  "unknown",
+] as const;
+
+export type PipelineStatus = (typeof PIPELINE_STATUS_VALUES)[number];
+
+export const isPipelineStatus = (value: unknown): value is PipelineStatus =>
+  typeof value === "string" &&
+  (PIPELINE_STATUS_VALUES as readonly string[]).includes(value);

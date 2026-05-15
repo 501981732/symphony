@@ -73,6 +73,9 @@ const REQUIRED_EVENT_TYPES = [
   "operator_action_requested",
   "operator_action_succeeded",
   "operator_action_failed",
+  "ci_status_observed",
+  "ci_status_rework_triggered",
+  "ci_status_lookup_failed",
 ] as const;
 
 describe("@issuepilot/shared-contracts/events", () => {
@@ -98,6 +101,12 @@ describe("@issuepilot/shared-contracts/events", () => {
     expect(isEventType("operator_action_requested")).toBe(true);
     expect(isEventType("operator_action_succeeded")).toBe(true);
     expect(isEventType("operator_action_failed")).toBe(true);
+  });
+
+  it("isEventType narrows new ci feedback types (V2 Phase 3)", () => {
+    expect(isEventType("ci_status_observed")).toBe(true);
+    expect(isEventType("ci_status_rework_triggered")).toBe(true);
+    expect(isEventType("ci_status_lookup_failed")).toBe(true);
   });
 
   it("IssuePilotEvent requires id / runId / issue / type / message / createdAt", () => {
