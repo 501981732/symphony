@@ -18,7 +18,7 @@ import type {
 const ENV_VAR_NAME_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
- * Thrown when `.agents/workflow.md` cannot be loaded or fails validation.
+ * Thrown when a workflow file cannot be loaded or fails validation.
  *
  * `path` points at the offending field using dot-notation (e.g.
  * `tracker.project_id`), or one of the sentinel values:
@@ -126,7 +126,7 @@ const WorkflowFrontMatterSchema = z.object({
 type WorkflowFrontMatter = z.infer<typeof WorkflowFrontMatterSchema>;
 
 /**
- * Parse a `.agents/workflow.md` style file into a typed {@link WorkflowConfig}.
+ * Parse a WORKFLOW.md-compatible file into a typed {@link WorkflowConfig}.
  *
  * Throws {@link WorkflowConfigError} for IO errors, YAML errors, or any
  * Zod validation failure; in the validation case `error.path` mirrors the
