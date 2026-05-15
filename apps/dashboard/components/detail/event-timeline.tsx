@@ -1,9 +1,5 @@
-import type {
-  EventType,
-  IssuePilotEvent,
-} from "@issuepilot/shared-contracts";
+import type { EventType, IssuePilotEvent } from "@issuepilot/shared-contracts";
 import { useMemo } from "react";
-
 
 import { Badge, type BadgeTone } from "../ui/badge";
 

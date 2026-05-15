@@ -99,11 +99,7 @@ export function handleApprovalRequest(
 
   return {
     approved: false,
-    event: makeEvent(
-      "approval_required",
-      "Manual approval required",
-      ctx,
-    ),
+    event: makeEvent("approval_required", "Manual approval required", ctx),
   };
 }
 

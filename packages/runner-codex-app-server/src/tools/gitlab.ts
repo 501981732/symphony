@@ -35,7 +35,11 @@ interface GitLabAdapterSlice {
   }): Promise<{ id: number; iid: number; webUrl: string }>;
   updateMergeRequest(
     mrIid: number,
-    input: Partial<{ title: string; description: string; targetBranch: string }>,
+    input: Partial<{
+      title: string;
+      description: string;
+      targetBranch: string;
+    }>,
   ): Promise<void>;
   getMergeRequest(
     mrIid: number,
@@ -55,8 +59,7 @@ async function safe(fn: () => Promise<unknown>): Promise<unknown> {
     const data = await fn();
     return { ok: true, data };
   } catch (err: unknown) {
-    const message =
-      err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : String(err);
     const category =
       err && typeof err === "object" && "category" in err
         ? (err as { category: string }).category

@@ -273,13 +273,7 @@ describe("CLI", () => {
     const cli = buildCli({ spawnDashboard });
 
     await cli.parseAsync(
-      [
-        "dashboard",
-        "--port",
-        "3333",
-        "--api-url",
-        "http://127.0.0.1:4738",
-      ],
+      ["dashboard", "--port", "3333", "--api-url", "http://127.0.0.1:4738"],
       { from: "user" },
     );
 

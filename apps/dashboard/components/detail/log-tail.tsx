@@ -7,7 +7,9 @@ export function LogTail({ lines }: LogTailProps) {
     return (
       <p className="rounded-md border border-dashed border-slate-300 bg-white px-4 py-3 text-xs text-slate-500">
         No log tail available — tail{" "}
-        <code className="font-mono">~/.issuepilot/state/logs/issuepilot.log</code>{" "}
+        <code className="font-mono">
+          ~/.issuepilot/state/logs/issuepilot.log
+        </code>{" "}
         on the host for full output.
       </p>
     );

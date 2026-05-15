@@ -97,11 +97,7 @@ export function buildCli(deps: CliDeps = {}): Command {
     .description("Start the local read-only dashboard")
     .option("--port <number>", "Dashboard port", "3000")
     .option("--host <host>", "Dashboard bind host", "127.0.0.1")
-    .option(
-      "--api-url <url>",
-      "Orchestrator API URL",
-      "http://127.0.0.1:4738",
-    )
+    .option("--api-url <url>", "Orchestrator API URL", "http://127.0.0.1:4738")
     .action(async (opts) => {
       const port = parsePort(opts.port);
       if (port === null) {

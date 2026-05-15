@@ -4,7 +4,10 @@ import { execa, type ResultPromise } from "execa";
 
 type NotificationHandler = (method: string, params: unknown) => void;
 type MalformedHandler = (line: string) => void;
-type RequestHandler = (method: string, params: unknown) => Promise<unknown> | unknown;
+type RequestHandler = (
+  method: string,
+  params: unknown,
+) => Promise<unknown> | unknown;
 type RequestId = number | string | null;
 
 export interface RpcClient {
@@ -63,7 +66,14 @@ export function spawnRpc(opts: {
   if (proc.stdout) {
     const rl = createInterface({ input: proc.stdout });
     rl.on("line", (line: string) => {
-      let msg: { jsonrpc?: string; id?: RequestId; method?: string; result?: unknown; error?: unknown; params?: unknown };
+      let msg: {
+        jsonrpc?: string;
+        id?: RequestId;
+        method?: string;
+        result?: unknown;
+        error?: unknown;
+        params?: unknown;
+      };
       try {
         msg = JSON.parse(line) as typeof msg;
       } catch {
@@ -73,10 +83,7 @@ export function spawnRpc(opts: {
 
       if (msg.method && msg.id !== undefined) {
         void handleServerRequest(msg.id, msg.method, msg.params);
-      } else if (
-        typeof msg.id === "number" &&
-        pending.has(msg.id)
-      ) {
+      } else if (typeof msg.id === "number" && pending.has(msg.id)) {
         const p = pending.get(msg.id)!;
         pending.delete(msg.id);
         if (msg.error) {

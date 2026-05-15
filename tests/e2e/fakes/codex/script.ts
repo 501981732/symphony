@@ -282,7 +282,8 @@ export async function runScript(
       }
       const response = await responsePromise;
       if (step.expectResponse) {
-        const hasError = response.error !== undefined && response.error !== null;
+        const hasError =
+          response.error !== undefined && response.error !== null;
         if (step.expectResponse.kind === "result" && hasError) {
           throw new Error(
             `request ${step.request.method} expected a result but received error: ${JSON.stringify(response.error)}`,

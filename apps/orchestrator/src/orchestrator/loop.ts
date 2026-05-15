@@ -107,7 +107,8 @@ export function startLoop(deps: LoopDeps): LoopHandle {
     }
 
     for (const c of candidates) {
-      if (deps.slots.available() === 0 && !deps.slots.active().has(c.runId)) break;
+      if (deps.slots.available() === 0 && !deps.slots.active().has(c.runId))
+        break;
       dispatchRun(c.runId, dispatchedRunIds, { slotReserved: true });
     }
   };

@@ -67,11 +67,7 @@ export async function runHook(input: RunHookInput): Promise<RunHookResult> {
     ) {
       throw new HookFailedError(input.name, undefined, true);
     }
-    if (
-      err &&
-      typeof err === "object" &&
-      "exitCode" in err
-    ) {
+    if (err && typeof err === "object" && "exitCode" in err) {
       throw new HookFailedError(
         input.name,
         (err as { exitCode: number }).exitCode,

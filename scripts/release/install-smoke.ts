@@ -5,7 +5,11 @@ import { fileURLToPath } from "node:url";
 
 import { execa } from "execa";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const root = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
 const rootPackage = JSON.parse(
   await fs.readFile(path.join(root, "package.json"), "utf8"),
 ) as { version: string };
@@ -43,19 +47,13 @@ async function runInstalled(
 async function main(): Promise<void> {
   await execa("pnpm", ["release:pack"], { cwd: root, stdio: "inherit" });
 
-  const tmpPrefix = await fs.mkdtemp(path.join(os.tmpdir(), "issuepilot-install-"));
+  const tmpPrefix = await fs.mkdtemp(
+    path.join(os.tmpdir(), "issuepilot-install-"),
+  );
   const npmCache = path.join(tmpPrefix, "npm-cache");
   await execa(
     "npm",
-    [
-      "install",
-      "-g",
-      "--prefix",
-      tmpPrefix,
-      "--cache",
-      npmCache,
-      tarball,
-    ],
+    ["install", "-g", "--prefix", tmpPrefix, "--cache", npmCache, tarball],
     { cwd: root, stdio: "inherit" },
   );
 
@@ -68,7 +66,11 @@ async function main(): Promise<void> {
   }
 
   await runInstalled(issuepilotBin, ["doctor"]);
-  await runInstalled(issuepilotBin, ["validate", "--workflow", fixtureWorkflow]);
+  await runInstalled(issuepilotBin, [
+    "validate",
+    "--workflow",
+    fixtureWorkflow,
+  ]);
   await runInstalled(issuepilotBin, ["dashboard", "--help"]);
 
   console.log(`Installed IssuePilot smoke passed: ${issuepilotBin}`);

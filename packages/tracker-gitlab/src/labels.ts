@@ -81,7 +81,9 @@ export async function transitionLabels(
       });
     }
 
-    const verified = await api.Issues.show(iid, { projectId: client.projectId });
+    const verified = await api.Issues.show(iid, {
+      projectId: client.projectId,
+    });
     const finalLabels = [...(verified.labels ?? [])];
     const finalSet = new Set(finalLabels);
     const stillMissing = opts.add.filter((l) => !finalSet.has(l));

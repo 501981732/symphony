@@ -155,9 +155,9 @@ describe("happy path E2E", () => {
     );
     expect(closingNote).toBeDefined();
     expect(closingNote?.body).toContain("- Status: closed");
-    expect(
-      closingNote?.body,
-    ).toContain("The linked MR was merged by a human reviewer");
+    expect(closingNote?.body).toContain(
+      "The linked MR was merged by a human reviewer",
+    );
 
     // Step 7: event store contains the spec §10 happy-path event types.
     const stateRes = await fetch(`${daemon.url}/api/state`);

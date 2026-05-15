@@ -228,6 +228,8 @@ describe("runScript", () => {
       result: { decision: "accept" },
     });
     end();
-    await expect(done).rejects.toThrow(/expected an error but received result/i);
+    await expect(done).rejects.toThrow(
+      /expected an error but received result/i,
+    );
   });
 });

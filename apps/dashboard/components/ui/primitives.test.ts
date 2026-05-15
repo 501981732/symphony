@@ -2,12 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Badge } from "./badge";
 import { Button } from "./button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "./card";
+import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import {
   Table,
   TableBody,

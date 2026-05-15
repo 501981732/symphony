@@ -21,7 +21,11 @@ interface PackageJson {
   engines?: Record<string, string>;
 }
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const root = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
 const releaseDir = path.join(root, "dist", "release");
 const stagingDir = path.join(releaseDir, "package");
 const version = JSON.parse(
@@ -73,7 +77,9 @@ function packageNameToNodeModulesPath(name: string): string {
   return path.join(stagingDir, "node_modules", scope, pkg);
 }
 
-async function writeBundledWorkspacePackage(packageDir: string): Promise<string> {
+async function writeBundledWorkspacePackage(
+  packageDir: string,
+): Promise<string> {
   const pkg = await readPackageJson(packageDir);
   const target = packageNameToNodeModulesPath(pkg.name);
   await fs.mkdir(target, { recursive: true });
@@ -146,7 +152,9 @@ async function main(): Promise<void> {
     const pkg = await readPackageJson(packageDir);
     mergeExternalDependencies(dependencies, pkg.dependencies);
   }
-  const dashboardPkg = await readPackageJson(path.join(root, "apps", "dashboard"));
+  const dashboardPkg = await readPackageJson(
+    path.join(root, "apps", "dashboard"),
+  );
   mergeExternalDependencies(dependencies, dashboardPkg.dependencies);
 
   await copyDir(

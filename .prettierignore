@@ -16,6 +16,7 @@ elixir/
 
 # Out-of-scope automation / external surface — don't reformat.
 .codex/
+.agents/
 .github/
 .cursor/
 .qodo/

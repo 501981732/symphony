@@ -59,9 +59,9 @@ describe("assertWithinRoot", () => {
   it("throws WorkspacePathError when child escapes root", async () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ws-outside-"));
     try {
-      await expect(
-        assertWithinRoot(outside, tmpRoot),
-      ).rejects.toMatchObject({ name: "WorkspacePathError" });
+      await expect(assertWithinRoot(outside, tmpRoot)).rejects.toMatchObject({
+        name: "WorkspacePathError",
+      });
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
@@ -72,9 +72,9 @@ describe("assertWithinRoot", () => {
     const link = path.join(tmpRoot, "evil-link");
     fs.symlinkSync(outside, link);
     try {
-      await expect(
-        assertWithinRoot(link, tmpRoot),
-      ).rejects.toMatchObject({ name: "WorkspacePathError" });
+      await expect(assertWithinRoot(link, tmpRoot)).rejects.toMatchObject({
+        name: "WorkspacePathError",
+      });
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
       fs.unlinkSync(link);
@@ -83,9 +83,9 @@ describe("assertWithinRoot", () => {
 
   it("throws WorkspacePathError for path traversal with ..", async () => {
     const traversal = path.join(tmpRoot, "sub", "..", "..", "etc");
-    await expect(
-      assertWithinRoot(traversal, tmpRoot),
-    ).rejects.toMatchObject({ name: "WorkspacePathError" });
+    await expect(assertWithinRoot(traversal, tmpRoot)).rejects.toMatchObject({
+      name: "WorkspacePathError",
+    });
   });
 });
 

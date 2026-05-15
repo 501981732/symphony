@@ -41,9 +41,7 @@ export async function assertWithinRoot(
   try {
     realRoot = await fs.realpath(root);
   } catch {
-    throw new WorkspacePathError(
-      `Root path does not exist: ${root}`,
-    );
+    throw new WorkspacePathError(`Root path does not exist: ${root}`);
   }
 
   try {
@@ -62,10 +60,7 @@ export async function assertWithinRoot(
     return;
   }
 
-  if (
-    !realChild.startsWith(realRoot + path.sep) &&
-    realChild !== realRoot
-  ) {
+  if (!realChild.startsWith(realRoot + path.sep) && realChild !== realRoot) {
     throw new WorkspacePathError(
       `Path escapes root: ${child} resolves to ${realChild} which is outside ${realRoot}`,
     );
@@ -84,9 +79,7 @@ export function branchName(opts: {
   const name = `${opts.prefix}/${opts.iid}-${opts.titleSlug}`;
 
   if (name.includes("..")) {
-    throw new WorkspacePathError(
-      `Branch name contains '..': ${name}`,
-    );
+    throw new WorkspacePathError(`Branch name contains '..': ${name}`);
   }
   if (name.length > 200) {
     throw new WorkspacePathError(

@@ -70,7 +70,11 @@ export async function claimCandidates(
     );
 
     try {
-      const transitionOpts: { add: string[]; remove: string[]; requireCurrent?: string[] } = {
+      const transitionOpts: {
+        add: string[];
+        remove: string[];
+        requireCurrent?: string[];
+      } = {
         add: [input.runningLabel],
         remove: input.activeLabels,
       };

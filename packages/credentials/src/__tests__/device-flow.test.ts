@@ -107,7 +107,11 @@ describe("requestDeviceCode", () => {
     ]);
     await expect(
       requestDeviceCode(
-        { baseUrl: "https://gitlab.example.com", clientId: "id", scope: ["api"] },
+        {
+          baseUrl: "https://gitlab.example.com",
+          clientId: "id",
+          scope: ["api"],
+        },
         { fetch },
       ),
     ).rejects.toMatchObject({
@@ -143,7 +147,11 @@ describe("requestDeviceCode", () => {
     };
     await expect(
       requestDeviceCode(
-        { baseUrl: "https://gitlab.example.com", clientId: "id", scope: ["api"] },
+        {
+          baseUrl: "https://gitlab.example.com",
+          clientId: "id",
+          scope: ["api"],
+        },
         { fetch },
       ),
     ).rejects.toMatchObject({ category: "transient", retriable: true });

@@ -1,11 +1,7 @@
 "use client";
 
-import type {
-  IssuePilotEvent,
-  RunRecord,
-} from "@issuepilot/shared-contracts";
+import type { IssuePilotEvent, RunRecord } from "@issuepilot/shared-contracts";
 import { useEffect, useMemo, useState } from "react";
-
 
 import { useEventStream } from "../../lib/use-event-stream";
 import { Badge, type BadgeTone } from "../ui/badge";

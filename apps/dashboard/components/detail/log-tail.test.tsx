@@ -13,8 +13,6 @@ describe("LogTail", () => {
 
   it("falls back to placeholder when empty", () => {
     render(<LogTail lines={[]} />);
-    expect(
-      screen.getByText(/no log tail available/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no log tail available/i)).toBeInTheDocument();
   });
 });

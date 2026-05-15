@@ -29,9 +29,7 @@ describe("parseWorkflowFile", () => {
     expect(cfg.workspace.strategy).toBe("worktree");
     expect(cfg.workspace.repoCacheRoot).toBe("~/.issuepilot/repos");
 
-    expect(cfg.git.repoUrl).toBe(
-      "git@gitlab.example.com:group/project.git",
-    );
+    expect(cfg.git.repoUrl).toBe("git@gitlab.example.com:group/project.git");
     expect(cfg.git.baseBranch).toBe("main");
     expect(cfg.git.branchPrefix).toBe("ai");
 

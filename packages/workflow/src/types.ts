@@ -40,13 +40,9 @@ export interface AgentConfig {
 
 export type CodexApprovalPolicy = "never" | "untrusted" | "on-request";
 
-export type CodexThreadSandbox =
-  | "workspace-write"
-  | "read-only";
+export type CodexThreadSandbox = "workspace-write" | "read-only";
 
-export type CodexTurnSandboxType =
-  | "workspaceWrite"
-  | "readOnly";
+export type CodexTurnSandboxType = "workspaceWrite" | "readOnly";
 
 export interface CodexTurnSandboxPolicy {
   type: CodexTurnSandboxType;

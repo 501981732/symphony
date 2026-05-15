@@ -35,7 +35,8 @@ function isSecretFieldName(key: string): boolean {
   const lower = key.toLowerCase();
   if (SECRET_FIELD_NAMES.has(lower)) return true;
   if (lower.endsWith("_token") && lower !== "token_env") return true;
-  if (lower === "password" || lower === "secret" || lower === "api_key") return true;
+  if (lower === "password" || lower === "secret" || lower === "api_key")
+    return true;
   return SECRET_FIELD_NAMES.has(lower);
 }
 
