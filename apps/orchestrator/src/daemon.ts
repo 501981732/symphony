@@ -40,6 +40,13 @@ import {
 } from "@issuepilot/workspace";
 import { execa } from "execa";
 
+import {
+  archiveRun,
+  retryRun,
+  stopRun,
+  type OperatorActionDeps,
+  type OperatorActionInput,
+} from "./operations/actions.js";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
@@ -49,6 +56,7 @@ import {
 } from "./orchestrator/human-review.js";
 import { startLoop } from "./orchestrator/loop.js";
 import { reconcile } from "./orchestrator/reconcile.js";
+import { createRunCancelRegistry } from "./runtime/run-cancel-registry.js";
 import { createConcurrencySlots } from "./runtime/slots.js";
 import { createRuntimeState, type RuntimeState } from "./runtime/state.js";
 import { createServer } from "./server/index.js";
@@ -384,6 +392,7 @@ export async function startDaemon(
     path.join(workflow.workspace.root, ".issuepilot", "events"),
   );
   const runIndex = new Map<string, { projectSlug: string; issueIid: number }>();
+  const runCancelRegistry = createRunCancelRegistry();
 
   /**
    * Resolve GitLab credentials before the server starts taking traffic. The
@@ -520,6 +529,25 @@ export async function startDaemon(
     });
   };
 
+  const operatorActionDeps = (): OperatorActionDeps => ({
+    state,
+    eventBus,
+    runCancelRegistry,
+    gitlab: {
+      transitionLabels: async (iid, labels) => {
+        await gitlab.transitionLabels(iid, labels);
+      },
+    },
+    workflow: {
+      tracker: {
+        runningLabel: workflow.tracker.runningLabel,
+        reworkLabel: workflow.tracker.reworkLabel,
+        failedLabel: workflow.tracker.failedLabel,
+        blockedLabel: workflow.tracker.blockedLabel,
+      },
+    },
+  });
+
   const serverFactory = deps.createServer ?? createServer;
   const app = await serverFactory(
     {
@@ -545,6 +573,14 @@ export async function startDaemon(
           ),
           readOpts?.limit,
         ),
+      operatorActions: {
+        retry: (input: OperatorActionInput) =>
+          retryRun(input, operatorActionDeps()),
+        stop: (input: OperatorActionInput) =>
+          stopRun(input, operatorActionDeps()),
+        archive: (input: OperatorActionInput) =>
+          archiveRun(input, operatorActionDeps()),
+      },
     },
     { host, port },
   );
@@ -801,12 +837,15 @@ export async function startDaemon(
                     ts: new Date().toISOString(),
                     detail: { data },
                   }),
+                onTurnActive: (cancel) =>
+                  runCancelRegistry.register(runId, cancel),
               });
               return {
                 status: result.status,
                 summary: result.failureReason,
               };
             } finally {
+              runCancelRegistry.unregister(runId);
               await rpc.close();
             }
           },
