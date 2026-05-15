@@ -122,6 +122,10 @@ async function copyDashboard(): Promise<void> {
 
   const dashboardTarget = path.join(stagingDir, "dist", "dashboard");
   await copyDir(standaloneApp, dashboardTarget);
+  await fs.rm(path.join(dashboardTarget, "node_modules"), {
+    recursive: true,
+    force: true,
+  });
 
   const staticSource = path.join(dashboardRoot, ".next", "static");
   if (await pathExists(staticSource)) {

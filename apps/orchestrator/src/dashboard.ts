@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { execaCommand } from "execa";
+import { execa } from "execa";
 
 export interface DashboardOptions {
   port: number;
@@ -15,7 +15,7 @@ export interface DashboardHandle {
 }
 
 export interface StartDashboardDeps {
-  execaCommand?: typeof execaCommand | undefined;
+  execa?: typeof execa | undefined;
   cwd?: string | undefined;
 }
 
@@ -37,7 +37,7 @@ export async function startDashboard(
   opts: DashboardOptions,
   deps: StartDashboardDeps = {},
 ): Promise<DashboardHandle> {
-  const runExecaCommand = deps.execaCommand ?? execaCommand;
+  const runExeca = deps.execa ?? execa;
   const env = {
     ...process.env,
     PORT: String(opts.port),
@@ -48,7 +48,7 @@ export async function startDashboard(
 
   const packagedServer = resolvePackagedDashboardServer();
   if (packagedServer) {
-    const child = runExecaCommand(`node ${JSON.stringify(packagedServer)}`, {
+    const child = runExeca("node", [packagedServer], {
       env,
       stdio: "inherit",
     });
@@ -57,11 +57,15 @@ export async function startDashboard(
 
   const dashboardCwd = resolveSourceDashboardCwd(deps.cwd ?? process.cwd());
   if (dashboardCwd) {
-    const child = runExecaCommand("pnpm --filter @issuepilot/dashboard start", {
-      cwd: path.resolve(dashboardCwd, "..", ".."),
-      env,
-      stdio: "inherit",
-    });
+    const child = runExeca(
+      "pnpm",
+      ["--filter", "@issuepilot/dashboard", "start"],
+      {
+        cwd: path.resolve(dashboardCwd, "..", ".."),
+        env,
+        stdio: "inherit",
+      },
+    );
     return { wait: () => child };
   }
 
