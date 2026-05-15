@@ -492,14 +492,20 @@ export async function startDaemon(
       });
   };
 
-  // Operator action services publish directly to the event bus (they do not
-  // have access to publishEvent's eventStore-aware path). Bridge those
-  // records into the eventStore so `/api/events?runId=...` and the
-  // dashboard's audit log can surface them alongside dispatch/codex events.
-  // The bus already received the record from actions.ts; this subscriber
-  // strictly appends to disk and never re-publishes.
+  // Operator action services and the CI feedback scanner both publish
+  // directly to the event bus (they do not have access to publishEvent's
+  // eventStore-aware path). Bridge those records into the eventStore so
+  // `/api/events?runId=...` and the dashboard's audit log can surface them
+  // alongside dispatch/codex events. The bus already received the record
+  // from the caller; this subscriber strictly appends to disk and never
+  // re-publishes.
   eventBus.subscribe((record) => {
-    if (!record.type.startsWith("operator_action_")) return;
+    if (
+      !record.type.startsWith("operator_action_") &&
+      !record.type.startsWith("ci_status_")
+    ) {
+      return;
+    }
     const existing = runIndex.get(record.runId);
     const run = state.getRun(record.runId);
     const issueIid =

@@ -194,8 +194,18 @@ function setLatestCi(
 }
 
 /**
- * Scan every run currently parked in `human-review` (or otherwise carrying
- * the handoff label on its persisted issue snapshot) and update labels /
+ * Run statuses considered "parked at human-review" for the purpose of
+ * CI feedback scanning. `RunRecord.issue.labels` is captured at claim
+ * time and not refreshed, so we cannot use it to detect the
+ * human-review stage; the dispatch pipeline reliably parks the run at
+ * `completed` once reconciliation finishes, which is the moment we
+ * want to start polling pipelines.
+ */
+const REVIEW_RUN_STATUSES = new Set<string>(["completed"]);
+
+/**
+ * Scan every run currently parked at completion (which V1 dispatch
+ * uses as a proxy for "issue is in human-review") and update labels /
  * audit notes based on the latest pipeline classification:
  *
  * - `success` → emit `ci_status_observed { action: noop }`, do not touch
@@ -209,7 +219,12 @@ function setLatestCi(
  * - `canceled` / `unknown` → emit `ci_status_observed { action: manual }`
  *   plus a prompt note for the reviewer.
  *
- * Any lookup throws are caught and translated into
+ * Label transitions always pass `requireCurrent: [handoffLabel]` so a
+ * stale completion (issue already merged-closed or reopened by a human)
+ * fails fast inside GitLab instead of mis-tagging the issue. The thrown
+ * stale-label error is swallowed and we move on.
+ *
+ * Any pipeline-lookup throws are caught and translated into
  * `ci_status_lookup_failed`; the run remains in its current state.
  *
  * The marker `<!-- issuepilot:ci-feedback:<runId> -->` makes it possible
@@ -220,14 +235,15 @@ export async function scanCiFeedbackOnce(
 ): Promise<void> {
   if (!deps.workflow.ci.enabled) return;
 
-  const { handoffLabel } = deps.workflow.tracker;
-
   const candidates: ReviewRun[] = [];
   for (const record of deps.state.allRuns()) {
     if (record["archivedAt"]) continue;
+    const status = record["status"];
+    if (typeof status !== "string" || !REVIEW_RUN_STATUSES.has(status)) {
+      continue;
+    }
     const review = asReviewRun(record as Record<string, unknown>);
     if (!review) continue;
-    if (!review.issue.labels.includes(handoffLabel)) continue;
     candidates.push(review);
   }
 
@@ -281,10 +297,23 @@ export async function scanCiFeedbackOnce(
 
     if (status === "failed") {
       if (deps.workflow.ci.onFailure === "ai-rework") {
-        await deps.gitlab.transitionLabels(run.issueIid, {
-          add: [deps.workflow.tracker.reworkLabel],
-          remove: [deps.workflow.tracker.handoffLabel],
-        });
+        try {
+          await deps.gitlab.transitionLabels(run.issueIid, {
+            add: [deps.workflow.tracker.reworkLabel],
+            remove: [deps.workflow.tracker.handoffLabel],
+            requireCurrent: [deps.workflow.tracker.handoffLabel],
+          });
+        } catch (err) {
+          emit(deps, run, "ci_status_observed", {
+            status,
+            action: "stale",
+            branch: run.branch,
+            mrIid: mr.iid,
+            mrUrl: mr.webUrl,
+            message: err instanceof Error ? err.message : String(err),
+          });
+          continue;
+        }
         await deps.gitlab.createIssueNote(run.issueIid, buildFailureNote(run));
         emit(deps, run, "ci_status_rework_triggered", {
           status,

@@ -44,6 +44,10 @@ hooks:
     # and the hook would surface as `HookFailedError`, masking the actual
     # failure path under test.
     git diff --cached --quiet || git commit -m "feat: ai changelog entry"
+ci:
+  enabled: __CI_ENABLED__
+  on_failure: __CI_ON_FAILURE__
+  wait_for_pipeline: true
 poll_interval_ms: 1000
 ---
 Issue: {{ issue.identifier }}

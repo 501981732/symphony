@@ -170,6 +170,7 @@ describe("scanCiFeedbackOnce", () => {
     expect(ctx.gitlab.transitionLabels).toHaveBeenCalledWith(1, {
       add: ["ai-rework"],
       remove: ["human-review"],
+      requireCurrent: ["human-review"],
     });
     expect(ctx.gitlab.createIssueNote).toHaveBeenCalledWith(
       1,
@@ -263,9 +264,9 @@ describe("scanCiFeedbackOnce", () => {
     expect(ctx.events).toEqual([]);
   });
 
-  it("ignores runs without the handoff label", async () => {
+  it("ignores runs that have not reached the completed (human-review) state", async () => {
     const ctx = createDeps({});
-    seedReviewRun(ctx.state, { labels: ["ai-running"] });
+    seedReviewRun(ctx.state, { status: "running" });
 
     await scanCiFeedbackOnce(ctx.deps);
 
@@ -285,15 +286,42 @@ describe("scanCiFeedbackOnce", () => {
     expect(ctx.events).toEqual([]);
   });
 
-  it("writes the marker note exactly once and keeps the same labels across reruns", async () => {
+  it("emits ci_status_observed (failed/stale) and does not write a note when the issue is no longer in human-review", async () => {
     const ctx = createDeps({ status: "failed" });
-    seedReviewRun(ctx.state);
+    ctx.gitlab.transitionLabels.mockRejectedValueOnce(
+      new Error("conflict: label not in required state"),
+    );
+    const runId = seedReviewRun(ctx.state);
 
     await scanCiFeedbackOnce(ctx.deps);
-    // simulate that GitLab moved labels for us
-    seedReviewRun(ctx.state, { labels: ["ai-rework"] });
+
+    expect(ctx.gitlab.transitionLabels).toHaveBeenCalledTimes(1);
+    expect(ctx.gitlab.createIssueNote).not.toHaveBeenCalled();
+    expect(ctx.events.map((e) => e.type)).toEqual(["ci_status_observed"]);
+    expect(ctx.events[0]).toMatchObject({
+      runId,
+      data: { status: "failed", action: "stale" },
+    });
+  });
+
+  it("does not re-trigger rework after the daemon advances the run off completed", async () => {
+    const ctx = createDeps({ status: "failed" });
+    const runId = seedReviewRun(ctx.state);
+
     await scanCiFeedbackOnce(ctx.deps);
 
     expect(ctx.gitlab.createIssueNote).toHaveBeenCalledTimes(1);
+
+    // Simulate the orchestrator claiming the issue again for rework, which
+    // moves the run out of `completed` and therefore out of the scanner's
+    // review-stage candidate set.
+    const existing = ctx.state.getRun(runId);
+    if (!existing) throw new Error("expected run to exist");
+    ctx.state.setRun(runId, { ...existing, status: "running" });
+
+    await scanCiFeedbackOnce(ctx.deps);
+
+    expect(ctx.gitlab.createIssueNote).toHaveBeenCalledTimes(1);
+    expect(ctx.gitlab.transitionLabels).toHaveBeenCalledTimes(1);
   });
 });
