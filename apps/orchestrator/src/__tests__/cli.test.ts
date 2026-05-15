@@ -254,6 +254,94 @@ describe("CLI", () => {
     }
   });
 
+  it("validate --config reports enabled/disabled projects from team config", async () => {
+    const cfgPath = path.join(tmpDir, "issuepilot.team.yaml");
+    fs.writeFileSync(cfgPath, "version: 1\n");
+    const loadTeamConfig = vi.fn(async () => ({
+      version: 1 as const,
+      server: { host: "127.0.0.1", port: 4738 },
+      scheduler: {
+        maxConcurrentRuns: 3,
+        maxConcurrentRunsPerProject: 1,
+        leaseTtlMs: 600_000,
+        pollIntervalMs: 5_000,
+      },
+      projects: [
+        {
+          id: "platform-web",
+          name: "Platform Web",
+          workflowPath: "/srv/issuepilot/platform-web/WORKFLOW.md",
+          enabled: true,
+        },
+        {
+          id: "platform-api",
+          name: "Platform API",
+          workflowPath: "/srv/issuepilot/platform-api/WORKFLOW.md",
+          enabled: false,
+        },
+      ],
+      retention: {
+        successfulRunDays: 7,
+        failedRunDays: 30,
+        maxWorkspaceGb: 50,
+      },
+      source: { path: cfgPath, sha256: "deadbeef", loadedAt: "" },
+    }));
+    const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cli = buildCli({ loadTeamConfig });
+
+    await cli.parseAsync(["validate", "--config", cfgPath], { from: "user" });
+
+    expect(loadTeamConfig).toHaveBeenCalledWith(cfgPath);
+    const output = mockLog.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Team config loaded");
+    expect(output).toContain("2 (1 enabled, 1 disabled)");
+    expect(output).toContain("Team validation passed.");
+    mockLog.mockRestore();
+  });
+
+  it("validate --config surfaces parser errors with exit code 1", async () => {
+    const cfgPath = path.join(tmpDir, "issuepilot.team.yaml");
+    fs.writeFileSync(cfgPath, "version: 1\n");
+    const loadTeamConfig = vi.fn(async () => {
+      throw new Error("scheduler.lease_ttl_ms: Number must be >= 60000");
+    });
+    const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cli = buildCli({ loadTeamConfig });
+
+    await cli.parseAsync(["validate", "--config", cfgPath], { from: "user" });
+
+    expect(process.exitCode).toBe(1);
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining("scheduler.lease_ttl_ms"),
+    );
+    mockError.mockRestore();
+    process.exitCode = 0;
+  });
+
+  it("validate --config and --workflow are mutually exclusive", async () => {
+    const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cli = buildCli({ loadTeamConfig: vi.fn() });
+
+    await cli.parseAsync(
+      [
+        "validate",
+        "--config",
+        path.join(tmpDir, "x.yaml"),
+        "--workflow",
+        path.join(tmpDir, "WORKFLOW.md"),
+      ],
+      { from: "user" },
+    );
+
+    expect(process.exitCode).toBe(1);
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining("mutually exclusive"),
+    );
+    mockError.mockRestore();
+    process.exitCode = 0;
+  });
+
   it("doctor runs checks", async () => {
     const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const cli = buildCli({

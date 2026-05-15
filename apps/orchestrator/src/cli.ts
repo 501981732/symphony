@@ -26,6 +26,10 @@ import {
   type DashboardOptions,
 } from "./dashboard.js";
 import {
+  loadTeamConfig as defaultLoadTeamConfig,
+  type TeamConfig,
+} from "./team/config.js";
+import {
   startTeamDaemon,
   type StartTeamDaemonOptions,
   type TeamDaemonHandle,
@@ -39,6 +43,7 @@ export interface CliDeps {
     | ((opts: StartTeamDaemonOptions) => Promise<TeamDaemonHandle>)
     | undefined;
   validateWorkflow?: typeof validateWorkflow | undefined;
+  loadTeamConfig?: ((path: string) => Promise<TeamConfig>) | undefined;
   checkCodexAppServer?: typeof checkCodexAppServer | undefined;
   spawnDashboard?:
     | ((opts: DashboardOptions) => Promise<DashboardHandle>)
@@ -244,9 +249,52 @@ export function buildCli(deps: CliDeps = {}): Command {
 
   program
     .command("validate")
-    .description("Validate workflow config and GitLab connectivity")
+    .description(
+      "Validate workflow or team config (preflight before `run`).\n" +
+        "Pass --config to check an issuepilot.team.yaml, or --workflow for a V1 WORKFLOW.md.",
+    )
     .option("--workflow <path>", "Path to workflow file")
+    .option("--config <path>", "Path to issuepilot.team.yaml")
     .action(async (opts) => {
+      if (opts.config && opts.workflow) {
+        console.error(
+          "Error: --config and --workflow are mutually exclusive; pass only one.",
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.config) {
+        const configPath = path.resolve(process.cwd(), String(opts.config));
+        if (!fs.existsSync(configPath)) {
+          console.error(`Error: team config file not found: ${configPath}`);
+          process.exitCode = 1;
+          return;
+        }
+        try {
+          const loader = deps.loadTeamConfig ?? defaultLoadTeamConfig;
+          const cfg = await loader(configPath);
+          const enabled = cfg.projects.filter((p) => p.enabled);
+          const disabled = cfg.projects.filter((p) => !p.enabled);
+          console.log(`Team config loaded: ${cfg.source.path}`);
+          console.log(`Version: ${cfg.version}`);
+          console.log(
+            `Scheduler: max=${cfg.scheduler.maxConcurrentRuns}, perProject=${cfg.scheduler.maxConcurrentRunsPerProject}, leaseTtlMs=${cfg.scheduler.leaseTtlMs}`,
+          );
+          console.log(
+            `Projects: ${cfg.projects.length} (${enabled.length} enabled, ${disabled.length} disabled)`,
+          );
+          for (const p of cfg.projects) {
+            const flag = p.enabled ? "enabled " : "disabled";
+            console.log(`  - [${flag}] ${p.id}  workflow=${p.workflowPath}`);
+          }
+          console.log("Team validation passed.");
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`Team validation failed: ${message}`);
+          process.exitCode = 1;
+        }
+        return;
+      }
       const resolvedWorkflow = resolveWorkflowPath(opts.workflow);
       if (resolvedWorkflow.warning) console.warn(resolvedWorkflow.warning);
       const workflowPath = resolvedWorkflow.path;
