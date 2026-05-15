@@ -1,7 +1,7 @@
 # IssuePilot V1 可安装本地发布设计
 
 日期：2026-05-15
-状态：待用户评审
+状态：已确认，进入实施计划
 关联文档：
 
 - `docs/superpowers/specs/2026-05-11-issuepilot-design.md`
@@ -227,4 +227,3 @@ V1 完成时应满足：
 7. 主设计 spec §20 与本 V1 设计一致。
 8. `pnpm release:check` 本地通过。
 9. PR 描述包含 V1 release gate 和未进入 V1 的能力清单。
-
