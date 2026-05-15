@@ -753,7 +753,8 @@ export async function startDaemon(
                 push: pushBranch,
               },
               gitlab: {
-                findMergeRequest: async () => null,
+                findMergeRequest: (sourceBranch) =>
+                  gitlab.findMergeRequestBySourceBranch(sourceBranch),
                 createMergeRequest: (mrOpts) =>
                   gitlab.createMergeRequest({
                     ...mrOpts,

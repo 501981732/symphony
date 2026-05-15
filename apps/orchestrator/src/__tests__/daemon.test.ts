@@ -91,6 +91,7 @@ function createGitLabForHumanReviewScanPollution(): GitLabAdapter {
       state: "opened",
     })),
     findLatestIssuePilotWorkpadNote: vi.fn(async () => null),
+    findMergeRequestBySourceBranch: vi.fn(async () => null),
     listMergeRequestsBySourceBranch: vi.fn(async () => []),
     createIssueNote: vi.fn(async () => ({ id: 1 })),
     closeIssue: vi.fn(async () => ({
@@ -147,6 +148,7 @@ function createGitLabForClosedUnmergedReview(): GitLabAdapter {
         "- Branch: `issuepilot/7-needs-review`",
       ].join("\n"),
     })),
+    findMergeRequestBySourceBranch: vi.fn(async () => null),
     listMergeRequestsBySourceBranch: vi.fn(async () => [
       {
         iid: 3,

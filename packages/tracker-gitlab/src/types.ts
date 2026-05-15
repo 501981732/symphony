@@ -63,6 +63,15 @@ export interface GitLabAdapter {
     iid: number,
   ): Promise<{ id: number; body: string } | null>;
 
+  findMergeRequestBySourceBranch(sourceBranch: string): Promise<{
+    iid: number;
+    webUrl: string;
+    state: string;
+    sourceBranch: string;
+    title: string;
+    description: string;
+    updatedAt?: string;
+  } | null>;
   createMergeRequest(input: {
     sourceBranch: string;
     targetBranch: string;

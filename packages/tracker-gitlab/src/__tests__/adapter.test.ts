@@ -71,6 +71,7 @@ describe("createGitLabAdapter", () => {
       "updateIssueNote",
       "findLatestIssuePilotWorkpadNote",
       "findWorkpadNote",
+      "findMergeRequestBySourceBranch",
       "createMergeRequest",
       "updateMergeRequest",
       "getMergeRequest",
@@ -163,6 +164,15 @@ describe("createGitLabAdapter", () => {
   it("merge request methods delegate to MergeRequests + MergeRequestNotes", async () => {
     const all = vi
       .fn()
+      .mockResolvedValueOnce([
+        mrRow({
+          iid: 2,
+          state: "opened",
+          source_branch: "ai/10-add-x",
+          title: "existing",
+          description: "body",
+        }),
+      ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         mrRow({
@@ -194,6 +204,16 @@ describe("createGitLabAdapter", () => {
       MergeRequests: { all, create, edit, show },
       MergeRequestNotes: { all: notesAll },
     });
+    expect(await adapter.findMergeRequestBySourceBranch("ai/10-add-x")).toEqual(
+      {
+        iid: 2,
+        webUrl: "https://gitlab.example.com/g/p/-/merge_requests/1",
+        state: "opened",
+        sourceBranch: "ai/10-add-x",
+        title: "existing",
+        description: "body",
+      },
+    );
     const created = await adapter.createMergeRequest({
       sourceBranch: "ai/10-add-x",
       targetBranch: "main",
