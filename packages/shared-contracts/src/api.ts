@@ -1,4 +1,8 @@
 import { type IssuePilotEvent } from "./events.js";
+import {
+  type RunReportArtifact,
+  type RunReportSummary,
+} from "./report.js";
 import { type RunRecord, type RunStatus } from "./run.js";
 
 /**
@@ -14,6 +18,7 @@ export interface ListRunsQuery {
 
 export interface RunsListResponse {
   runs: RunRecord[];
+  reports?: RunReportSummary[];
 }
 
 export interface RunDetailResponse {
@@ -21,6 +26,11 @@ export interface RunDetailResponse {
   events: IssuePilotEvent[];
   /** Last N log lines (already redacted) for quick-look in the UI. */
   logsTail: string[];
+  report?: RunReportArtifact;
+}
+
+export interface ReportsListResponse {
+  reports: RunReportSummary[];
 }
 
 export interface EventsQuery {
