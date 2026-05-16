@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 
 import { cn } from "../../lib/cn";
 
-export type ButtonVariant = "default" | "outline" | "ghost";
+export type ButtonVariant = "default" | "outline" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -12,10 +12,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   default:
-    "bg-slate-900 text-slate-50 hover:bg-slate-800 disabled:bg-slate-300",
+    "bg-primary text-primary-fg border border-primary hover:bg-fg disabled:bg-surface-3 disabled:text-fg-subtle disabled:border-border",
   outline:
-    "border border-slate-300 bg-transparent text-slate-900 hover:bg-slate-100",
-  ghost: "bg-transparent text-slate-900 hover:bg-slate-100",
+    "border border-border bg-transparent text-fg hover:bg-surface-2 hover:border-border-strong disabled:text-fg-subtle",
+  ghost:
+    "bg-transparent text-fg-muted hover:bg-surface-2 hover:text-fg disabled:text-fg-subtle border border-transparent",
+  danger:
+    "bg-danger text-fg-inverted border border-danger hover:opacity-90 disabled:bg-danger/40 disabled:text-fg-inverted disabled:border-danger/40",
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
@@ -33,7 +36,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         type={type}
         className={cn(
-          "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60",
+          "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors duration-150 ease-swiss-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-80",
           VARIANT_CLASSES[variant],
           SIZE_CLASSES[size],
           className,

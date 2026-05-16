@@ -1,12 +1,14 @@
 "use client";
 
 import type { OrchestratorStateSnapshot } from "@issuepilot/shared-contracts";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { RunWithReport } from "../../lib/api";
 import { useEventStream } from "../../lib/use-event-stream";
 import { ServiceHeader } from "../overview/service-header";
 import { SummaryCards } from "../overview/summary-cards";
+import { Sheet } from "../ui/sheet";
 
 import { ReviewPacketInspector } from "./review-packet-inspector";
 import { RunBoardView } from "./run-board-view";
@@ -36,6 +38,8 @@ export function CommandCenterPage({
   initialRuns,
   refetch,
 }: CommandCenterPageProps) {
+  const t = useTranslations();
+  const tCommon = useTranslations("common");
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [runs, setRuns] = useState(initialRuns);
   const [view, setView] = useState<CommandCenterView>("list");
@@ -53,11 +57,11 @@ export function CommandCenterPage({
       setRuns(next.runs);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "refresh failed");
+      setError(err instanceof Error ? err.message : t("common.refreshFailed"));
     } finally {
       inflightRef.current = false;
     }
-  }, [refetch]);
+  }, [refetch, t]);
 
   const scheduleRefresh = useCallback(() => {
     if (pendingRef.current) return;
@@ -76,47 +80,98 @@ export function CommandCenterPage({
     },
   });
 
+  // Switching from list → board automatically dismisses the split-pane
+  // selection so we don't surprise users with an immediately-open sheet.
+  // The selection itself stays (selectedRunId remains set) so going back
+  // to list keeps continuity.
+  const handleViewChange = useCallback((next: CommandCenterView) => {
+    setView(next);
+  }, []);
+
   const selectedRun = useMemo(
     () => runs.find((run) => run.runId === selectedRunId) ?? null,
     [runs, selectedRunId],
   );
 
+  // In board view we use a sheet (right-slide drawer) so the kanban
+  // keeps its full 6-column width. List view keeps the split-pane
+  // layout when a row is selected — that combination is faster for
+  // scanning many runs side-by-side.
+  const sheetOpen = view === "board" && Boolean(selectedRun);
+  const showInspectorColumn = view === "list" && Boolean(selectedRun);
+
+  const closeSheet = useCallback(() => setSelectedRunId(null), []);
+
+  // Keyboard shortcut: ESC clears the list-pane selection too. The
+  // Sheet handles its own ESC; this handler ensures parity in list
+  // view where there's no modal overlay to capture the key.
+  useEffect(() => {
+    if (!showInspectorColumn) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSelectedRunId(null);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showInspectorColumn]);
+
   return (
-    <main className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 lg:px-8 lg:py-8">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          Command Center
+        <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-fg-subtle">
+          {t("home.overheadLabel")}
+        </span>
+        <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-fg">
+          {t("home.title")}
         </h1>
-        <p className="text-sm text-slate-500">
-          List, Board, and Review Packet views over the active orchestrator.
-          Updates stream over SSE from{" "}
-          <code className="font-mono">/api/events/stream</code>.
+        <p className="max-w-2xl text-sm text-fg-muted">
+          {t.rich("home.description", {
+            code: (chunks) => (
+              <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px]">
+                {chunks}
+              </code>
+            ),
+          })}
         </p>
-        {error && (
-          <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+        {error ? (
+          <p className="mt-2 rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger-fg">
             {error}
           </p>
-        )}
+        ) : null}
       </header>
 
       <ServiceHeader snapshot={snapshot} />
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Summary
-        </h2>
-        <SummaryCards summary={snapshot.summary} />
-      </section>
+      <SummaryCards summary={snapshot.summary} />
 
       <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Runs
-          </h2>
-          <ViewToggle value={view} onChange={setView} />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <SectionHeader
+            title={t("runs.title")}
+            caption={t("runs.caption", { count: runs.length })}
+          />
+          <ViewToggle value={view} onChange={handleViewChange} />
         </div>
-        <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-          <div>
+
+        {showInspectorColumn ? (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+            <div className="min-w-0">
+              <RunListView
+                runs={runs}
+                selectedRunId={selectedRunId}
+                onSelect={setSelectedRunId}
+              />
+            </div>
+            <aside className="flex flex-col gap-3">
+              <ReviewPacketInspector
+                run={selectedRun}
+                onClose={() => setSelectedRunId(null)}
+              />
+            </aside>
+          </div>
+        ) : (
+          <div className="min-w-0">
             {view === "list" ? (
               <RunListView
                 runs={runs}
@@ -131,11 +186,26 @@ export function CommandCenterPage({
               />
             )}
           </div>
-          <aside className="flex flex-col gap-3">
-            <ReviewPacketInspector run={selectedRun} />
-          </aside>
-        </div>
+        )}
       </section>
-    </main>
+
+      <Sheet
+        open={sheetOpen}
+        onClose={closeSheet}
+        label={t("inspector.title")}
+        closeLabel={tCommon("close")}
+      >
+        <ReviewPacketInspector run={selectedRun} variant="sheet" />
+      </Sheet>
+    </div>
+  );
+}
+
+function SectionHeader({ title, caption }: { title: string; caption: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <h2 className="text-base font-semibold tracking-tight text-fg">{title}</h2>
+      <p className="text-xs text-fg-muted">{caption}</p>
+    </div>
   );
 }

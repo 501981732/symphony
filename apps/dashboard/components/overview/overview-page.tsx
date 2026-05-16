@@ -4,6 +4,7 @@ import type {
   OrchestratorStateSnapshot,
   RunRecord,
 } from "@issuepilot/shared-contracts";
+import { useTranslations } from "next-intl";
 import { useCallback, useRef, useState, useTransition } from "react";
 
 import { ApiError, archiveRun, retryRun, stopRun } from "../../lib/api";
@@ -37,6 +38,8 @@ export function OverviewPage({
   initialRuns,
   refetch,
 }: OverviewPageProps) {
+  const t = useTranslations();
+  const actionLabels = useTranslations("actions.labels");
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [runs, setRuns] = useState(initialRuns);
   const [error, setError] = useState<string | null>(null);
@@ -53,11 +56,11 @@ export function OverviewPage({
       setRuns(next.runs);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "refresh failed");
+      setError(err instanceof Error ? err.message : t("common.refreshFailed"));
     } finally {
       inflightRef.current = false;
     }
-  }, [refetch]);
+  }, [refetch, t]);
 
   const scheduleRefresh = useCallback(() => {
     if (pendingRef.current) return;
@@ -91,45 +94,49 @@ export function OverviewPage({
             const detail = err.reason
               ? `${err.code ?? "error"}:${err.reason}`
               : (err.code ?? `HTTP ${err.status}`);
-            setError(`${label} failed for ${runId} (${detail})`);
+            setError(t("overview.actionFailedDetail", { label, runId, detail }));
           } else {
             setError(
               err instanceof Error
-                ? `${label} failed for ${runId}: ${err.message}`
-                : `${label} failed for ${runId}`,
+                ? t("overview.actionFailedMessage", { label, runId, message: err.message })
+                : t("overview.actionFailed", { label, runId }),
             );
           }
         }
       });
     },
-    [doRefresh],
+    [doRefresh, t],
   );
 
   const handleRetry = useCallback(
-    (runId: string) => performAction(runId, retryRun, "retry"),
-    [performAction],
+    (runId: string) => performAction(runId, retryRun, actionLabels("retry")),
+    [performAction, actionLabels],
   );
   const handleStop = useCallback(
-    (runId: string) => performAction(runId, stopRun, "stop"),
-    [performAction],
+    (runId: string) => performAction(runId, stopRun, actionLabels("stop")),
+    [performAction, actionLabels],
   );
   const handleArchive = useCallback(
-    (runId: string) => performAction(runId, archiveRun, "archive"),
-    [performAction],
+    (runId: string) => performAction(runId, archiveRun, actionLabels("archive")),
+    [performAction, actionLabels],
   );
 
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:px-8 lg:py-8">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          IssuePilot Dashboard
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">
+          {t("overview.title")}
         </h1>
-        <p className="text-sm text-slate-500">
-          Read-only live timeline of the local orchestrator. Updates stream over
-          SSE from <code className="font-mono">/api/events/stream</code>.
+        <p className="text-sm text-fg-muted">
+          {t.rich("overview.description", {
+            code: (chunks) => <code className="font-mono">{chunks}</code>,
+          })}
         </p>
         {error && (
-          <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          <p
+            role="alert"
+            className="rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger-fg"
+          >
             {error}
           </p>
         )}
@@ -138,24 +145,24 @@ export function OverviewPage({
       <ServiceHeader snapshot={snapshot} />
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Summary
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">
+          {t("overview.summary")}
         </h2>
         <SummaryCards summary={snapshot.summary} />
       </section>
 
       {snapshot.projects && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Projects
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">
+            {t("overview.projects")}
           </h2>
           <ProjectList projects={snapshot.projects} />
         </section>
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Runs
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">
+          {t("overview.runs")}
         </h2>
         <RunsTable
           runs={runs}
@@ -165,6 +172,6 @@ export function OverviewPage({
           actionsPending={actionsPending}
         />
       </section>
-    </main>
+    </div>
   );
 }

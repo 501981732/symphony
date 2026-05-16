@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -9,6 +9,8 @@ import type {
 } from "@issuepilot/shared-contracts";
 
 import { __setEventSourceFactory } from "../../lib/use-event-stream";
+import { renderWithIntl as render } from "../../test/intl";
+
 import { OverviewPage } from "./overview-page";
 
 class FakeES {

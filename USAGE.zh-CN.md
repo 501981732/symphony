@@ -428,6 +428,15 @@ blocked / failed 计数器，并列出每个 run 的报告摘要。
 > feedback 和 risks 是否看起来已经就绪，IssuePilot 不会调用任何 GitLab
 > merge API；真正的 merge 决策仍由人类掌握。
 
+Dashboard 支持中英双语：sidebar 底部的 **EN / 中** toggle 可以一键切换，
+选择写入 `issuepilot-locale` cookie，Command Center、Reports、Run detail
+所有页面同步生效。技术 token 在两种语言下都保持英文 —
+状态码（`running` / `retrying` / `completed` / `failed` / `blocked` /
+`human-review` / `ai-ready` / `ai-running` / `ai-rework` / `ai-failed` /
+`ai-blocked`）、readiness（`ready` / `not-ready` / `blocked` / `unknown`）、
+CI 状态、run id、branch、路径，以及 `IssuePilot` / `Codex` / `GitLab` /
+`MR` / `Workflow` / `Workspace` 这些产品名词，按 AGENTS 规则不翻。
+
 ### 4.2 跑第一个 Issue
 
 在目标 GitLab 项目里：

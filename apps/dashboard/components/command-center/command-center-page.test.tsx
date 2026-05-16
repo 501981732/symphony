@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RunWithReport } from "../../lib/api";
 import { __setEventSourceFactory } from "../../lib/use-event-stream";
+import { renderWithIntl as render } from "../../test/intl";
 
 import { CommandCenterPage } from "./command-center-page";
 

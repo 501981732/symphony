@@ -114,6 +114,31 @@ GitLab + TypeScript 路线、并打算在内部团队范围内试运行，那么
 - V2.5 Command Center：Linear 风格的 List / Board 首页，运行详情页的 Review
   Packet（handoff + checks + merge readiness），以及 `/reports` 聚合页用
   来呈现本地报告产物。
+- V2.6 dashboard shell + 布局重构：把常驻的左侧 sidebar 换成 sticky
+  **顶部水平导航栏**（logo + 主导航 + locale / theme / mode tag 工具区，
+  并提供 `跳到主内容` 跳转链接），让 1280–1440px 笔记本上的 board 视图
+  6 栏不再被压成 x-overflow。Command Center 改用 **混合 inspector**：list
+  视图保留 split-pane Review Packet，但只在选中 run 时才占位；board 视图
+  把 Review Packet 收成按需弹出的右侧 **Sheet** 抽屉（Esc / 点遮罩 /
+  ✕ 关闭，关闭后焦点恢复，自动遵循 `prefers-reduced-motion`）。原本 5
+  张大 KPI 卡片折叠成单卡的 **横向 stacked health bar** + 5 列紧凑数字 chip。
+- Swiss Modernism 2.0 设计系统：light + dark 两套 HSL design tokens、
+  Fira Sans / Fira Code 字体、顶部导航壳 + 主题切换、语义化
+  `StatusDot` / `StatusPill`（颜色 + 文字 + 圆点），以及 reports 页用
+  纯 SVG 渲染的 sparkline / mini-bar / donut 图表（零图表库依赖）。
+- dashboard 中英双语 i18n：`next-intl` 驱动，cookie `issuepilot-locale`
+  控制 locale，顶部工具区提供 EN / 中 toggle，message catalog
+  （`apps/dashboard/i18n/messages/{en,zh}.json`）按 surface 分 namespace。
+  状态码与产品名按 IssuePilot AGENTS 规则保持英文 —
+  `running` / `retrying` / `completed` / `failed` / `blocked` /
+  `human-review` / `ai-ready` / `ai-running` / `ai-rework` / `ai-failed` /
+  `ai-blocked` / `ready` / `not-ready` / `unknown` / `success` 与
+  `IssuePilot` / `Codex` / `GitLab` / `MR` / `Workflow` / `Workspace` /
+  `Review Packet` / run id / branch / path / cmd 等技术名词都不翻译，
+  其它描述性 UI 文案在两种语言间切换。服务端 (`getTranslations`) 与
+  客户端 (`useTranslations`) 都已接入，locale toggle 通过
+  `window.location.reload()` 触发完整刷新，确保 SSR 立即读到新的
+  cookie。
 - 端到端测试 harness（`tests/e2e`）：内置带状态的 fake GitLab + 可脚本化的 fake
   Codex app-server，覆盖 happy path、retry 路径（`turn/timeout` → ai-failed
   耗尽 `max_attempts`）、failure 路径（`turn/failed` → ai-failed + 结构化
@@ -466,6 +491,56 @@ CI 回流、review feedback 与 workspace 清理。视觉版本：
 - ✅ Handoff / failure / closing 等 GitLab notes 都从同一个
   `RunReportArtifact` 渲染，保证 dashboard、notes 以及未来的 Markdown
   导出保持一致。
+
+### V2.6 — Dashboard shell + 布局重构
+
+目标：在 V2.5 内容堆完之后，借助 `ui-ux-pro-max` 系统化评估，给 Command
+Center 减负、把信息密度调到合理区间。
+
+第二轮抛光（用户 dog-food 之后）：
+
+- ✅ Command Center / Reports / Run Detail 三页 `max-w` 统一为 1440px，
+  在 topbar 下切换页面时主容器宽度不再抖动。
+- ✅ board 视图的 inspector Sheet 改成 **GitLab 风纯 overlay**：去遮罩、
+  不锁 body 滚动、`role` 从 `dialog` 改成 `complementary`；sheet 是 fixed
+  positioned 浮在看板右侧上方，**主内容布局完全不让位**（没有
+  `lg:pr-[440px]` "把页面挤回去"），board 保持原始的 `min-w-[1080px]` /
+  `minmax(180px, 1fr)` 列宽，被覆盖的两栏可以横向滚动看——和 GitLab issue
+  看板的右侧详情面板观感一致。**点 sheet 之外的卡片直接换 inspector
+  内容，不用先 Esc**。
+- ✅ board 卡片去掉冗长的 runId 行（仍走 `title=` 和 `aria-label`），
+  hover / 选中加 `-translate-y-0.5` + `shadow-2` 微动效，标题 `line-clamp-2`
+  避免高度爆炸。
+- ✅ ServiceHeader 把 `Last config reload` / `Workspace usage` /
+  `Next cleanup` 收进 "更多详情" disclosure，默认折叠，service strip 更
+  紧凑。
+- ✅ Reports 4 张 Counter（Total / Ready / Blocked / Median duration）全部
+  接上 7 日 inline sparkline，复用同一个 `bucketByDay` predicate + 新增
+  `medianDurationByDay` helper。
+
+首轮（顶部导航 + 抽屉化 + 健康条）：
+
+- ✅ **顶部水平导航壳**替换 232px 左侧 sidebar。主导航 + locale / theme /
+  mode tag 工具区收成 sticky 的横向条（`max-w-[1440px]`、
+  `bg-surface/95 backdrop-blur`），首焦点是 `跳到主内容`。这一步让出
+  ~232px 横向空间，board 视图 6 栏在 1280px 笔记本上不再 x-overflow。
+- ✅ **混合 Review Packet inspector**。list 视图保留 split-pane，但只在
+  选中 run 时才把右侧 320–420px 列展开；board 视图把 inspector 收成按需
+  滑入的 **右侧 Sheet 抽屉**，让 kanban 保持全宽。Sheet 严格遵循 Apple HIG
+  和 Material 的 modal escape 规则：Esc 关闭、点遮罩关闭、✕ 关闭、
+  打开期间锁 `body.overflow:hidden`、关闭后焦点恢复，并通过 `globals.css`
+  的全局规则尊重 `prefers-reduced-motion`。
+- ✅ **横向 stacked health bar**。5 张大 KPI 卡（running / retrying /
+  human-review / failed / blocked）合并成单卡：标题 + 共 N 条 + 一根 2px
+  高的横向堆叠条 + 一行 chip 数字。运维一眼就能判断"队列是否健康"，不再
+  需要心算 5 个独立数字。
+- ✅ **Workflow 长路径修复**。service strip 用 `bdo` + `dir="rtl"`
+  组合实现"从头截断"，文件名（`WORKFLOW.md`）始终可见，完整路径走原生
+  `title=` tooltip。
+- ✅ **Section header 减负**。原本满屏的 `text-[11px] uppercase
+  tracking-[0.18em]` micro-label 改回普通 `text-base font-semibold`；
+  `font-mono` micro-label 风格只保留给页面级 overhead label 和 `dt`
+  metadata 标签 —— 它们才是真正的 kicker，在那里读起来自然。
 
 ### V3 — 生产化执行平台
 

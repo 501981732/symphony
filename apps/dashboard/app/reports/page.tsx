@@ -1,3 +1,5 @@
+import { getTranslations } from "next-intl/server";
+
 import { ReportsPage } from "../../components/reports/reports-page";
 import { listReports } from "../../lib/api";
 
@@ -9,15 +11,16 @@ export default async function ReportsRoute() {
     const { reports } = await listReports();
     return <ReportsPage reports={reports} />;
   } catch (err) {
+    const t = await getTranslations("reportsPage");
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-12">
-        <h1 className="text-xl font-semibold text-slate-900">
-          IssuePilot reports unavailable
+      <div className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-12">
+        <h1 className="text-xl font-semibold tracking-tight text-fg">
+          {t("errorTitle")}
         </h1>
-        <p className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <p className="rounded-md border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           {(err as Error).message}
         </p>
-      </main>
+      </div>
     );
   }
 }

@@ -1,4 +1,7 @@
+"use client";
+
 import type { IssuePilotEvent } from "@issuepilot/shared-contracts";
+import { useTranslations } from "next-intl";
 
 import { Badge, type BadgeTone } from "../ui/badge";
 
@@ -13,12 +16,13 @@ interface ToolCallListProps {
 }
 
 export function ToolCallList({ events }: ToolCallListProps) {
+  const t = useTranslations("toolCalls");
   const toolEvents = events.filter((e) => e.type.startsWith("tool_call_"));
 
   if (toolEvents.length === 0) {
     return (
-      <p className="rounded-md border border-dashed border-slate-300 bg-white px-4 py-3 text-xs text-slate-500">
-        No tool calls yet.
+      <p className="rounded-md border border-dashed border-border bg-surface px-4 py-3 text-xs text-fg-subtle">
+        {t("empty")}
       </p>
     );
   }
@@ -28,17 +32,17 @@ export function ToolCallList({ events }: ToolCallListProps) {
       {toolEvents.map((event) => (
         <li
           key={event.id}
-          className="flex flex-col gap-1 rounded-md border border-slate-200 bg-white px-3 py-2"
+          className="flex flex-col gap-1 rounded-md border border-border bg-surface px-3 py-2 shadow-1"
         >
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-2 text-xs text-fg-muted">
             <Badge tone={TOOL_TONES[event.type] ?? "neutral"}>
               {event.type}
             </Badge>
-            <span className="font-mono text-[10px] text-slate-400">
-              {event.turnId ? `turn ${event.turnId}` : ""}
+            <span className="font-mono text-[10px] text-fg-subtle">
+              {event.turnId ? t("turn", { id: event.turnId }) : ""}
             </span>
           </div>
-          <span className="text-sm text-slate-800">{event.message}</span>
+          <span className="text-sm text-fg">{event.message}</span>
         </li>
       ))}
     </ul>

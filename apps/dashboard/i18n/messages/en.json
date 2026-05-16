@@ -1,0 +1,243 @@
+{
+  "nav": {
+    "brand": "IssuePilot",
+    "shellTitle": "Command Center",
+    "primary": "Primary navigation",
+    "commandCenter": "Command Center",
+    "reports": "Reports",
+    "modeTag": "v2.5 · local mode",
+    "skipToMain": "Skip to main content"
+  },
+  "theme": {
+    "toggle": "Toggle color scheme",
+    "light": "Light",
+    "dark": "Dark",
+    "placeholder": "Theme"
+  },
+  "locale": {
+    "toggle": "Change language",
+    "placeholder": "Language"
+  },
+  "common": {
+    "dash": "—",
+    "open": "open",
+    "openArrow": "open →",
+    "fullDetail": "full detail →",
+    "selectRun": "Select a run on the left to load its review packet.",
+    "refreshFailed": "refresh failed",
+    "utc": "UTC",
+    "close": "Close"
+  },
+  "home": {
+    "overheadLabel": "Overview",
+    "title": "Command Center",
+    "description": "Single pane of glass over active IssuePilot runs. Live updates stream over SSE from <code>/api/events/stream</code>; merge readiness is a dry run — the orchestrator never merges MRs automatically.",
+    "metaDescription": "Single pane of glass over active IssuePilot runs. Live updates stream over SSE from /api/events/stream; merge readiness is a dry run — the orchestrator never merges MRs automatically.",
+    "errorTitle": "IssuePilot orchestrator unreachable",
+    "errorHint": "Start the orchestrator with <cmd>issuepilot run --workflow /path/to/target-project/WORKFLOW.md</cmd> or team mode with <cmd>issuepilot run --config /path/to/issuepilot.team.yaml</cmd>, then reload this page."
+  },
+  "service": {
+    "areaLabel": "Orchestrator service",
+    "statusLabel": "Service status",
+    "concurrency": "Concurrency",
+    "pollInterval": "Poll interval",
+    "workflow": "Workflow",
+    "lastPoll": "Last poll",
+    "lastConfigReload": "Last config reload",
+    "workspaceUsage": "Workspace usage",
+    "nextCleanup": "Next cleanup",
+    "pollIntervalUnit": "{value} ms",
+    "workspaceUsageUnit": "{value} GB",
+    "expand": "More details",
+    "collapse": "Hide details"
+  },
+  "summary": {
+    "title": "Active queue",
+    "caption": "Active queue, last sweep",
+    "totalLabel": "{total} total",
+    "trackAria": "Run lifecycle distribution",
+    "trackEmptyAria": "No runs in the queue"
+  },
+  "runs": {
+    "title": "Runs",
+    "caption": "{count} total · click any row to load review packet"
+  },
+  "list": {
+    "headStatus": "Status",
+    "headIssue": "Issue",
+    "headBranch": "Branch",
+    "headReadiness": "Readiness",
+    "headCi": "CI",
+    "headAttempt": "Attempt",
+    "emptyTitle": "No runs available yet.",
+    "emptyBody": "The orchestrator hasn't claimed any issue this session. Label one with <code>ai-ready</code> in GitLab to get started.",
+    "attempt": "attempt {value}",
+    "ciTag": "CI: {value}",
+    "runId": "{value}"
+  },
+  "board": {
+    "columnAria": "{column} column ({count})",
+    "countAria": "{column} count",
+    "empty": "No runs in this column.",
+    "ciTag": "CI:{value}"
+  },
+  "viewToggle": {
+    "aria": "Command center view toggle",
+    "list": "List",
+    "board": "Board"
+  },
+  "inspector": {
+    "title": "Review Packet",
+    "empty": "Select a run on the left to load its review packet.",
+    "noTitle": "(no title)",
+    "missingReport": "No report attached yet — the daemon hasn't produced one for this run, or it's a legacy record.",
+    "branch": "Branch",
+    "attempt": "Attempt",
+    "highestRisk": "Highest risk",
+    "mr": "MR",
+    "ciTag": "CI: {value}"
+  },
+  "reportsPage": {
+    "overheadLabel": "Run analytics",
+    "title": "Reports",
+    "description": "Quality and timing metrics derived from local report artifacts. Merge readiness here is a dry run; the orchestrator never merges MRs automatically.",
+    "countersAria": "Report counters",
+    "tableAria": "Report table",
+    "totalReports": "Total reports",
+    "readyToMerge": "Ready to merge",
+    "blocked": "Blocked",
+    "medianDuration": "Median duration",
+    "ofTotal": "{percent}% of total",
+    "failedCount": "{count, plural, one {# failed run} other {# failed runs}}",
+    "perDayTitle": "Runs per day · last 7",
+    "perDayAria": "Runs created per day, last 7 days",
+    "mixTitle": "Merge readiness mix",
+    "tableHeading": "Per-run summary",
+    "rowCount": "{count, plural, one {# row} other {# rows}}",
+    "tableEmpty": "No reports yet. Run the orchestrator to populate this view.",
+    "headRun": "Run",
+    "headIssue": "Issue",
+    "headStatus": "Status",
+    "headReadiness": "Readiness",
+    "headCi": "CI",
+    "headDuration": "Duration",
+    "headUpdated": "Updated",
+    "errorTitle": "IssuePilot reports unavailable",
+    "trendLabel": "{label} trend"
+  },
+  "runDetail": {
+    "backLink": "← Command Center",
+    "runsCrumb": "runs",
+    "runAttempt": "Run · attempt {attempt}",
+    "runHeaderAria": "Run {runId}",
+    "field": {
+      "issue": "Issue",
+      "branch": "Branch",
+      "mergeRequest": "Merge request",
+      "workspace": "Workspace",
+      "labels": "Labels",
+      "latestCi": "Latest CI",
+      "failure": "Failure"
+    },
+    "ciTag": "CI {value}",
+    "reviewPacketSection": "Review Packet",
+    "reviewPacketCaption": "V2.5 handoff + merge readiness",
+    "legacyNote": "This is a legacy run without a generated report. Timeline and logs remain available below.",
+    "timeline": "Timeline",
+    "timelineCaption": "Lifecycle + agent events",
+    "toolCalls": "Tool calls",
+    "toolCallsCaption": "Raw tool invocations from the agent",
+    "logTail": "Log tail",
+    "logTailCaption": "Most recent stderr lines (in-process)",
+    "reviewFeedback": "Latest review feedback",
+    "reviewSwept": "swept at",
+    "reviewCursor": "cursor",
+    "reviewEmpty": "No new reviewer comments since the last sweep.",
+    "viewNote": "view",
+    "viewNoteAria": "open note {id} on GitLab",
+    "noteResolvedAria": "note {id} resolved",
+    "openMr": "open",
+    "openMrAria": "merge request",
+    "resolved": "resolved",
+    "openMrLabel": "MR !{id}",
+    "errorTitle": "Failed to load run {runId}",
+    "actionFailed": "{label} failed",
+    "actionFailedDetail": "{label} failed ({detail})",
+    "actionFailedMessage": "{label} failed: {message}"
+  },
+  "reviewPacket": {
+    "sectionLabel": "Review Packet",
+    "handoff": "Handoff",
+    "validation": "Validation",
+    "validationEmpty": "not reported",
+    "risks": "Risks",
+    "followUps": "Follow-ups",
+    "nextAction": "Next action",
+    "mergeReadiness": "Merge readiness",
+    "evaluated": "evaluated",
+    "reasons": "Reasons",
+    "checks": "Checks"
+  },
+  "timeline": {
+    "empty": "No events yet for this run.",
+    "thread": "thread {id}",
+    "turn": "turn {id}",
+    "data": "data"
+  },
+  "toolCalls": {
+    "empty": "No tool calls yet.",
+    "turn": "turn {id}"
+  },
+  "logTail": {
+    "empty": "No log tail available — tail <code>~/.issuepilot/state/logs/issuepilot.log</code> on the host for full output."
+  },
+  "actions": {
+    "retry": "Retry",
+    "stop": "Stop",
+    "archive": "Archive",
+    "detail": "detail",
+    "detailAria": "detail of {runId}",
+    "labels": {
+      "retry": "retry",
+      "stop": "stop",
+      "archive": "archive"
+    }
+  },
+  "overview": {
+    "title": "IssuePilot Dashboard",
+    "description": "Read-only live timeline of the local orchestrator. Updates stream over SSE from <code>/api/events/stream</code>.",
+    "summary": "Summary",
+    "projects": "Projects",
+    "runs": "Runs",
+    "actionFailed": "{label} failed for {runId}",
+    "actionFailedDetail": "{label} failed for {runId} ({detail})",
+    "actionFailedMessage": "{label} failed for {runId}: {message}"
+  },
+  "runsTable": {
+    "showArchived": "Show archived",
+    "empty": "No active runs yet. Add the <code>ai-ready</code> label to a GitLab issue to kick one off.",
+    "headIssue": "Issue",
+    "headTitle": "Title",
+    "headLabels": "Labels",
+    "headStatus": "Status",
+    "headTurns": "Turns",
+    "headLastEvent": "Last event",
+    "headElapsed": "Elapsed",
+    "headBranch": "Branch",
+    "headMr": "MR",
+    "headWorkspace": "Workspace",
+    "headActions": "Actions",
+    "mrAria": "merge request",
+    "ciTag": "CI {value}",
+    "ciCheckedAtTitle": "Last checked {value}",
+    "latestCiAria": "latest ci {value}"
+  },
+  "projects": {
+    "empty": "No team projects configured.",
+    "active": "{count} active",
+    "loadError": "load error",
+    "disabled": "disabled",
+    "lastPoll": "Last poll: {value}",
+    "notPolled": "not polled"
+  }
+}

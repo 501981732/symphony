@@ -14,6 +14,7 @@
     "@issuepilot/shared-contracts": "workspace:*",
     "clsx": "^2.1.1",
     "next": "^14.2.15",
+    "next-intl": "^4.12.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^3.6.0"

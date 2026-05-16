@@ -2,8 +2,223 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
-body {
-  background-color: theme("colors.slate.50");
-  color: theme("colors.slate.900");
+/*
+ * IssuePilot Command Center — Swiss Modernism 2.0 tokens.
+ *
+ * Light + dark are designed as a pair, not inverted. All semantic
+ * colors are defined as HSL channels so Tailwind utilities like
+ * `bg-surface/60` and `text-fg-muted` keep working with alpha.
+ *
+ * Spacing follows a strict 4/8 dp rhythm. The grid is a true 12-col
+ * pattern with mathematical gutters (var(--grid-gutter)) so panels
+ * line up across the home / reports / run-detail screens.
+ */
+
+@layer base {
+  :root {
+    color-scheme: light;
+
+    /* surfaces */
+    --color-bg: 220 30% 98%;
+    --color-surface: 0 0% 100%;
+    --color-surface-2: 220 24% 96%;
+    --color-surface-3: 220 18% 92%;
+    --color-overlay: 222 47% 11%;
+
+    /* type */
+    --color-fg: 222 47% 11%;
+    --color-fg-muted: 220 14% 36%;
+    --color-fg-subtle: 220 9% 55%;
+    --color-fg-inverted: 220 30% 98%;
+
+    /* borders */
+    --color-border: 220 16% 86%;
+    --color-border-strong: 220 14% 70%;
+
+    /* brand + accents */
+    --color-primary: 222 47% 11%;
+    --color-primary-fg: 220 30% 98%;
+    --color-accent: 142 71% 38%;
+    --color-accent-soft: 142 65% 92%;
+    --color-accent-fg: 142 71% 14%;
+
+    /* semantic status */
+    --color-success: 142 71% 38%;
+    --color-success-soft: 142 65% 94%;
+    --color-success-fg: 142 71% 18%;
+
+    --color-warning: 32 95% 44%;
+    --color-warning-soft: 38 100% 95%;
+    --color-warning-fg: 30 85% 22%;
+
+    --color-danger: 0 72% 51%;
+    --color-danger-soft: 0 88% 96%;
+    --color-danger-fg: 0 72% 28%;
+
+    --color-info: 217 91% 50%;
+    --color-info-soft: 212 100% 96%;
+    --color-info-fg: 217 91% 28%;
+
+    --color-violet: 264 67% 53%;
+    --color-violet-soft: 270 90% 97%;
+    --color-violet-fg: 264 67% 30%;
+
+    /* focus / ring */
+    --color-ring: 217 91% 50%;
+
+    /* radii + shadow scale */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
+    --shadow-1: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+    --shadow-2: 0 4px 16px -4px rgb(15 23 42 / 0.06);
+
+    /* layout */
+    --grid-gutter: 1rem;
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --color-bg: 222 47% 5%;
+    --color-surface: 222 32% 10%;
+    --color-surface-2: 222 28% 14%;
+    --color-surface-3: 222 22% 19%;
+    --color-overlay: 0 0% 0%;
+
+    --color-fg: 210 33% 96%;
+    --color-fg-muted: 220 15% 70%;
+    --color-fg-subtle: 220 12% 55%;
+    --color-fg-inverted: 222 47% 5%;
+
+    --color-border: 222 22% 22%;
+    --color-border-strong: 222 18% 32%;
+
+    --color-primary: 210 33% 96%;
+    --color-primary-fg: 222 47% 11%;
+    --color-accent: 142 71% 48%;
+    --color-accent-soft: 142 60% 18%;
+    --color-accent-fg: 142 70% 84%;
+
+    --color-success: 142 71% 48%;
+    --color-success-soft: 142 60% 14%;
+    --color-success-fg: 142 70% 84%;
+
+    --color-warning: 38 95% 56%;
+    --color-warning-soft: 36 60% 16%;
+    --color-warning-fg: 38 95% 82%;
+
+    --color-danger: 0 78% 60%;
+    --color-danger-soft: 0 65% 18%;
+    --color-danger-fg: 0 90% 88%;
+
+    --color-info: 212 95% 64%;
+    --color-info-soft: 217 80% 16%;
+    --color-info-fg: 212 95% 84%;
+
+    --color-violet: 264 80% 70%;
+    --color-violet-soft: 264 50% 22%;
+    --color-violet-fg: 264 90% 88%;
+
+    --color-ring: 212 95% 64%;
+
+    --shadow-1: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+    --shadow-2: 0 6px 22px -6px rgb(0 0 0 / 0.55);
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: hsl(var(--color-border));
+  }
+
+  html {
+    font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system,
+      "Segoe UI", sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: hsl(var(--color-bg));
+    color: hsl(var(--color-fg));
+    min-height: 100vh;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+      Consolas, monospace;
+    font-variant-ligatures: none;
+  }
+
+  ::selection {
+    background-color: hsl(var(--color-info-soft));
+    color: hsl(var(--color-info-fg));
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--color-ring));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .grid-12 {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--grid-gutter);
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * `surface-row` styles the Linear-style run row: a left accent
+   * stripe communicates run status without relying on color alone
+   * (it's paired with a StatusDot for screen readers), and the row
+   * darkens by one surface step on hover/selected.
+   */
+  .surface-row {
+    position: relative;
+    transition:
+      background-color 150ms ease-out,
+      transform 150ms ease-out;
+  }
+  .surface-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    border-radius: 2px;
+    background-color: hsl(var(--row-accent, var(--color-border-strong)));
+    transition: background-color 150ms ease-out;
+  }
+  .surface-row:hover {
+    background-color: hsl(var(--color-surface-2));
+  }
+  .surface-row[aria-pressed="true"] {
+    background-color: hsl(var(--color-surface-2));
+  }
+  .surface-row[aria-pressed="true"]::before {
+    background-color: hsl(var(--color-info));
+  }
 }

@@ -1,4 +1,7 @@
+"use client";
+
 import type { EventType, IssuePilotEvent } from "@issuepilot/shared-contracts";
+import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 
 import { Badge, type BadgeTone } from "../ui/badge";
@@ -55,6 +58,7 @@ interface EventTimelineProps {
 }
 
 export function EventTimeline({ events }: EventTimelineProps) {
+  const t = useTranslations("timeline");
   const sorted = useMemo(() => {
     const next = [...events];
     next.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
@@ -63,8 +67,8 @@ export function EventTimeline({ events }: EventTimelineProps) {
 
   if (sorted.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
-        No events yet for this run.
+      <div className="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center text-sm text-fg-subtle">
+        {t("empty")}
       </div>
     );
   }
@@ -74,33 +78,33 @@ export function EventTimeline({ events }: EventTimelineProps) {
       {sorted.map((event) => (
         <li
           key={event.id}
-          className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm"
+          className="rounded-md border border-border bg-surface px-3 py-2 shadow-1"
         >
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span className="font-mono tabular-nums text-slate-400">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+            <span className="font-mono tabular-nums text-fg-subtle">
               {formatTime(event.createdAt)}
             </span>
             <Badge tone={TONE_BY_TYPE[event.type] ?? "neutral"}>
               {event.type}
             </Badge>
             {event.threadId && (
-              <span className="font-mono text-[10px] text-slate-400">
-                thread {event.threadId}
+              <span className="font-mono text-[10px] text-fg-subtle">
+                {t("thread", { id: event.threadId })}
               </span>
             )}
             {event.turnId && (
-              <span className="font-mono text-[10px] text-slate-400">
-                turn {event.turnId}
+              <span className="font-mono text-[10px] text-fg-subtle">
+                {t("turn", { id: event.turnId })}
               </span>
             )}
           </div>
-          <p className="mt-1 text-sm text-slate-800">{event.message}</p>
+          <p className="mt-1 text-sm text-fg">{event.message}</p>
           {event.data !== undefined && (
             <details className="mt-1">
-              <summary className="cursor-pointer text-xs text-slate-500">
-                data
+              <summary className="cursor-pointer text-xs text-fg-muted hover:text-fg">
+                {t("data")}
               </summary>
-              <pre className="mt-1 max-h-64 overflow-auto rounded bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
+              <pre className="mt-1 max-h-64 overflow-auto rounded bg-surface-2 px-2 py-1 text-[11px] text-fg-muted">
                 {JSON.stringify(event.data, null, 2)}
               </pre>
             </details>

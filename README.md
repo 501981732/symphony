@@ -135,6 +135,30 @@ Implemented in this repository:
 - V2.5 Command Center: Linear-style List / Board home page, Review Packet
   (handoff + checks + merge readiness) on each run detail, and a `/reports`
   page summarising local report artifacts.
+- V2.6 shell + layout refresh: the persistent left sidebar was replaced with
+  a sticky **top navigation bar** (logo + primary nav + locale / theme /
+  mode tag tools, plus a `Skip to main content` link), giving the kanban
+  view back its full 6-column width on 1280–1440px laptops. The Command
+  Center now uses a **hybrid inspector** — list view keeps a split-pane
+  Review Packet that only takes space when a run is selected; board view
+  surfaces the Review Packet in an on-demand right-side **Sheet** drawer
+  (Esc / scrim / ✕ to close, focus restored on dismiss, `prefers-reduced-motion`
+  aware). The five-status summary collapses from five large kpi cards into
+  a single compact card with a horizontal **stacked health bar** plus a
+  chip row of exact counts.
+- Swiss Modernism 2.0 design system: HSL design tokens for light + dark,
+  Fira Sans / Fira Code typography, top-bar shell with theme toggle,
+  semantic `StatusDot` / `StatusPill` indicators (colour + text + dot),
+  and zero-dep SVG sparkline / mini-bar / donut charts on the reports page.
+- Dashboard i18n (English / 简体中文) powered by `next-intl` with a
+  cookie-driven locale (`issuepilot-locale`), an EN / 中 toggle in the
+  top-bar tools cluster, and message catalogs that intentionally keep technical tokens
+  (status labels, readiness, `ai-*` labels, `IssuePilot` / `Codex` /
+  `GitLab` / `MR` / `Workflow` / `Workspace`, run ids, branches, paths)
+  in English while translating descriptive UI copy. Both server pages
+  (`getTranslations`) and client components (`useTranslations`) are
+  wired, and the locale toggle forces a full reload so SSR always
+  observes the new cookie.
 - End-to-end test harness (`tests/e2e`) with a stateful fake GitLab + scriptable
   fake Codex app-server, covering the happy path, retry path
   (`turn/timeout` → ai-failed after `max_attempts`), failure path
@@ -495,6 +519,65 @@ GitLab notes and dashboard share one fact source.
 - ✅ Handoff / failure / closing GitLab notes render from the same
   `RunReportArtifact`, so dashboard, notes, and any future Markdown export
   stay aligned.
+
+### V2.6 — Dashboard shell + layout refresh
+
+Goal: tighten the Command Center information density after the V2.5
+content build-out — guided by a `ui-ux-pro-max` system review.
+
+Wave 2 follow-ups (post user dog-food):
+
+- ✅ All three pages (Command Center / Reports / Run Detail) share
+  `max-w-[1440px]` so the topbar feels stable across navigation.
+- ✅ The board-view inspector Sheet is a **GitLab-style non-modal
+  overlay**: no scrim, no body-scroll lock, `role="complementary"`
+  instead of `dialog`. The sheet floats over the right edge of the
+  kanban; the page container itself **does not reflow** (no
+  `lg:pr-[440px]` squeeze) — the board keeps its natural
+  `min-w-[1080px]` / `minmax(180px, 1fr)` columns and the covered
+  columns stay reachable via horizontal scroll, exactly like
+  GitLab's issue board side panel. Clicks outside the sheet still
+  hit the kanban so operators swap the inspected run by clicking
+  another card without dismissing first.
+- ✅ Board cards get a subtle press-on / hover-up motion
+  (`-translate-y-0.5` + `shadow-2`) and drop the verbose runId line
+  (still in `title=` / `aria-label`); titles `line-clamp-2`.
+- ✅ ServiceHeader collapses its forensic metadata (`Last config
+  reload` / `Workspace usage` / `Next cleanup`) behind a
+  `More details` disclosure so the strip stays compact.
+- ✅ All four Reports counters (`Total` / `Ready` / `Blocked` /
+  `Median duration`) now carry a 7-day inline sparkline driven by a
+  reused `bucketByDay` predicate + a new `medianDurationByDay` helper.
+
+Wave 1 (the original layout refresh):
+
+- ✅ **Top-bar shell** replaces the 232px left sidebar. Primary nav and the
+  locale / theme / mode-tag tools collapse into a sticky horizontal strip
+  (`max-w-[1440px]`, `bg-surface/95 backdrop-blur`); a `Skip to main
+  content` link is the first focusable element. The change frees ~232px of
+  horizontal space — enough for the kanban view to render its six lifecycle
+  columns without x-overflow on 1280px laptops.
+- ✅ **Hybrid Review Packet inspector**. List view keeps the split-pane
+  inspector but only mounts the right column when a row is selected (320–
+  420px); board view promotes the inspector into an on-demand right-side
+  **Sheet** drawer so the kanban stays full-width. The drawer follows
+  Apple HIG / Material modal-escape rules: Esc closes, scrim click closes,
+  ✕ button closes, body scroll is locked while open, focus is restored on
+  dismiss, and `prefers-reduced-motion` is honoured globally via
+  `globals.css`.
+- ✅ **Stacked health bar**. The five large per-status kpi cards collapse
+  into a single Card showing total + a 2px-tall horizontal stacked bar
+  (running / retrying / human-review / failed / blocked) plus a chip row
+  with exact counts. Operators read "is the queue healthy" in one glance
+  instead of summing five numbers.
+- ✅ **Workflow path repair**. The `service` strip now truncates long
+  paths from the head (`bdo` + `dir="rtl"`) so the file name stays visible,
+  with the full path exposed via the native `title=` tooltip.
+- ✅ **Section header de-noising**. Mid-page `text-[11px] uppercase
+  tracking-[0.18em]` micro-labels were rolled back to plain
+  `text-base font-semibold`; the `font-mono` micro-label treatment is
+  reserved for page-level overhead labels and `dt` metadata, where it
+  reads as a kicker rather than visual noise.
 
 ### V3 — Productionized execution platform
 

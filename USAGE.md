@@ -436,6 +436,16 @@ merge-readiness verdict from the run's persisted report. The Reports
 aggregator lives at `http://127.0.0.1:3000/reports` and summarises
 ready-to-merge, blocked, and failed counters from local report artifacts.
 
+The dashboard is bilingual: use the **EN / 中** toggle in the sidebar to
+switch between English and 简体中文. The choice is stored in the
+`issuepilot-locale` cookie and applies to every page (Command Center,
+Reports, run detail). Technical tokens — status labels (`running`,
+`completed`, `failed`, `blocked`, `human-review`, `ai-ready`, …),
+readiness verdicts (`ready` / `not-ready` / `blocked` / `unknown`), CI
+status, run ids, branches, paths, and product names like `IssuePilot` /
+`Codex` / `GitLab` / `MR` / `Workflow` / `Workspace` — remain English in
+both locales by design.
+
 > Merge readiness is a **dry-run only** evaluator: it tells you whether
 > CI, approvals, review feedback, and risks look ready. IssuePilot will not
 > call any GitLab merge API — humans still own the actual merge decision.
