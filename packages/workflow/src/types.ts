@@ -99,6 +99,13 @@ export interface WorkflowConfig {
   codex: CodexConfig;
   hooks: HooksConfig;
   ci: CiConfig;
+  /**
+   * V1 single-project fallback for workspace retention. Mirrors the
+   * `retention:` block on `issuepilot.team.yaml` and feeds the same
+   * planner / executor used in team mode. Defaults come from
+   * `DEFAULT_RETENTION_CONFIG` (V2 spec §11).
+   */
+  retention: RetentionConfig;
   /** Orchestrator main-loop poll interval in milliseconds. Defaults to 10 000. */
   pollIntervalMs: number;
   promptTemplate: string;
@@ -117,9 +124,12 @@ export interface IssuePromptInfo {
   assignees: string[];
 }
 
-import type { ReviewFeedbackSummary } from "@issuepilot/shared-contracts";
+import type {
+  RetentionConfig,
+  ReviewFeedbackSummary,
+} from "@issuepilot/shared-contracts";
 
-export type { ReviewFeedbackSummary };
+export type { RetentionConfig, ReviewFeedbackSummary };
 
 export interface PromptContext {
   issue: IssuePromptInfo;

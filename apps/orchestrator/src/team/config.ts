@@ -2,6 +2,10 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
+import {
+  DEFAULT_RETENTION_CONFIG,
+  type RetentionConfig,
+} from "@issuepilot/shared-contracts";
 import * as YAML from "yaml";
 import { z, ZodError } from "zod";
 
@@ -51,11 +55,13 @@ export interface TeamSchedulerConfig {
   pollIntervalMs: number;
 }
 
-export interface TeamRetentionConfig {
-  successfulRunDays: number;
-  failedRunDays: number;
-  maxWorkspaceGb: number;
-}
+/**
+ * Alias kept for backward compatibility with V2 Phase 1 callers; the
+ * canonical shape now lives in `@issuepilot/shared-contracts` so the
+ * workspace planner and workflow parser can reference it without
+ * pulling the orchestrator package in.
+ */
+export type TeamRetentionConfig = RetentionConfig;
 
 /**
  * Team-wide CI feedback override. When `enabled` is `true`, the V2
@@ -76,7 +82,7 @@ export interface TeamConfig {
   server: { host: string; port: number };
   scheduler: TeamSchedulerConfig;
   projects: TeamProjectConfig[];
-  retention: TeamRetentionConfig;
+  retention: RetentionConfig;
   /**
    * Optional team-wide CI override; `null` means defer to per-workflow
    * `ci` section.
@@ -127,6 +133,7 @@ const rawRetentionSchema = z
     successful_run_days: z.number().int().min(0).optional(),
     failed_run_days: z.number().int().min(0).optional(),
     max_workspace_gb: z.number().min(0).optional(),
+    cleanup_interval_ms: z.number().int().min(60_000).optional(),
   })
   .optional();
 
@@ -243,13 +250,24 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
     pollIntervalMs: parsed.scheduler?.poll_interval_ms ?? 10_000,
   };
 
-  const retention: TeamRetentionConfig = {
-    successfulRunDays: parsed.retention?.successful_run_days ?? 7,
-    // Defaults mirror V2 spec §6/§11: failed/blocked workspaces stay for 30
-    // days to preserve failure forensics; max workspace usage caps at 50GB
-    // before the retention sweep starts trimming oldest terminal runs.
-    failedRunDays: parsed.retention?.failed_run_days ?? 30,
-    maxWorkspaceGb: parsed.retention?.max_workspace_gb ?? 50,
+  // Defaults mirror V2 spec §6/§11 via DEFAULT_RETENTION_CONFIG: failed /
+  // blocked workspaces stay 30 days to preserve failure forensics, max
+  // workspace usage caps at 50GB before the sweep starts trimming the
+  // oldest terminal runs, and cleanup runs at most once an hour (60s
+  // floor enforced by zod so the daemon can't be turned into a `du` storm).
+  const retention: RetentionConfig = {
+    successfulRunDays:
+      parsed.retention?.successful_run_days ??
+      DEFAULT_RETENTION_CONFIG.successfulRunDays,
+    failedRunDays:
+      parsed.retention?.failed_run_days ??
+      DEFAULT_RETENTION_CONFIG.failedRunDays,
+    maxWorkspaceGb:
+      parsed.retention?.max_workspace_gb ??
+      DEFAULT_RETENTION_CONFIG.maxWorkspaceGb,
+    cleanupIntervalMs:
+      parsed.retention?.cleanup_interval_ms ??
+      DEFAULT_RETENTION_CONFIG.cleanupIntervalMs,
   };
 
   const ci: TeamCiConfig | null = parsed.ci
