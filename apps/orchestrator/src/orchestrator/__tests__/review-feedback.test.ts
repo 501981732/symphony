@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { IssuePilotInternalEvent } from "@issuepilot/shared-contracts";
+import type {
+  IssuePilotInternalEvent,
+  RunReportArtifact,
+} from "@issuepilot/shared-contracts";
 import { createEventBus } from "@issuepilot/observability";
 
 import { sweepReviewFeedbackOnce } from "../review-feedback.js";
+import { createInitialReport } from "../../reports/lifecycle.js";
 import { createRuntimeState, type RunEntry } from "../../runtime/state.js";
 
 function makeIssue(iid: number, labels: string[]): RunEntry["issue"] {
@@ -447,4 +451,77 @@ describe("sweepReviewFeedbackOnce", () => {
     expect(ctx.events).toEqual([]);
   });
 
+  // V2.5 review I3: after the review feedback sweep collects human
+  // comments from GitLab, the run report must carry an updated
+  // `reviewFeedback` block (unresolved count + comment metadata) and a
+  // re-evaluated `mergeReadiness` so the dashboard's Review Packet
+  // matches what the orchestrator sees.
+  it("writes unresolved review comments onto the run report and re-evaluates merge readiness", async () => {
+    const ctx = createDeps({
+      notes: [
+        {
+          id: 1,
+          body: "Please address null handling.",
+          author: "alice",
+          createdAt: "2026-05-16T10:00:00.000Z",
+          system: false,
+          resolvable: true,
+          resolved: false,
+        },
+        {
+          id: 2,
+          body: "Looks good.",
+          author: "bob",
+          createdAt: "2026-05-16T10:05:00.000Z",
+          system: false,
+          resolvable: true,
+          resolved: true,
+        },
+      ],
+    });
+    const runId = seedReviewRun(ctx.state);
+
+    const reports = new Map<string, RunReportArtifact>();
+    reports.set(
+      runId,
+      createInitialReport({
+        runId,
+        issue: {
+          iid: 1,
+          title: "Issue 1",
+          url: "https://gitlab.example.com/g/p/-/issues/1",
+          projectId: "g/p",
+          labels: ["human-review"],
+        },
+        status: "completed",
+        attempt: 1,
+        branch: "ai/1-fix",
+        workspacePath: "/tmp/run",
+        startedAt: "2026-05-15T00:00:00.000Z",
+      }),
+    );
+
+    await sweepReviewFeedbackOnce({
+      ...ctx.deps,
+      reports: {
+        save: vi.fn(async (r: RunReportArtifact) => {
+          reports.set(r.runId, r);
+        }),
+        get: vi.fn(async (id: string) => reports.get(id)),
+        summary: () => undefined,
+        allSummaries: () => [],
+      },
+    });
+
+    const updated = reports.get(runId);
+    expect(updated?.reviewFeedback?.unresolvedCount).toBe(1);
+    expect(updated?.reviewFeedback?.comments).toHaveLength(2);
+    expect(updated?.reviewFeedback?.comments[0]).toMatchObject({
+      author: "alice",
+      resolved: false,
+    });
+    expect(updated?.mergeReadiness.evaluatedAt).toBe(
+      "2026-05-16T12:00:00.000Z",
+    );
+  });
 });

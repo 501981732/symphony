@@ -427,6 +427,29 @@ If you see `IssuePilot orchestrator unreachable` / `fetch failed`, confirm
 the orchestrator is still running in Terminal A and that the dashboard is
 pointed at the same port.
 
+The home page is the **V2.5 Command Center** — a single screen with a
+**List view** and a **Board view** (toggle in the top-right). Click a run to
+open the inline Review Packet inspector; click the run ID to open the full
+run detail page, which now starts with a **Review Packet** section that
+mirrors the structured handoff, validation, risks, follow-ups, and
+merge-readiness verdict from the run's persisted report. The Reports
+aggregator lives at `http://127.0.0.1:3000/reports` and summarises
+ready-to-merge, blocked, and failed counters from local report artifacts.
+
+The dashboard is bilingual: use the **EN / 中** toggle in the sidebar to
+switch between English and 简体中文. The choice is stored in the
+`issuepilot-locale` cookie and applies to every page (Command Center,
+Reports, run detail). Technical tokens — status labels (`running`,
+`completed`, `failed`, `blocked`, `human-review`, `ai-ready`, …),
+readiness verdicts (`ready` / `not-ready` / `blocked` / `unknown`), CI
+status, run ids, branches, paths, and product names like `IssuePilot` /
+`Codex` / `GitLab` / `MR` / `Workflow` / `Workspace` — remain English in
+both locales by design.
+
+> Merge readiness is a **dry-run only** evaluator: it tells you whether
+> CI, approvals, review feedback, and risks look ready. IssuePilot will not
+> call any GitLab merge API — humans still own the actual merge decision.
+
 ### 4.2 Run the first Issue
 
 In the target GitLab project:

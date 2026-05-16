@@ -4,6 +4,286 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-16 — **dashboard 布局抛光：三页等宽、non-modal Sheet、Board polish、
+  ServiceHeader 折叠、Reports 趋势卡**（continuation of V2.6 layout refresh）。
+  - **三个页面 `max-w` 统一为 1440px**：Command Center 已经是 1440，把
+    Reports 从 1280、Run Detail 从 1200 也统一到 1440，避免在 sticky topbar
+    下切换页面时 main 容器宽度抖动。所有三页都 `mx-auto w-full
+    max-w-[1440px]`。
+  - **Sheet 改成非模态 inspector**（用户反馈："划出详情时不应该有遮罩，
+    这样方便快速切换卡片"）。去掉 `bg-overlay/40` 遮罩、去掉
+    `body.overflow:hidden` 锁滚、不再 `aria-modal=true`，`role` 从 `dialog`
+    改成 `complementary`。Esc / ✕ 仍可关闭。
+  - **Sheet 进一步改成 GitLab 风纯 overlay**（用户反馈："不应该点击之后
+    把页面挤回去"——参考 GitLab issue 看板从右滑出 details 时主看板不让位）。
+    回退之前给主容器加的 `transition-[padding] / lg:pr-[440px]` 让位逻辑，
+    `command-center-page` 主区永远 `mx-auto max-w-[1440px] lg:px-8`；
+    sheet 现在是纯 fixed overlay 浮在看板右侧上方，**主内容布局完全不变**，
+    被覆盖的两栏照常存在（横向滚动可继续看），点 sheet 之外的卡片立刻替换
+    inspector 内容。`RunBoardView` 列宽也从 768/140 恢复成更舒展的
+    `min-w-[1080px]` + `minmax(180px, 1fr)`，每栏视觉宽度回到 ~180px，
+    避免之前为让位被挤窄的 6 栏看起来局促。
+  - **Board 卡片信息密度 + 选中 motion**：每张卡片移除冗长的 `runId`
+    单独行（仍通过 `title=` + `aria-label` 暴露给鼠标 tooltip / 屏读器），
+    标题加 `line-clamp-2 leading-snug` 防止 3-行 issue 标题撑爆卡片高度；
+    选中 / hover 增加 `-translate-y-0.5` + `shadow-2` motion，配合现有
+    `ring-2 ring-info/40` 共同表达"被选中且可点别的卡片继续切换"。
+  - **ServiceHeader 二级 metadata 折叠**：把不常用的 `Last config reload`
+    / `Workspace usage` / `Next cleanup` 从 always-visible dl 收进
+    `<button aria-expanded>` 控制的 disclosure（`More details` / `Hide details`
+    + 旋转 chevron），默认折叠。Tier 1 只剩 `Service status` /
+    `Concurrency` / `Poll interval` / `Workflow` / `Last poll`，垂直空间
+    再省一截；服务首屏更聚焦"在不在跑、跑得多快"。
+  - **Reports 页 4 张 Counter 全部带 sparkline**：之前只有 `Total reports`
+    有 7 日 sparkline，现在 `Ready to merge` / `Blocked` / `Median duration`
+    都接上各自的 7 日趋势——`bucketByDay` 加 optional predicate 复用同一
+    桶逻辑算 ready / blocked 计数；新增 `medianDurationByDay` 算每天中位
+    耗时（秒）。每张卡都看得出"今天在变好还是变坏"。
+  - **i18n**：新增 `service.expand` / `service.collapse` 中英双语
+    （`More details` / `Hide details` ↔ `更多详情` / `收起`）。
+  - **测试**：`service-header.test.tsx` 适配 disclosure，新增"折叠默认隐藏
+    tier-2"用例；97 用例全过、`lint` 0 warning、`typecheck` pass、
+    `next build` pass。
+
+- 2026-05-16 — **dashboard shell + Command Center 布局重构（短期 1–6）**。基于
+  `ui-ux-pro-max` 系统化评估的结论，把 v2.5 的"左侧 sidebar + 右侧常驻 Review
+  Packet split-pane"中后台壳重做成更宽松的"顶部水平导航 + 主内容全宽 +
+  按需 sheet"结构。
+  - **顶部水平导航（替换左 sidebar）**：新增 `components/shell/top-bar.tsx`，
+    把 `Command Center` / `Reports` 主导航 + `LocaleToggle` / `ThemeToggle`
+    工具区收成单条 sticky 顶栏（h-14 mobile / h-16 desktop，
+    `bg-surface/95 backdrop-blur`，`max-w-[1440px]` 居中）；删除原来 232px
+    的 `components/shell/sidebar.tsx`。`AppShell` 改成纵向布局，
+    并在最顶层加 `Skip to main content` 链接（首次 Tab 即可跳过 chrome），
+    同步去掉不再需要的 `--sidebar-width` CSS token。回收主区域约 232px 横向
+    空间，board 视图 6 栏不再被压缩成 x-overflow。
+  - **list / board 混合 inspector 布局**：`command-center-page.tsx` 不再
+    用恒定的 `2.2fr / 1fr` split-pane，而是按 view 自适应：list 视图选中
+    一行才把右侧 320–420px Review Packet 列展开（无选中时整列折叠），
+    board 视图保持全宽 6 栏，点卡片才从右侧滑入 sheet。Esc 关闭、点遮罩
+    关闭，并用 useEffect 监听键盘事件（list 视图无 modal 也支持 Esc 清空
+    选中）。
+  - **新增 `components/ui/sheet.tsx`**：便携式右侧 drawer。`createPortal`
+    挂在 `document.body`，遮罩 `bg-overlay/40 backdrop-blur-[1px]`，面板
+    `translate-x-full → translate-x-0` 200ms 滑入；通过 `mounted` state 控制
+    动画结束后再卸载 children（避免 testing-library / 屏读器看到隐藏内容）；
+    open 时锁 `body.overflow:hidden`，关闭时把焦点恢复到上一个 active
+    element。Tailwind config 加 `overlay` 颜色映射 + 全局 token。
+  - **review-packet-inspector 双形态**：新增 `variant: "default" | "sheet"`
+    + 可选 `onClose`。default 模式仍是 sticky Card（list 视图右栏），sheet
+    模式去掉 Card / sticky / 重复 close 按钮，由 sheet 自带的 ✕ 负责关闭。
+    用 `cachedRun` state 缓存最后一次有效的 run，避免 sheet 关闭瞬间内容
+    闪空。
+  - **summary cards → 横向 stacked health bar**：`overview/summary-cards.tsx`
+    重写成单 Card 布局——`Active queue · {total} total` 标题 + 一根 2px
+    高的横向堆叠条（按 5 个生命周期状态比例着色，`title=status:count`
+    悬浮提示） + 5 列紧凑数字 chip（`StatusDot + status + tabular-nums`）。
+    替代原来 5 个 `text-3xl` 大数字 kpi 卡，纵向空间从 ~120px 压到 ~96px，
+    "队列是否健康" 一眼可读。新增 `summary.totalLabel` /
+    `summary.trackAria` / `summary.trackEmptyAria` 文案。
+  - **service-header workflow 长路径修复**：用 `truncate + dir="rtl"` +
+    `<bdo dir="ltr">` 让过长路径优先保留尾部（文件名 `WORKFLOW.md`）可见，
+    而不是像旧版那样切掉尾部变成 `…/workflo`，并加 `title=` 原生 tooltip
+    展示完整路径。
+  - **micro-label 减负**：原来到处都是 `text-[11px] uppercase
+    tracking-[0.18em]` 的 section header（"SUMMARY" / "RUNS" /
+    "Per-run summary" / "Timeline" / "Tool calls" / "Latest review feedback"
+    等），全部改成 `text-base font-semibold tracking-tight text-fg`，只保留
+    page-level overhead label 和 `dt` field-label 两类合理用法，整页视觉
+    噪音明显降低，主标题对比度回归。
+  - **i18n / a11y**：`nav.skipToMain` / `common.close` / `summary.totalLabel`
+    / `summary.trackAria` / `summary.trackEmptyAria` 中英双语 catalog 同步；
+    sheet `role=dialog` `aria-modal=true` + `aria-label`；移除已不再使用的
+    `nav.primaryCompact`。
+  - **验证**：`pnpm --filter @issuepilot/dashboard test` 96 用例全过、
+    `lint` 0 warning、`typecheck` 通过、`next build` 通过。
+
+- 2026-05-16 — **sidebar toggle 对称化 + 中文译文 polish**（i18n round 2）。
+  - **UI 修正**：之前 sidebar 底部的 `LocaleToggle` 是双 chip segmented，
+    `ThemeToggle` 是单按钮显示当前态，两个 card 在 `lg:items-stretch`
+    模式下都被撑满 sidebar 整宽，但内容左对齐，右侧留大片空白；两个
+    控件视觉权重不对等。这次把 `ThemeToggle` 重写成跟 `LocaleToggle`
+    同款 segmented control（`☼ Light | ☾ Dark` 双 chip），并把两个组件
+    的容器从 `inline-flex` 改成 `flex`，内部按钮加 `flex-1` 平分整宽。
+    两个 card 现在等宽、内部 chip 平均分布、视觉对称。
+  - **中文译文 polish**：把 `zh.json` 里若干"硬翻 / 机翻味"的句子改成
+    更符合工程师产品语境的写法（关键字仍按 AGENTS 规则保英文）。代表性
+    改动：`home.description` 从「IssuePilot run 的单屏视图。实时更新通过
+    SSE 从 ... 推送…」改成「一屏看完所有活跃的 IssuePilot run。实时事件走
+    SSE，从 ... 推过来…」；`common.selectRun` 和 `inspector.empty` 从「在左侧
+    选中一条 run 以加载它的 Review Packet。」改成「在左侧选一条 run，即可
+    加载它的 Review Packet。」；`list.emptyBody` / `runsTable.empty` 从
+    「给一个 GitLab issue 打上 ai-ready 标签来启动」改成「在 GitLab 给 issue
+    打上 ai-ready 标签即可触发」；`inspector.missingReport` 从「尚未生成
+    报告 — daemon 还没为这条 run 产出报告，或属于历史记录。」改成「还没有
+    报告 — daemon 尚未为这条 run 写入报告，或者它是历史 run。」；
+    `reportsPage.description` 从「基于本地报告产物的质量与耗时指标」改成
+    「从本地 run 报告里跑出来的质量与耗时指标」；`reportsPage.tableEmpty` 从
+    「运行 orchestrator 后这里就会填充内容」改成「orchestrator 跑起来后，
+    这里就会有数据」；`runDetail.reviewSwept/reviewEmpty` 把"采集"改成
+    "扫描"；`reviewPacket.validationEmpty` "未报告" → "未填写"；
+    `reviewPacket.nextAction` "下一步动作" → "下一步"；`overview.title`
+    从「IssuePilot 仪表盘」回到「IssuePilot Dashboard」（产品名遵循
+    AGENTS 不翻译规则）；`projects.loadError` "加载错误" → "加载失败"；
+    `theme.toggle` "切换配色" → "切换主题"。
+
+- 2026-05-16 — **dashboard 中英双语 i18n（next-intl + cookie-driven locale）**。
+  之前 dashboard 全部 user-facing 文案都是写死的英文；这次把它做成可切换的
+  内部化方案：
+  - **运行时**：`apps/dashboard` 引入 `next-intl@4`，新增
+    `i18n/request.ts`（cookie `issuepilot-locale` → `en` / `zh` 兜底 `en`）、
+    `i18n/locales.ts`（locale 注册中心 + cookie 工具）、`i18n/messages/en.json`
+    与 `i18n/messages/zh.json`（按 surface 分 namespace 的两份 catalog），
+    `next.config.mjs` 接 `createNextIntlPlugin`，`app/layout.tsx` 用
+    `NextIntlClientProvider` 包整个 AppShell 并在服务端读 locale 设
+    `<html lang>`。
+  - **切换 UI**：`components/shell/locale-toggle.tsx` 在 sidebar 加
+    EN / 中 双键 toggle，点击写 cookie 并 `window.location.reload()`，
+    保证下一次 SSR 命中新的 locale；EN / 中 永远显示英文 + 中文 short label，
+    避免 lost-in-translation。
+  - **保留的"关键字"**：状态码、label、产品名按用户要求保持英文 —
+    `running` / `retrying` / `completed` / `failed` / `blocked` /
+    `human-review` / `ai-ready` / `ai-running` / `ai-rework` / `ai-failed` /
+    `ai-blocked` / `ready` / `not-ready` / `unknown` / `success` /
+    `pending` / `low` / `medium` / `high` 等 status / readiness / risk
+    枚举不翻；`IssuePilot` / `Codex` / `GitLab` / `Workflow` /
+    `Workspace` / `Review Packet` / `MR` / `CI` / `SSE` / event types
+    与 run id / branch / path / cmd 等技术名词也都保持原文。
+  - **翻译范围**：sidebar nav / theme & locale toggle / Command Center
+    首页（标题、描述、ServiceHeader 字段、SummaryCards caption、ViewToggle、
+    RunListView 表头与空态、RunBoardView 列头与空态、ReviewPacketInspector
+    字段与空态）、Reports 页（KPI 标签、sparkline label、chart title、
+    table headers、空态、`ofTotal` 百分比、`failedCount` 复数）、Run detail
+    页（breadcrumb、metadata strip 字段、ReviewPacket 三块、EventTimeline /
+    ToolCallList / LogTail 空态与字段、ReviewFeedback panel、Retry/Stop/
+    Archive 按钮）、overview / runs-table / project-list 旧入口、
+    `app/page.tsx` 和 `app/reports/page.tsx` 的错误回退态（用
+    `getTranslations()` 服务端解析）。
+  - **测试**：新增 `apps/dashboard/test/intl.tsx` 提供 `renderWithIntl`
+    包一层 `NextIntlClientProvider` 默认走 EN catalog；`app/page.test.tsx`
+    针对 `getTranslations` 加了 in-process mock，保留对 `<code>` 元素的
+    文本断言。15 个 component test 文件统一切到 `renderWithIntl`，96 个
+    用例全绿。
+
+### Changed
+
+- 2026-05-16 — **V2.5 dashboard 视觉重做：Swiss Modernism 2.0 双模设计系统**。
+  这次按 `ui-ux-pro-max` skill 的 `--design-system` 建议把整个 Command Center 重
+  绘了一遍，落地点：
+  - **Design tokens**：`apps/dashboard/app/globals.css` 新增 light + dark 两套
+    HSL 变量（surface / fg / border / primary / accent / success / warning /
+    danger / info / violet 共 10 组语义色），4/8 dp 间距体系，新建
+    `.grid-12`、`.tabular`、`.surface-row` 组件类；`tailwind.config.ts`
+    打开 `darkMode: "class"`，把所有 Tailwind 颜色映射到上面的 token，并接入
+    Fira Sans + Fira Code 两个 `next/font/google` 字体变量。
+  - **App shell**：`apps/dashboard/components/shell/` 下新增 `AppShell`、
+    `Sidebar`（≥1024px 显示左 232px 主导航，&lt;1024px 退化成顶部 compact
+    导航）、`ThemeToggle`（class-based 暗色，localStorage 持久化，
+    `<head>` 内联 bootstrap 脚本避免 flash）。
+  - **状态色阶**：`components/ui/status.tsx` 集中维护 `RUN_STATUS_TONES /
+    READINESS_TONES / PIPELINE_TONES`，新增 `StatusDot` + `StatusPill`，所有
+    badge 同时使用颜色 + 文本 + dot，满足 §1 `color-not-only`。
+  - **Command Center 首页**：`ServiceHeader` 从竖排 dl 改成单行 metadata
+    strip（status pill + 工程名 + 5 列字段）；`SummaryCards` 加顶部彩色 stripe
+    + 状态点 + 等宽数字；`RunListView` 改造成 Linear 风格行（左 accent 条 +
+    status / issue / branch / readiness / CI / attempt 6 列），`RunBoardView`
+    每列加顶 accent 条 + 数量徽标 + sticky 列头；新增空态 / 视图切换图标
+    （`ViewToggle`）。
+  - **Reports 页**：从 `4 counter + 1 表` 升级为 KPI（带 sparkline）+ 7 天
+    `<MiniBars>` 趋势 + `<Donut>` readiness 占比 + 可排序表格（`aria-sort` 同步
+    更新），新增纯 SVG `Sparkline` / `MiniBars` / `Donut` 工具组件
+    （`components/ui/charts.tsx`），零图表库依赖。
+  - **Run detail**：顶部新增 sticky metadata strip（status pill + run id +
+    Archive 按钮 + Issue/Branch/MR/Workspace/Labels/CI 网格），`ReviewPacket`
+    改成 2-列 + 嵌套块（Handoff 包含 summary / validation / risks / follow-ups
+    / next action；Merge readiness 用 readiness 软色包裹 + reasons + checks
+    分组），breadcrumb + 区段标题统一成 `tracking-[0.18em]` 大写小标签。
+  - **Token 迁移**：清理 `RunsTable / OverviewPage / ProjectList /
+    EventTimeline / ToolCallList / LogTail` 的硬编码 `slate-* / sky-* /
+    rose-*`，统一切到 `fg / fg-muted / border / danger-soft` 等语义 token，
+    所以 dark mode 不再有黑底白卡冲突。
+  - **可访问性**：全局 `:focus-visible { outline: 2px solid hsl(var(--color-ring)); }`，
+    `prefers-reduced-motion` reset 所有过渡，焦点环用 ring offset 与背景区分。
+  - **mock 对齐**：`scripts/demo/mock-orchestrator.mjs` 的 `buildSummary`
+    重写成真实 `RunReportSummary` 形状（`issueTitle / labels /
+    mergeReadinessStatus / updatedAt / totalMs` 等），并给 `runRecords`
+    带上 `latestCiStatus` / `mergeRequestUrl` 让 dashboard 各处 badge 不再
+    fallback。
+  - **测试**：`pnpm --filter @issuepilot/dashboard lint && pnpm --filter
+    @issuepilot/dashboard typecheck && pnpm --filter @issuepilot/dashboard
+    test`（96 tests / 20 files）全部通过；调整了 `summary-cards / service-
+    header / reports-page` 三个用例以匹配新 DOM 结构（如 `getByText("ready")`
+    改成 `getAllByText("ready").length > 0`，避免被 donut legend 干扰）。
+
+### Added
+
+- 2026-05-16 — **V2.5 Command Center：单屏 Linear 风格 dashboard +
+  RunReportArtifact**。本次同时落 8 个 task，落地 V2.5 设计：
+  - **共享契约**：`packages/shared-contracts/src/report.ts` 新增
+    `RunReportArtifact`（version 1）、`RunReportSummary`、merge readiness
+    枚举、`isMergeReadinessStatus` 类型守卫与 `buildRunReportSummary`
+    派生函数；`api.ts` 在 `/api/runs`、`/api/runs/:runId` 响应里新增可选
+    `report` / `reports` 字段，并新增 `ReportsListResponse`。
+  - **orchestrator 报告流水线**：`apps/orchestrator/src/reports/` 下新增
+    `lifecycle.ts`（`createInitialReport` / `updateReportHandoff` /
+    `markReportFailed`）、`store.ts`（in-memory + JSON 文件双写，落盘到
+    `~/.issuepilot/.../reports/<runId>.json`，写盘前过 `redact`）、
+    `render.ts`（handoff / failure / closing GitLab note 从同一报告渲染）、
+    `merge-readiness.ts`（dry-run 评估器，覆盖 CI / approvals / review
+    feedback / risks），每个文件都有配套 vitest 测试。
+  - **生命周期接入**：`daemon.ts` 在 claim 时调 `createInitialReport`
+    并存盘，reconcile 拿 `reportStore.get(runId)` 注入 `ReconcileInput`
+    并把 MR / handoff note id / agent handoff 字段回写到报告，failure
+    路径调 `markReportFailed`；`reconcile` 改为返回 `ReconcileResult`，
+    `dispatch` 的 `reconcile` 签名同步放宽到 `Promise<void | ReconcileResult>`；
+    `ci-feedback.ts` / `review-feedback.ts` 接受 `reports?` 依赖，落盘
+    最新 CI / review 状态并重新评估 merge readiness。
+  - **API**：`apps/orchestrator/src/server/index.ts` 接受
+    `reports?: ReportStore`，`/api/runs` 给每条记录加 `report`
+    summary，`/api/runs/:runId` 返回完整 `RunReportArtifact`，新增
+    `/api/reports` 端点；`server.test.ts` 新增 “run reports” 子套件。
+  - **dashboard**：`apps/dashboard/lib/api.ts` 导出 `RunWithReport` 与
+    `listReports`；首页 `app/page.tsx` 替换为
+    `components/command-center/command-center-page.tsx`（List ↔ Board
+    切换 + Review Packet inspector），并补 list / board / page 三套
+    vitest；运行详情页顶部新增
+    `components/detail/review-packet.tsx`；新增 `/reports` 聚合页
+    （`app/reports/page.tsx` + `components/reports/reports-page.tsx`），
+    汇总 ready-to-merge / blocked / failed 计数与逐 run 摘要表。
+  - **文档**：`README.md` / `README.zh-CN.md` 在 Roadmap 新增 “V2.5 —
+    Command Center” 章节，并把 Linear 风格 List / Board、Review Packet
+    与 `/reports` 页加入 Current Status；`USAGE.md` / `USAGE.zh-CN.md`
+    在 §4.1 dashboard 启动后说明 Command Center / Review Packet /
+    `/reports` 的用法，并强调 merge readiness 仅做 dry-run。
+  - **验证**：`pnpm --filter @issuepilot/shared-contracts test`、
+    `pnpm --filter @issuepilot/orchestrator test`（278 个 case 全过）、
+    `pnpm --filter @issuepilot/dashboard test`、三个包的 `typecheck`
+    全部通过；`git diff --check` 清洁。
+
+### Fixed
+
+- 2026-05-16 — **V2.5 Command Center code review 跟进修复**：
+  - **C1/C2/I2 (Critical/Important)**：`apps/orchestrator/src/orchestrator/reconcile.ts`
+    抽出可复用的 `mergeAgentHandoffIntoReport`，在调用 `renderHandoffNote`
+    前用 `agentSummary` / `agentValidation` / `agentRisks` /
+    `noCodeChangeReason` 覆盖 seed report 的占位字段，并把 `mergeRequest`
+    一并 patch 上去。`apps/orchestrator/src/daemon.ts` 的 reconcile 回写
+    复用同一个 helper，确保 store 里也是合并后的字段；handoff note 与
+    Review Packet 不再渲染 "not reported" 占位符，`noCodeChangeReason`
+    也会进入 What changed / Validation。
+  - **I1 (Important)**：`onFailure` 现在优先调用
+    `renderFailureNote(failedReport, ...)`，仅在报告缺失时回退到 legacy
+    `createFailureNote`；plan 中要求的"render failure note from report"
+    在 daemon 路径上得到落实。
+  - **I3 (Important)**：新增 4 个集成测试覆盖 V2.5 关键路径：
+    `reconcile.test.ts` 增加 seed report 合并 / noCodeChangeReason 兜底
+    两条；`ci-feedback.test.ts` 验证 sweep 把 latest CI status 写回报告
+    并重新计算 `mergeReadiness.evaluatedAt`；`review-feedback.test.ts`
+    验证 unresolved 计数和 comments 被写回 `reviewFeedback`。回归测试
+    总数从 274 → 278。
+
 ### Changed
 
 - 2026-05-16 — **使用文档从 `docs/getting-started.*` 提升为根目录 `USAGE.*`

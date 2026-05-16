@@ -1,3 +1,7 @@
+import type { RunReportArtifact } from "@issuepilot/shared-contracts";
+
+import { renderHandoffNote } from "../reports/render.js";
+
 export interface ReconcileInput {
   runId: string;
   iid: number;
@@ -17,6 +21,23 @@ export interface ReconcileInput {
   git: GitSlice;
   gitlab: GitLabReconcileSlice;
   onEvent: (event: ReconcileEvent) => void;
+  /**
+   * V2.5 Command Center: when present, the handoff workpad note is rendered
+   * from the run report artifact instead of the legacy `buildHandoffNote`
+   * fallback. Daemon-driven reconcile passes the latest report so a single
+   * fact source covers dashboard, notes and exports.
+   */
+  report?: RunReportArtifact | undefined;
+}
+
+/**
+ * Side-effects metadata returned to the daemon so it can update the run
+ * report with the handoff note id and the MR coordinates.
+ */
+export interface ReconcileResult {
+  mergeRequest?: { iid: number; webUrl?: string };
+  handoffNoteId?: number;
+  hadNewCommits: boolean;
 }
 
 export interface ReconcileEvent {
@@ -140,7 +161,90 @@ function now(): string {
   return new Date().toISOString();
 }
 
-export async function reconcile(input: ReconcileInput): Promise<void> {
+/**
+ * Slice of {@link ReconcileInput} that {@link mergeAgentHandoffIntoReport}
+ * actually reads. We expose a narrow slice so the daemon writeback path
+ * does not have to synthesise an entire `ReconcileInput` (with git/gitlab
+ * stubs) just to merge a few fields.
+ */
+export interface ReportHandoffMergeInput {
+  agentSummary?: string | undefined;
+  agentValidation?: string | undefined;
+  agentRisks?: string | undefined;
+  noCodeChangeReason?: string | undefined;
+  reworkLabel: string;
+}
+
+/**
+ * Merge the freshest agent / no-code-change fields onto the seed
+ * `RunReportArtifact` before we render the handoff note. The seed written
+ * at claim time only has placeholder strings — without this merge the
+ * note posted to GitLab would render "not reported" even when the agent
+ * produced a real summary, validation, or no-code-change explanation
+ * (see V2.5 review C1/C2). The function is intentionally pure so the
+ * same merged report can be reused by daemon code when it later writes
+ * the artifact back to the report store.
+ */
+export function mergeAgentHandoffIntoReport(
+  report: RunReportArtifact,
+  input: ReportHandoffMergeInput,
+  mr: { iid: number; webUrl?: string } | null,
+): RunReportArtifact {
+  const noCodeChangeReason = input.noCodeChangeReason?.trim();
+  const summary = fallbackText(
+    input.agentSummary,
+    noCodeChangeReason
+      ? `No code changes: ${noCodeChangeReason}`
+      : report.handoff.summary,
+  );
+  const validation = input.agentValidation?.trim()
+    ? [input.agentValidation.trim()]
+    : noCodeChangeReason && report.handoff.validation.length === 0
+      ? ["No validation command was reported for this no-code-change run."]
+      : report.handoff.validation;
+  const risks = input.agentRisks?.trim()
+    ? [{ level: "medium" as const, text: input.agentRisks.trim() }]
+    : report.handoff.risks;
+  const nextAction =
+    report.handoff.nextAction && report.handoff.nextAction !== "not reported"
+      ? report.handoff.nextAction
+      : `Review and merge the MR, or move this Issue to \`${input.reworkLabel}\` if changes are required.`;
+
+  return {
+    ...report,
+    handoff: {
+      ...report.handoff,
+      summary,
+      validation,
+      risks,
+      nextAction,
+    },
+    ...(mr
+      ? {
+          mergeRequest: {
+            iid: mr.iid,
+            url: mr.webUrl ?? "",
+            state: "opened" as const,
+          },
+        }
+      : {}),
+  };
+}
+
+function renderNoteBody(
+  input: ReconcileInput,
+  mr: { iid: number; webUrl?: string } | null,
+): string {
+  if (input.report) {
+    const reportForNote = mergeAgentHandoffIntoReport(input.report, input, mr);
+    return renderHandoffNote(reportForNote, {
+      handoffLabel: input.handoffLabel,
+    });
+  }
+  return buildHandoffNote(input, mr);
+}
+
+export async function reconcile(input: ReconcileInput): Promise<ReconcileResult> {
   const hasCommits = await input.git.hasNewCommits(
     input.workspacePath,
     input.baseBranch,
@@ -163,10 +267,12 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
 
     const marker = `<!-- issuepilot:run:${input.runId} -->`;
     const existingNote = await input.gitlab.findWorkpadNote(input.iid, marker);
-    const noteBody = buildHandoffNote({ ...input, noCodeChangeReason }, null);
+    const noteBody = renderNoteBody({ ...input, noCodeChangeReason }, null);
 
+    let handoffNoteId: number | undefined;
     if (!existingNote) {
       const note = await input.gitlab.createNote(input.iid, noteBody);
+      handoffNoteId = note.id;
       input.onEvent({
         type: "gitlab_workpad_note_created",
         runId: input.runId,
@@ -175,6 +281,7 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
       });
     } else {
       await input.gitlab.updateNote(input.iid, existingNote.id, noteBody);
+      handoffNoteId = existingNote.id;
       input.onEvent({
         type: "gitlab_workpad_note_updated",
         runId: input.runId,
@@ -184,7 +291,10 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
     }
 
     await transitionToHandoff(input);
-    return;
+    return {
+      hadNewCommits: false,
+      ...(handoffNoteId !== undefined ? { handoffNoteId } : {}),
+    };
   }
 
   await input.git.push(input.workspacePath, input.branch);
@@ -228,15 +338,23 @@ export async function reconcile(input: ReconcileInput): Promise<void> {
 
   const marker = `<!-- issuepilot:run:${input.runId} -->`;
   const existingNote = await input.gitlab.findWorkpadNote(input.iid, marker);
-  const noteBody = buildHandoffNote(input, handoffMr);
+  const noteBody = renderNoteBody(input, handoffMr);
 
+  let handoffNoteId: number | undefined;
   if (!existingNote) {
-    await input.gitlab.createNote(input.iid, noteBody);
+    const note = await input.gitlab.createNote(input.iid, noteBody);
+    handoffNoteId = note.id;
   } else {
     await input.gitlab.updateNote(input.iid, existingNote.id, noteBody);
+    handoffNoteId = existingNote.id;
   }
 
   await transitionToHandoff(input);
+  return {
+    hadNewCommits: true,
+    mergeRequest: handoffMr,
+    ...(handoffNoteId !== undefined ? { handoffNoteId } : {}),
+  };
 }
 
 async function transitionToHandoff(input: ReconcileInput): Promise<void> {

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { IssuePilotEvent } from "@issuepilot/shared-contracts";
+
+import { renderWithIntl as render } from "../../test/intl";
 
 import { EventTimeline } from "./event-timeline";
 

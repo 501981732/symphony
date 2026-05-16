@@ -1,6 +1,7 @@
 "use client";
 
 import type { RunStatus } from "@issuepilot/shared-contracts";
+import { useTranslations } from "next-intl";
 
 import { Button } from "../ui/button";
 
@@ -50,6 +51,7 @@ export function RunActions({
   onArchive,
   pending = false,
 }: RunActionsProps) {
+  const t = useTranslations("actions");
   if (run.archivedAt) return null;
 
   const showRetry = canRetry(run.status);
@@ -66,7 +68,7 @@ export function RunActions({
           disabled={pending}
           onClick={() => onRetry?.(run.runId)}
         >
-          Retry
+          {t("retry")}
         </Button>
       )}
       {showStop && (
@@ -76,7 +78,7 @@ export function RunActions({
           disabled={pending}
           onClick={() => onStop?.(run.runId)}
         >
-          Stop
+          {t("stop")}
         </Button>
       )}
       {showArchive && (
@@ -86,7 +88,7 @@ export function RunActions({
           disabled={pending}
           onClick={() => onArchive?.(run.runId)}
         >
-          Archive
+          {t("archive")}
         </Button>
       )}
     </div>

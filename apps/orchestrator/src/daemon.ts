@@ -57,8 +57,17 @@ import {
   type HumanReviewEvent,
 } from "./orchestrator/human-review.js";
 import { startLoop } from "./orchestrator/loop.js";
-import { reconcile } from "./orchestrator/reconcile.js";
+import {
+  mergeAgentHandoffIntoReport,
+  reconcile,
+} from "./orchestrator/reconcile.js";
 import { sweepReviewFeedbackOnce } from "./orchestrator/review-feedback.js";
+import {
+  createInitialReport,
+  markReportFailed,
+} from "./reports/lifecycle.js";
+import { renderFailureNote } from "./reports/render.js";
+import { createReportStore } from "./reports/store.js";
 import { createRunCancelRegistry } from "./runtime/run-cancel-registry.js";
 import { createConcurrencySlots } from "./runtime/slots.js";
 import { createRuntimeState, type RuntimeState } from "./runtime/state.js";
@@ -421,6 +430,12 @@ export async function startDaemon(
   const eventStore = createEventStore(
     path.join(workflow.workspace.root, ".issuepilot", "events"),
   );
+  // V2.5 Command Center: report artifacts live next to events under the
+  // workspace's `.issuepilot/` so a single tarball captures both the audit
+  // log and the per-run report state for support hand-off.
+  const reportStore = createReportStore({
+    rootDir: path.join(workflow.workspace.root, ".issuepilot"),
+  });
   const runIndex = new Map<string, { projectSlug: string; issueIid: number }>();
   const runCancelRegistry = createRunCancelRegistry();
 
@@ -683,6 +698,7 @@ export async function startDaemon(
         archive: (input: OperatorActionInput) =>
           archiveRun(input, operatorActionDeps()),
       },
+      reports: reportStore,
     },
     { host, port },
   );
@@ -807,6 +823,42 @@ export async function startDaemon(
       });
       for (const c of claimed) {
         runIndex.set(c.runId, runKey(workflow, c.issue.iid));
+        // V2.5 Command Center: seed a `RunReportArtifact` at claim time so
+        // every downstream stage (reconcile, CI scan, review sweep, failure
+        // path) writes onto an existing record instead of guarding for a
+        // missing one. Reports live next to events under `.issuepilot/`.
+        try {
+          const initialReport = createInitialReport({
+            runId: c.runId,
+            issue: {
+              id: c.issue.id,
+              iid: c.issue.iid,
+              title: c.issue.title,
+              url: c.issue.url,
+              projectId: c.issue.projectId,
+              labels: [...c.issue.labels],
+            },
+            status: "running",
+            attempt: 1,
+            branch: branchName({
+              prefix: workflow.git.branchPrefix,
+              iid: c.issue.iid,
+              titleSlug: slugify(c.issue.title),
+            }),
+            workspacePath: "",
+            startedAt: new Date().toISOString(),
+          });
+          await reportStore.save(initialReport);
+        } catch (err) {
+          publishEvent({
+            type: "report_seed_failed",
+            runId: c.runId,
+            ts: new Date().toISOString(),
+            detail: {
+              reason: err instanceof Error ? err.message : String(err),
+            },
+          });
+        }
       }
       return claimed.map((c) => ({ runId: c.runId }));
     },
@@ -951,9 +1003,11 @@ export async function startDaemon(
               await rpc.close();
             }
           },
-          reconcile: (opts) =>
-            reconcile({
+          reconcile: async (opts) => {
+            const report = await reportStore.get(opts.runId);
+            const result = await reconcile({
               ...opts,
+              ...(report ? { report } : {}),
               git: {
                 hasNewCommits,
                 push: pushBranch,
@@ -979,7 +1033,61 @@ export async function startDaemon(
                 },
               },
               onEvent: publishEvent,
-            }),
+            });
+            if (report) {
+              // V2.5 review C1/C2/I2: persist the merged report so the
+              // dashboard, future renders, and Markdown exports all see
+              // the same agentSummary / agentValidation / agentRisks /
+              // noCodeChangeReason / nextAction that we just wrote into
+              // the handoff note. Without this writeback the seed
+              // "not reported" placeholders would stick in the store
+              // even after the note was rendered correctly.
+              const merged = mergeAgentHandoffIntoReport(
+                report,
+                {
+                  reworkLabel: opts.reworkLabel,
+                  ...(opts.agentSummary !== undefined
+                    ? { agentSummary: opts.agentSummary }
+                    : {}),
+                  ...(opts.agentValidation !== undefined
+                    ? { agentValidation: opts.agentValidation }
+                    : {}),
+                  ...(opts.agentRisks !== undefined
+                    ? { agentRisks: opts.agentRisks }
+                    : {}),
+                  ...(opts.noCodeChangeReason !== undefined
+                    ? { noCodeChangeReason: opts.noCodeChangeReason }
+                    : {}),
+                },
+                result.mergeRequest
+                  ? {
+                      iid: result.mergeRequest.iid,
+                      ...(result.mergeRequest.webUrl
+                        ? { webUrl: result.mergeRequest.webUrl }
+                        : {}),
+                    }
+                  : null,
+              );
+              const nextReport = {
+                ...merged,
+                run: {
+                  ...merged.run,
+                  ...(opts.workspacePath &&
+                  opts.workspacePath !== merged.run.workspacePath
+                    ? { workspacePath: opts.workspacePath }
+                    : {}),
+                },
+                notes: {
+                  ...merged.notes,
+                  ...(result.handoffNoteId !== undefined
+                    ? { handoffNoteId: result.handoffNoteId }
+                    : {}),
+                },
+              };
+              await reportStore.save(nextReport);
+            }
+            return result;
+          },
           onEvent: publishEvent,
           onFailure: async (_failedRunId, classification, attempt) => {
             const label =
@@ -990,14 +1098,61 @@ export async function startDaemon(
               add: [label],
               remove: [workflow.tracker.runningLabel],
             });
-            await createFailureNote(gitlab, issue.iid, {
-              runId: _failedRunId,
-              branch,
-              classification,
-              attempt,
-              statusLabel: label,
-              readyLabel: readyLabel(workflow),
-            });
+            // V2.5 Command Center: refresh the report artifact with the final
+            // failure status, persist it, and prefer the report-driven
+            // failure note so dashboard + GitLab + future Markdown exports
+            // share the same wording. Falls back to the legacy
+            // createFailureNote path if the report could not be loaded
+            // (e.g. an older run that pre-dates V2.5).
+            let failedReport: Awaited<ReturnType<typeof reportStore.get>>;
+            try {
+              const report = await reportStore.get(_failedRunId);
+              if (report) {
+                failedReport = markReportFailed(report, {
+                  status:
+                    classification.kind === "blocked" ? "blocked" : "failed",
+                  endedAt: new Date().toISOString(),
+                  lastError: {
+                    code: classification.code,
+                    message: classification.reason,
+                    classification:
+                      classification.kind === "blocked"
+                        ? "blocked"
+                        : classification.kind === "retryable"
+                          ? "failed"
+                          : classification.kind,
+                  },
+                });
+                await reportStore.save(failedReport);
+              }
+            } catch (err) {
+              publishEvent({
+                type: "report_failure_update_failed",
+                runId: _failedRunId,
+                ts: new Date().toISOString(),
+                detail: {
+                  reason: err instanceof Error ? err.message : String(err),
+                },
+              });
+            }
+            if (failedReport) {
+              await gitlab.createIssueNote(
+                issue.iid,
+                renderFailureNote(failedReport, {
+                  statusLabel: label,
+                  readyLabel: readyLabel(workflow),
+                }),
+              );
+            } else {
+              await createFailureNote(gitlab, issue.iid, {
+                runId: _failedRunId,
+                branch,
+                classification,
+                attempt,
+                statusLabel: label,
+                readyLabel: readyLabel(workflow),
+              });
+            }
           },
         },
       );
@@ -1022,6 +1177,7 @@ export async function startDaemon(
               },
               ci: workflow.ci,
             },
+            reports: reportStore,
           });
         }
       : undefined,
@@ -1075,6 +1231,7 @@ export async function startDaemon(
             handoffLabel: workflow.tracker.handoffLabel,
           },
         },
+        reports: reportStore,
       });
     },
     reconcileRunning: async () => {

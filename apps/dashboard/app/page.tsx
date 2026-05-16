@@ -1,21 +1,16 @@
-import type {
-  OrchestratorStateSnapshot,
-  RunRecord,
-} from "@issuepilot/shared-contracts";
+import type { OrchestratorStateSnapshot } from "@issuepilot/shared-contracts";
+import { getTranslations } from "next-intl/server";
 
-import { OverviewPage } from "../components/overview/overview-page";
-import { getState, listRuns } from "../lib/api";
+import { CommandCenterPage } from "../components/command-center/command-center-page";
+import { getState, listRuns, type RunWithReport } from "../lib/api";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 async function fetchOverview(): Promise<{
   snapshot: OrchestratorStateSnapshot;
-  runs: RunRecord[];
+  runs: RunWithReport[];
 }> {
-  // Pull archived runs too so the `Show archived` toggle in `RunsTable` has
-  // something to reveal. The orchestrator default-hides archived runs; the
-  // dashboard always wants the full set and filters client-side.
   const [snapshot, runs] = await Promise.all([
     getState(),
     listRuns({ includeArchived: true }),
@@ -25,7 +20,7 @@ async function fetchOverview(): Promise<{
 
 async function refreshAction(): Promise<{
   snapshot: OrchestratorStateSnapshot;
-  runs: RunRecord[];
+  runs: RunWithReport[];
 }> {
   "use server";
   return fetchOverview();
@@ -35,33 +30,28 @@ export default async function HomePage() {
   try {
     const { snapshot, runs } = await fetchOverview();
     return (
-      <OverviewPage
+      <CommandCenterPage
         initialSnapshot={snapshot}
         initialRuns={runs}
         refetch={refreshAction}
       />
     );
   } catch (err) {
+    const t = await getTranslations("home");
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-12">
-        <h1 className="text-xl font-semibold text-slate-900">
-          IssuePilot orchestrator unreachable
+      <div className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-12">
+        <h1 className="text-xl font-semibold tracking-tight text-fg">
+          {t("errorTitle")}
         </h1>
-        <p className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <p className="rounded-md border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           {(err as Error).message}
         </p>
-        <p className="text-sm text-slate-500">
-          Start the orchestrator with{" "}
-          <code className="font-mono">
-            issuepilot run --workflow /path/to/target-project/WORKFLOW.md
-          </code>{" "}
-          or team mode with{" "}
-          <code className="font-mono">
-            issuepilot run --config /path/to/issuepilot.team.yaml
-          </code>
-          , then reload this page.
+        <p className="text-sm text-fg-muted">
+          {t.rich("errorHint", {
+            cmd: (chunks) => <code className="font-mono">{chunks}</code>,
+          })}
         </p>
-      </main>
+      </div>
     );
   }
 }

@@ -6,6 +6,7 @@ import {
   getRunDetail,
   getState,
   listEvents,
+  listReports,
   listRuns,
   resolveApiBase,
   retryRun,
@@ -126,6 +127,50 @@ describe("getRunDetail", () => {
     await getRunDetail("r 1/2");
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       `${FAKE_BASE}/api/runs/r%201%2F2`,
+    );
+  });
+
+  it("preserves optional report field on detail responses", async () => {
+    mockFetch({
+      run: { runId: "r1", status: "completed" },
+      events: [],
+      logsTail: [],
+      report: {
+        version: 1,
+        runId: "r1",
+        mergeReadiness: { mode: "dry-run", status: "ready", reasons: [] },
+      },
+    });
+    const detail = await getRunDetail("r1");
+    expect(detail.report?.runId).toBe("r1");
+    expect(detail.report?.mergeReadiness?.status).toBe("ready");
+  });
+});
+
+describe("listReports", () => {
+  it("GETs /api/reports and returns typed payload", async () => {
+    const fetchMock = mockFetch({
+      reports: [
+        {
+          runId: "r1",
+          issueIid: 42,
+          issueTitle: "Fix checkout",
+          projectId: "group/project",
+          status: "completed",
+          labels: ["human-review"],
+          attempt: 1,
+          branch: "ai/42",
+          mergeReadinessStatus: "ready",
+          updatedAt: "2026-05-16T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await listReports();
+
+    expect(result.reports[0]?.runId).toBe("r1");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      `${FAKE_BASE}/api/reports`,
     );
   });
 });

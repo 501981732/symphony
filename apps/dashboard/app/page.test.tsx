@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import enMessages from "../i18n/messages/en.json";
+import { renderWithIntl as render } from "../test/intl";
 
 import HomePage from "./page";
 import { getState, listRuns } from "../lib/api";
@@ -9,6 +12,95 @@ vi.mock("../lib/api", () => ({
   getState: vi.fn(),
   listRuns: vi.fn(),
 }));
+
+// Server components reach for the request-scoped intl context that next-intl
+// wires up at runtime; in vitest there's no Next.js request to bind against,
+// so we stub `next-intl/server` to translate against the English catalog.
+// `t.rich` must preserve React children (e.g. <code>...</code>) so element
+// selectors in tests still find the embedded nodes, not flattened strings.
+vi.mock("next-intl/server", async () => {
+  const { Fragment, createElement } = await import("react");
+  function lookup(key: string): string {
+    const parts = key.split(".");
+    let cur: unknown = enMessages;
+    for (const part of parts) {
+      if (cur && typeof cur === "object" && part in cur) {
+        cur = (cur as Record<string, unknown>)[part];
+      } else {
+        return key;
+      }
+    }
+    return typeof cur === "string" ? cur : key;
+  }
+  function interpolate(template: string, values?: Record<string, unknown>) {
+    if (!values) return template;
+    let out = template;
+    for (const [name, value] of Object.entries(values)) {
+      if (typeof value !== "function") {
+        out = out.replace(`{${name}}`, String(value));
+      }
+    }
+    return out;
+  }
+  function richSplit(template: string, values?: Record<string, unknown>) {
+    if (!values) return template;
+    // next-intl's rich format wraps inner text in `<name>...</name>` tags
+    // and passes the matched chunks to a callback in `values`. We also keep
+    // support for the simpler `{name}` value form used in a few catalog
+    // entries (e.g. ICU number placeholders).
+    const parts: unknown[] = [];
+    let cursor = 0;
+    const regex = /<(\w+)>([\s\S]*?)<\/\1>|\{(\w+)\}/g;
+    let match: RegExpExecArray | null;
+    let keyCounter = 0;
+    while ((match = regex.exec(template)) !== null) {
+      if (match.index > cursor) {
+        parts.push(template.slice(cursor, match.index));
+      }
+      const tagName = match[1];
+      const inner = match[2];
+      const valueName = match[3];
+      if (tagName !== undefined) {
+        const handler = values[tagName];
+        if (typeof handler === "function") {
+          parts.push((handler as (chunks: string) => unknown)(inner ?? ""));
+        } else {
+          parts.push(inner ?? "");
+        }
+      } else if (valueName !== undefined && valueName in values) {
+        const value = values[valueName];
+        parts.push(typeof value === "function" ? (value as () => unknown)() : String(value));
+      }
+      cursor = match.index + match[0].length;
+    }
+    if (cursor < template.length) {
+      parts.push(template.slice(cursor));
+    }
+    return createElement(
+      Fragment,
+      null,
+      ...parts.map((p) => {
+        if (typeof p === "string") return p;
+        keyCounter += 1;
+        return createElement(Fragment, { key: keyCounter }, p as React.ReactNode);
+      }),
+    );
+  }
+  function makeTranslator(namespace?: string) {
+    const t = (key: string, values?: Record<string, unknown>) =>
+      interpolate(lookup(namespace ? `${namespace}.${key}` : key), values);
+    (t as unknown as { rich: typeof t }).rich = ((
+      key: string,
+      values?: Record<string, unknown>,
+    ) => richSplit(lookup(namespace ? `${namespace}.${key}` : key), values)) as typeof t;
+    return t as typeof t & { rich: typeof t };
+  }
+  return {
+    getTranslations: async (namespace?: string) => makeTranslator(namespace),
+    getLocale: async () => "en",
+    getMessages: async () => enMessages,
+  };
+});
 
 describe("HomePage", () => {
   beforeEach(() => {

@@ -1,0 +1,243 @@
+{
+  "nav": {
+    "brand": "IssuePilot",
+    "shellTitle": "指挥中心",
+    "primary": "主导航",
+    "commandCenter": "指挥中心",
+    "reports": "报告",
+    "modeTag": "v2.5 · 本地模式",
+    "skipToMain": "跳到主内容"
+  },
+  "theme": {
+    "toggle": "切换主题",
+    "light": "浅色",
+    "dark": "深色",
+    "placeholder": "主题"
+  },
+  "locale": {
+    "toggle": "切换语言",
+    "placeholder": "语言"
+  },
+  "common": {
+    "dash": "—",
+    "open": "打开",
+    "openArrow": "打开 →",
+    "fullDetail": "完整详情 →",
+    "selectRun": "在左侧选一条 run，即可加载它的 Review Packet。",
+    "refreshFailed": "刷新失败",
+    "utc": "UTC",
+    "close": "关闭"
+  },
+  "home": {
+    "overheadLabel": "总览",
+    "title": "指挥中心",
+    "description": "一屏看完所有活跃的 IssuePilot run。实时事件走 SSE，从 <code>/api/events/stream</code> 推过来；merge readiness 只做 dry run，orchestrator 不会自动合并 MR。",
+    "metaDescription": "一屏看完所有活跃的 IssuePilot run。实时事件走 SSE，从 /api/events/stream 推过来；merge readiness 只做 dry run，orchestrator 不会自动合并 MR。",
+    "errorTitle": "无法连接到 IssuePilot orchestrator",
+    "errorHint": "用 <cmd>issuepilot run --workflow /path/to/target-project/WORKFLOW.md</cmd> 启动 orchestrator，或者用 <cmd>issuepilot run --config /path/to/issuepilot.team.yaml</cmd> 启动 team 模式，然后刷新本页。"
+  },
+  "service": {
+    "areaLabel": "Orchestrator 服务",
+    "statusLabel": "服务状态",
+    "concurrency": "并发数",
+    "pollInterval": "轮询间隔",
+    "workflow": "Workflow",
+    "lastPoll": "最近轮询",
+    "lastConfigReload": "最近配置重载",
+    "workspaceUsage": "Workspace 占用",
+    "nextCleanup": "下次清理",
+    "pollIntervalUnit": "{value} ms",
+    "workspaceUsageUnit": "{value} GB",
+    "expand": "更多详情",
+    "collapse": "收起"
+  },
+  "summary": {
+    "title": "活动队列",
+    "caption": "活动队列 · 最近一次扫描",
+    "totalLabel": "共 {total} 条",
+    "trackAria": "Run 生命周期分布",
+    "trackEmptyAria": "队列暂无 run"
+  },
+  "runs": {
+    "title": "Run 列表",
+    "caption": "共 {count} 条 · 点击任意行加载 Review Packet"
+  },
+  "list": {
+    "headStatus": "状态",
+    "headIssue": "Issue",
+    "headBranch": "分支",
+    "headReadiness": "就绪度",
+    "headCi": "CI",
+    "headAttempt": "尝试",
+    "emptyTitle": "暂无 run。",
+    "emptyBody": "orchestrator 还没有 claim 任何 issue。在 GitLab 给 issue 打上 <code>ai-ready</code> 标签即可触发。",
+    "attempt": "第 {value} 次",
+    "ciTag": "CI: {value}",
+    "runId": "{value}"
+  },
+  "board": {
+    "columnAria": "{column} 列（{count}）",
+    "countAria": "{column} 数量",
+    "empty": "本列暂无 run。",
+    "ciTag": "CI:{value}"
+  },
+  "viewToggle": {
+    "aria": "指挥中心视图切换",
+    "list": "列表",
+    "board": "看板"
+  },
+  "inspector": {
+    "title": "Review Packet",
+    "empty": "在左侧选一条 run，即可加载它的 Review Packet。",
+    "noTitle": "（无标题）",
+    "missingReport": "还没有报告 — daemon 尚未为这条 run 写入报告，或者它是历史 run。",
+    "branch": "分支",
+    "attempt": "尝试",
+    "highestRisk": "最高风险",
+    "mr": "MR",
+    "ciTag": "CI: {value}"
+  },
+  "reportsPage": {
+    "overheadLabel": "Run 分析",
+    "title": "报告",
+    "description": "从本地 run 报告里跑出来的质量与耗时指标。这里的 merge readiness 只做 dry run，orchestrator 不会自动合并 MR。",
+    "countersAria": "报告计数器",
+    "tableAria": "报告表",
+    "totalReports": "报告总数",
+    "readyToMerge": "可合并",
+    "blocked": "被阻塞",
+    "medianDuration": "耗时中位数",
+    "ofTotal": "占总数 {percent}%",
+    "failedCount": "{count, plural, other {# 条失败 run}}",
+    "perDayTitle": "每日 run 数 · 最近 7 天",
+    "perDayAria": "最近 7 天每日新增 run 数",
+    "mixTitle": "Merge readiness 分布",
+    "tableHeading": "按 run 汇总",
+    "rowCount": "{count, plural, other {# 行}}",
+    "tableEmpty": "暂无报告。orchestrator 跑起来后，这里就会有数据。",
+    "headRun": "Run",
+    "headIssue": "Issue",
+    "headStatus": "状态",
+    "headReadiness": "就绪度",
+    "headCi": "CI",
+    "headDuration": "耗时",
+    "headUpdated": "更新于",
+    "errorTitle": "无法加载 IssuePilot 报告",
+    "trendLabel": "{label} 趋势"
+  },
+  "runDetail": {
+    "backLink": "← 指挥中心",
+    "runsCrumb": "runs",
+    "runAttempt": "Run · 第 {attempt} 次",
+    "runHeaderAria": "Run {runId}",
+    "field": {
+      "issue": "Issue",
+      "branch": "分支",
+      "mergeRequest": "合并请求",
+      "workspace": "Workspace",
+      "labels": "标签",
+      "latestCi": "最近 CI",
+      "failure": "失败信息"
+    },
+    "ciTag": "CI {value}",
+    "reviewPacketSection": "Review Packet",
+    "reviewPacketCaption": "V2.5 handoff + merge readiness",
+    "legacyNote": "这是一条历史 run，没有生成报告。下方仍能看到它的 timeline 和日志。",
+    "timeline": "时间线",
+    "timelineCaption": "生命周期 + agent 事件",
+    "toolCalls": "工具调用",
+    "toolCallsCaption": "Agent 的原始工具调用",
+    "logTail": "日志尾部",
+    "logTailCaption": "最近的 stderr 行（进程内）",
+    "reviewFeedback": "最近一次 review 反馈",
+    "reviewSwept": "扫描于",
+    "reviewCursor": "游标",
+    "reviewEmpty": "自上次扫描后还没有新的 reviewer 评论。",
+    "viewNote": "查看",
+    "viewNoteAria": "在 GitLab 打开 note {id}",
+    "noteResolvedAria": "note {id} 已解决",
+    "openMr": "打开",
+    "openMrAria": "合并请求",
+    "resolved": "resolved",
+    "openMrLabel": "MR !{id}",
+    "errorTitle": "无法加载 run {runId}",
+    "actionFailed": "{label} 失败",
+    "actionFailedDetail": "{label} 失败（{detail}）",
+    "actionFailedMessage": "{label} 失败：{message}"
+  },
+  "reviewPacket": {
+    "sectionLabel": "Review Packet",
+    "handoff": "交接",
+    "validation": "验证",
+    "validationEmpty": "未填写",
+    "risks": "风险",
+    "followUps": "待跟进",
+    "nextAction": "下一步",
+    "mergeReadiness": "Merge readiness",
+    "evaluated": "评估于",
+    "reasons": "原因",
+    "checks": "校验"
+  },
+  "timeline": {
+    "empty": "这条 run 还没有事件。",
+    "thread": "thread {id}",
+    "turn": "turn {id}",
+    "data": "data"
+  },
+  "toolCalls": {
+    "empty": "暂无工具调用。",
+    "turn": "turn {id}"
+  },
+  "logTail": {
+    "empty": "日志尾部不可用 — 在本机用 tail <code>~/.issuepilot/state/logs/issuepilot.log</code> 查看完整输出。"
+  },
+  "actions": {
+    "retry": "重试",
+    "stop": "停止",
+    "archive": "归档",
+    "detail": "详情",
+    "detailAria": "查看 {runId} 详情",
+    "labels": {
+      "retry": "retry",
+      "stop": "stop",
+      "archive": "archive"
+    }
+  },
+  "overview": {
+    "title": "IssuePilot Dashboard",
+    "description": "本地 orchestrator 的只读实时时间线。事件走 SSE，从 <code>/api/events/stream</code> 推过来。",
+    "summary": "概览",
+    "projects": "项目",
+    "runs": "Run 列表",
+    "actionFailed": "{label} 失败：{runId}",
+    "actionFailedDetail": "{label} 失败：{runId}（{detail}）",
+    "actionFailedMessage": "{label} 失败：{runId}：{message}"
+  },
+  "runsTable": {
+    "showArchived": "显示已归档",
+    "empty": "暂无活跃 run。在 GitLab 给 issue 打上 <code>ai-ready</code> 标签即可触发。",
+    "headIssue": "Issue",
+    "headTitle": "标题",
+    "headLabels": "标签",
+    "headStatus": "状态",
+    "headTurns": "Turn 数",
+    "headLastEvent": "最近事件",
+    "headElapsed": "耗时",
+    "headBranch": "分支",
+    "headMr": "MR",
+    "headWorkspace": "Workspace",
+    "headActions": "操作",
+    "mrAria": "合并请求",
+    "ciTag": "CI {value}",
+    "ciCheckedAtTitle": "最近检查于 {value}",
+    "latestCiAria": "最近 ci {value}"
+  },
+  "projects": {
+    "empty": "没有配置 team 项目。",
+    "active": "{count} 个活跃",
+    "loadError": "加载失败",
+    "disabled": "已禁用",
+    "lastPoll": "最近轮询：{value}",
+    "notPolled": "未轮询"
+  }
+}

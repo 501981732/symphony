@@ -5,6 +5,7 @@ import type {
   RunRecord,
   RunStatus,
 } from "@issuepilot/shared-contracts";
+import { useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
 
 import { Badge, type BadgeTone } from "../ui/badge";
@@ -38,11 +39,11 @@ const CI_TONES: Record<PipelineStatus, BadgeTone> = {
   unknown: "neutral",
 };
 
-function formatElapsed(startedAt: string, endedAt?: string): string {
+function formatElapsed(startedAt: string, endedAt: string | undefined, dash: string): string {
   const start = Date.parse(startedAt);
-  if (Number.isNaN(start)) return "—";
+  if (Number.isNaN(start)) return dash;
   const end = endedAt ? Date.parse(endedAt) : Date.now();
-  if (Number.isNaN(end)) return "—";
+  if (Number.isNaN(end)) return dash;
   const seconds = Math.max(0, Math.round((end - start) / 1_000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -91,6 +92,10 @@ export function RunsTable({
   onArchive,
   actionsPending = false,
 }: RunsTableProps) {
+  const t = useTranslations("runsTable");
+  const tActions = useTranslations("actions");
+  const tCommon = useTranslations("common");
+  const dash = tCommon("dash");
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [direction, setDirection] = useState<SortDirection>("desc");
   const [showArchived, setShowArchived] = useState(false);
@@ -119,14 +124,14 @@ export function RunsTable({
   };
 
   const archivedToggle = runs.some((r) => r.archivedAt) ? (
-    <label className="flex items-center gap-2 self-end text-xs text-slate-600">
+    <label className="flex items-center gap-2 self-end text-xs text-fg-muted">
       <input
         type="checkbox"
-        className="h-3.5 w-3.5"
+        className="h-3.5 w-3.5 accent-info"
         checked={showArchived}
         onChange={(e) => setShowArchived(e.target.checked)}
       />
-      Show archived
+      {t("showArchived")}
     </label>
   ) : null;
 
@@ -134,10 +139,10 @@ export function RunsTable({
     return (
       <div className="flex flex-col gap-2">
         {archivedToggle}
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
-          No active runs yet. Add the{" "}
-          <code className="font-mono">ai-ready</code> label to a GitLab issue
-          to kick one off.
+        <div className="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center text-sm text-fg-subtle">
+          {t.rich("empty", {
+            code: (chunks) => <code className="font-mono">{chunks}</code>,
+          })}
         </div>
       </div>
     );
@@ -147,7 +152,7 @@ export function RunsTable({
     <TableHead
       aria-sort={sortKey === key ? ARIA_SORT[direction] : "none"}
       onClick={() => toggleSort(key)}
-      className="cursor-pointer select-none hover:text-slate-700"
+      className="cursor-pointer select-none hover:text-fg"
     >
       <span className="inline-flex items-center gap-1">
         {label}
@@ -164,17 +169,17 @@ export function RunsTable({
       <Table>
       <TableHeader>
         <TableRow>
-          {sortableHead("iid", "Issue")}
-          <TableHead>Title</TableHead>
-          <TableHead>Labels</TableHead>
-          {sortableHead("status", "Status")}
-          <TableHead>Turns</TableHead>
-          <TableHead>Last event</TableHead>
-          <TableHead>Elapsed</TableHead>
-          <TableHead>Branch</TableHead>
-          <TableHead>MR</TableHead>
-          <TableHead>Workspace</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
+          {sortableHead("iid", t("headIssue"))}
+          <TableHead>{t("headTitle")}</TableHead>
+          <TableHead>{t("headLabels")}</TableHead>
+          {sortableHead("status", t("headStatus"))}
+          <TableHead>{t("headTurns")}</TableHead>
+          <TableHead>{t("headLastEvent")}</TableHead>
+          <TableHead>{t("headElapsed")}</TableHead>
+          <TableHead>{t("headBranch")}</TableHead>
+          <TableHead>{t("headMr")}</TableHead>
+          <TableHead>{t("headWorkspace")}</TableHead>
+          <TableHead className="text-right">{t("headActions")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -182,7 +187,7 @@ export function RunsTable({
           <TableRow key={run.runId}>
             <TableCell>
               <a
-                className="font-mono text-sky-700 hover:underline"
+                className="font-mono text-info hover:underline"
                 href={run.issue.url}
                 target="_blank"
                 rel="noreferrer noopener"
@@ -211,14 +216,14 @@ export function RunsTable({
                 {run.latestCiStatus ? (
                   <Badge
                     tone={CI_TONES[run.latestCiStatus]}
-                    aria-label={`latest ci ${run.latestCiStatus}`}
+                    aria-label={t("latestCiAria", { value: run.latestCiStatus })}
                     title={
                       run.latestCiCheckedAt
-                        ? `Last checked ${run.latestCiCheckedAt}`
+                        ? t("ciCheckedAtTitle", { value: run.latestCiCheckedAt })
                         : undefined
                     }
                   >
-                    CI {run.latestCiStatus}
+                    {t("ciTag", { value: run.latestCiStatus })}
                   </Badge>
                 ) : null}
               </div>
@@ -228,10 +233,10 @@ export function RunsTable({
               className="max-w-[22ch] truncate font-mono text-xs"
               title={run.lastEvent?.message}
             >
-              {run.lastEvent?.type ?? "—"}
+              {run.lastEvent?.type ?? dash}
             </TableCell>
             <TableCell className="tabular-nums">
-              {formatElapsed(run.startedAt, run.endedAt)}
+              {formatElapsed(run.startedAt, run.endedAt, dash)}
             </TableCell>
             <TableCell className="max-w-[24ch] truncate font-mono text-xs">
               {run.branch}
@@ -239,20 +244,20 @@ export function RunsTable({
             <TableCell>
               {run.mergeRequestUrl ? (
                 <a
-                  className="text-sky-700 hover:underline"
+                  className="text-info hover:underline"
                   href={run.mergeRequestUrl}
                   target="_blank"
                   rel="noreferrer noopener"
-                  aria-label="merge request"
+                  aria-label={t("mrAria")}
                 >
-                  open
+                  {tCommon("open")}
                 </a>
               ) : (
-                <span className="text-slate-400">—</span>
+                <span className="text-fg-subtle">{dash}</span>
               )}
             </TableCell>
             <TableCell
-              className="max-w-[24ch] truncate font-mono text-xs text-slate-500"
+              className="max-w-[24ch] truncate font-mono text-xs text-fg-subtle"
               title={run.workspacePath}
             >
               {run.workspacePath}
@@ -260,11 +265,11 @@ export function RunsTable({
             <TableCell className="text-right">
               <div className="flex flex-col items-end gap-1">
                 <a
-                  className="text-sky-700 hover:underline"
+                  className="text-info hover:underline"
                   href={`/runs/${encodeURIComponent(run.runId)}`}
-                  aria-label={`detail of ${run.runId}`}
+                  aria-label={tActions("detailAria", { runId: run.runId })}
                 >
-                  detail
+                  {tActions("detail")}
                 </a>
                 <RunActions
                   run={{

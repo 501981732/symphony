@@ -652,4 +652,55 @@ describe("startDaemon human-review event publishing", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  // V2.5 Command Center: the daemon must construct a report store rooted at
+  // `${workflow.workspace.root}/.issuepilot` and inject it into createServer
+  // so `/api/runs`, `/api/runs/:runId` and `/api/reports` can return report
+  // summaries. We only assert the wiring here; report contents are exercised
+  // in the unit tests for the report store, server and dashboard helpers.
+  it("wires a report store into createServer", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "issuepilot-daemon-reports-"),
+    );
+    const workflow = createWorkflow(root);
+    let serverDeps: ServerDeps | undefined;
+    const createServer = vi.fn(async (deps: ServerDeps) => {
+      serverDeps = deps;
+      return createFakeServer();
+    });
+
+    const daemon = await startDaemon(
+      { workflowPath: workflow.source.path },
+      {
+        workflowLoader: {
+          loadOnce: vi.fn(async () => workflow),
+          start: vi.fn(async () => ({
+            stop: vi.fn(async () => {}),
+          })),
+          render: vi.fn(() => "prompt"),
+        },
+        createGitLab: vi.fn(async () =>
+          createGitLabForHumanReviewScanPollution(),
+        ),
+        createServer,
+        startLoop: vi.fn(() => ({
+          tick: vi.fn(async () => {}),
+          stop: vi.fn(async () => {}),
+        })),
+        state: createRuntimeState(),
+      },
+    );
+
+    try {
+      expect(serverDeps).toBeDefined();
+      expect(serverDeps?.reports).toBeDefined();
+      expect(typeof serverDeps?.reports?.get).toBe("function");
+      expect(typeof serverDeps?.reports?.save).toBe("function");
+      expect(typeof serverDeps?.reports?.summary).toBe("function");
+      expect(typeof serverDeps?.reports?.allSummaries).toBe("function");
+    } finally {
+      await daemon.stop();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

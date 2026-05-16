@@ -1,11 +1,14 @@
 import { createEventBus } from "@issuepilot/observability";
-import type {
-  ProjectSummary,
-  TeamRuntimeSummary,
+import {
+  RUN_REPORT_VERSION,
+  type ProjectSummary,
+  type RunReportArtifact,
+  type TeamRuntimeSummary,
 } from "@issuepilot/shared-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OperatorActionResult } from "../../operations/actions.js";
+import { buildRunReportSummary } from "@issuepilot/shared-contracts";
 import { createRuntimeState } from "../../runtime/state.js";
 import { createServer, type ServerDeps } from "../index.js";
 
@@ -33,6 +36,7 @@ async function buildTestApp(
     runtime?: TeamRuntimeSummary | (() => TeamRuntimeSummary);
     projects?: ProjectSummary[] | (() => ProjectSummary[]);
     operatorActions?: ServerDeps["operatorActions"];
+    reports?: ServerDeps["reports"];
   } = {},
 ) {
   const state = createRuntimeState();
@@ -52,6 +56,7 @@ async function buildTestApp(
       ...(overrides.operatorActions
         ? { operatorActions: overrides.operatorActions }
         : {}),
+      ...(overrides.reports ? { reports: overrides.reports } : {}),
     },
     { port: 0 },
   );
@@ -820,6 +825,139 @@ describe("archived run filter", () => {
       });
       const body = JSON.parse(resp.body) as Array<{ runId: string }>;
       expect(body).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("run reports", () => {
+  function fixtureReport(): RunReportArtifact {
+    return {
+      version: RUN_REPORT_VERSION,
+      runId: "run-1",
+      issue: {
+        projectId: "group/project",
+        iid: 42,
+        title: "Fix checkout",
+        url: "https://gitlab.example.com/issues/42",
+        labels: ["human-review"],
+      },
+      run: {
+        status: "completed",
+        attempt: 1,
+        branch: "ai/42-fix-checkout",
+        workspacePath: "/tmp/ws",
+        startedAt: "2026-05-16T00:00:00.000Z",
+        endedAt: "2026-05-16T00:05:00.000Z",
+        durations: { totalMs: 300000 },
+      },
+      handoff: {
+        summary: "Updated checkout copy.",
+        validation: ["pnpm test passed"],
+        risks: [],
+        followUps: [],
+        nextAction: "Review and merge the MR.",
+      },
+      diff: { summary: "1 file changed", filesChanged: 1, notableFiles: [] },
+      checks: [],
+      mergeReadiness: {
+        mode: "dry-run",
+        status: "ready",
+        reasons: [
+          {
+            code: "all_checks_satisfied",
+            severity: "info",
+            message: "ok",
+          },
+        ],
+        evaluatedAt: "2026-05-16T00:06:00.000Z",
+      },
+      notes: {},
+    };
+  }
+
+  function buildReportStore(report: RunReportArtifact) {
+    const summary = buildRunReportSummary(report);
+    return {
+      save: async () => {},
+      get: async (runId: string) =>
+        runId === report.runId ? report : undefined,
+      summary: (runId: string) =>
+        runId === report.runId ? summary : undefined,
+      allSummaries: () => [summary],
+    };
+  }
+
+  it("GET /api/runs attaches the report summary when present", async () => {
+    const report = fixtureReport();
+    const { app, state } = await buildTestApp(async () => [], {
+      reports: buildReportStore(report),
+    });
+    try {
+      state.setRun("run-1", {
+        runId: "run-1",
+        status: "completed",
+        attempt: 1,
+        issue: { iid: 42, labels: ["human-review"] },
+      });
+      const resp = await app.inject({ method: "GET", url: "/api/runs" });
+      const body = JSON.parse(resp.body) as Array<{
+        runId: string;
+        report?: { mergeReadinessStatus: string };
+      }>;
+      expect(body[0]!.report?.mergeReadinessStatus).toBe("ready");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("GET /api/runs/:runId returns the full report artifact", async () => {
+    const report = fixtureReport();
+    const { app, state } = await buildTestApp(async () => [], {
+      reports: buildReportStore(report),
+    });
+    try {
+      state.setRun("run-1", {
+        runId: "run-1",
+        status: "completed",
+        attempt: 1,
+        issue: { iid: 42, labels: ["human-review"] },
+      });
+      const resp = await app.inject({
+        method: "GET",
+        url: "/api/runs/run-1",
+      });
+      const body = JSON.parse(resp.body) as { report?: { runId: string } };
+      expect(body.report?.runId).toBe("run-1");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("GET /api/reports lists report summaries", async () => {
+    const report = fixtureReport();
+    const { app } = await buildTestApp(async () => [], {
+      reports: buildReportStore(report),
+    });
+    try {
+      const resp = await app.inject({ method: "GET", url: "/api/reports" });
+      const body = JSON.parse(resp.body) as {
+        reports: Array<{ runId: string }>;
+      };
+      expect(body.reports).toHaveLength(1);
+      expect(body.reports[0]!.runId).toBe("run-1");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("GET /api/reports returns empty list when reports are not configured", async () => {
+    const { app } = await buildTestApp();
+    try {
+      const resp = await app.inject({ method: "GET", url: "/api/reports" });
+      const body = JSON.parse(resp.body) as { reports: unknown[] };
+      expect(body.reports).toEqual([]);
     } finally {
       await app.close();
     }

@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { IssuePilotEvent, RunRecord } from "@issuepilot/shared-contracts";
 
 import { __setEventSourceFactory } from "../../lib/use-event-stream";
+import { renderWithIntl as render } from "../../test/intl";
+
 import { RunDetailPage } from "./run-detail-page";
 
 const routerRefresh = vi.fn();

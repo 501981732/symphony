@@ -4,6 +4,7 @@ import type { RuntimeState } from "../runtime/state.js";
 
 import type { Classification } from "./classify.js";
 import { classifyError } from "./classify.js";
+import type { ReconcileResult } from "./reconcile.js";
 import { shouldRetry } from "./retry.js";
 
 export interface DispatchDeps {
@@ -63,7 +64,7 @@ export interface DispatchDeps {
     runningLabel: string;
     handoffLabel: string;
     reworkLabel: string;
-  }): Promise<void>;
+  }): Promise<void | ReconcileResult>;
 
   onEvent(event: {
     type: string;
