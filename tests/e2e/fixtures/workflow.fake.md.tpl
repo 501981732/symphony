@@ -4,7 +4,7 @@ tracker:
   base_url: __GITLAB_URL__
   project_id: __PROJECT_ID__
   token_env: GITLAB_TOKEN
-  active_labels: ["ai-ready"]
+  active_labels: __ACTIVE_LABELS__
   running_label: "ai-running"
   handoff_label: "human-review"
   failed_label: "ai-failed"

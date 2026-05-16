@@ -60,6 +60,39 @@ export interface ClaimedIssue {
   issue: IssueRef;
 }
 
+interface PriorReviewState {
+  latestReviewFeedback?: unknown;
+  lastDiscussionCursor?: string;
+}
+
+function findPriorReviewState(
+  state: RuntimeState,
+  iid: number,
+): PriorReviewState {
+  let candidate: { record: ReturnType<RuntimeState["allRuns"]>[number]; startedAt: string } | undefined;
+  for (const run of state.allRuns()) {
+    const runIssue = (run as { issue?: { iid?: number } }).issue;
+    if (runIssue?.iid !== iid) continue;
+    const startedAt = (run as { startedAt?: string }).startedAt ?? "";
+    if (!candidate || startedAt > candidate.startedAt) {
+      candidate = { record: run, startedAt };
+    }
+  }
+  if (!candidate) return {};
+  const record = candidate.record as {
+    latestReviewFeedback?: unknown;
+    lastDiscussionCursor?: string;
+  };
+  const out: PriorReviewState = {};
+  if (record.latestReviewFeedback) {
+    out.latestReviewFeedback = record.latestReviewFeedback;
+  }
+  if (record.lastDiscussionCursor) {
+    out.lastDiscussionCursor = record.lastDiscussionCursor;
+  }
+  return out;
+}
+
 export async function claimCandidates(
   input: ClaimInput,
 ): Promise<ClaimedIssue[]> {
@@ -106,6 +139,16 @@ export async function claimCandidates(
 
     const runId = randomUUID();
     input.slots.tryAcquire(runId);
+
+    // Phase 4: when a human-reviewer cycles an issue back to ai-rework,
+    // the issue gets a *new* run id but we still want the new agent
+    // attempt to see the most recent review feedback collected on the
+    // previous run. We look up the most recent prior run for the same
+    // iid and forward `latestReviewFeedback` + `lastDiscussionCursor`.
+    // Without this carry-forward the sweep cursor would also reset and
+    // the dispatcher would re-inject the same comments on every claim.
+    const carryForward = findPriorReviewState(input.state, issue.iid);
+
     input.state.setRun(runId, {
       runId,
       status: "claimed",
@@ -115,6 +158,12 @@ export async function claimCandidates(
       workspacePath: "",
       projectId: input.projectId ?? "default",
       ...(input.projectName ? { projectName: input.projectName } : {}),
+      ...(carryForward.latestReviewFeedback
+        ? { latestReviewFeedback: carryForward.latestReviewFeedback }
+        : {}),
+      ...(carryForward.lastDiscussionCursor
+        ? { lastDiscussionCursor: carryForward.lastDiscussionCursor }
+        : {}),
       startedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });

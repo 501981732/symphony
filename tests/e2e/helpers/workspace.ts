@@ -74,6 +74,14 @@ export interface CreateE2EWorkspaceOptions {
    * Defaults to `"ai-rework"`.
    */
   ciOnFailure?: "ai-rework" | "human-review";
+  /**
+   * Override `tracker.active_labels`. Defaults to `["ai-ready"]` to keep
+   * the happy-path / CI feedback tests from accidentally re-claiming
+   * recycled issues. The Phase 4 review feedback sweep e2e bumps this
+   * to `["ai-ready", "ai-rework"]` so it can exercise the full
+   * ai-rework → reclaim → prompt-injection loop.
+   */
+  activeLabels?: string[];
 }
 
 export async function createE2EWorkspace(
@@ -131,7 +139,11 @@ export async function createE2EWorkspace(
     .replaceAll("__MAX_ATTEMPTS__", String(opts.maxAttempts ?? 1))
     .replaceAll("__TURN_TIMEOUT_MS__", String(opts.turnTimeoutMs ?? 15_000))
     .replaceAll("__CI_ENABLED__", String(opts.ciEnabled ?? false))
-    .replaceAll("__CI_ON_FAILURE__", opts.ciOnFailure ?? "ai-rework");
+    .replaceAll("__CI_ON_FAILURE__", opts.ciOnFailure ?? "ai-rework")
+    .replaceAll(
+      "__ACTIVE_LABELS__",
+      JSON.stringify(opts.activeLabels ?? ["ai-ready"]),
+    );
   writeFileSync(workflowPath, rendered);
 
   return {

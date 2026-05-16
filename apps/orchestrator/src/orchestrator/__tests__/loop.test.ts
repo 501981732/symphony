@@ -311,6 +311,66 @@ describe("startLoop", () => {
     await loop.stop();
   });
 
+  it("runs sweepReviewFeedback after scanCiFeedback when both are injected (V2 Phase 4)", async () => {
+    const sequence: string[] = [];
+    const deps = createFakeLoopDeps({
+      reconcileRunning: vi.fn(async () => {
+        sequence.push("reconcileRunning");
+      }),
+      scanCiFeedback: vi.fn(async () => {
+        sequence.push("scanCiFeedback");
+      }),
+      sweepReviewFeedback: vi.fn(async () => {
+        sequence.push("sweepReviewFeedback");
+      }),
+      claim: vi.fn(async () => {
+        sequence.push("claim");
+        return [];
+      }),
+    });
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(sequence).toEqual([
+      "reconcileRunning",
+      "scanCiFeedback",
+      "sweepReviewFeedback",
+      "claim",
+    ]);
+
+    await loop.stop();
+  });
+
+  it("does not invoke sweepReviewFeedback when omitted", async () => {
+    const deps = createFakeLoopDeps();
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(
+      (deps as { sweepReviewFeedback?: unknown }).sweepReviewFeedback,
+    ).toBeUndefined();
+    await loop.stop();
+  });
+
+  it("logs sweepReviewFeedback errors and continues the tick", async () => {
+    const deps = createFakeLoopDeps({
+      sweepReviewFeedback: vi.fn(async () => {
+        throw new Error("notes endpoint down");
+      }),
+    });
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(deps.logError).toHaveBeenCalled();
+    expect(deps.claim).toHaveBeenCalled();
+    expect(deps.dispatch).toHaveBeenCalledTimes(2);
+
+    await loop.stop();
+  });
+
   it("stop waits for inflight dispatches", async () => {
     let dispatchResolved = false;
     const deps = createFakeLoopDeps({

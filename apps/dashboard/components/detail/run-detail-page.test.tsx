@@ -203,4 +203,83 @@ describe("RunDetailPage", () => {
     expect(screen.queryByLabelText(/latest ci/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Latest CI$/)).not.toBeInTheDocument();
   });
+
+  it("renders the Latest review feedback panel when run.latestReviewFeedback is present (V2 Phase 4)", () => {
+    const longBody =
+      "Please address this concern: " + "x".repeat(400);
+    render(
+      <RunDetailPage
+        run={{
+          ...run,
+          latestReviewFeedback: {
+            mrIid: 42,
+            mrUrl: "https://gitlab.example.com/group/project/-/merge_requests/42",
+            generatedAt: "2026-05-16T00:02:00.000Z",
+            cursor: "2026-05-16T00:01:30.000Z",
+            comments: [
+              {
+                noteId: 7,
+                author: "alice",
+                body: "Please rename `helper` to `compute`.",
+                url: "https://gitlab.example.com/group/project/-/merge_requests/42#note_7",
+                createdAt: "2026-05-16T00:01:00.000Z",
+                resolved: false,
+              },
+              {
+                noteId: 8,
+                author: "bob",
+                body: longBody,
+                url: "https://gitlab.example.com/group/project/-/merge_requests/42#note_8",
+                createdAt: "2026-05-16T00:01:30.000Z",
+                resolved: true,
+              },
+            ],
+          },
+        }}
+        initialEvents={[]}
+        logsTail={[]}
+      />,
+    );
+
+    const heading = screen.getByRole("heading", {
+      name: /latest review feedback/i,
+    });
+    expect(heading).toBeInTheDocument();
+
+    expect(screen.getByText("@alice")).toBeInTheDocument();
+    expect(
+      screen.getByText("Please rename `helper` to `compute`."),
+    ).toBeInTheDocument();
+
+    // Long bodies are truncated to 200 chars with an ellipsis so the
+    // panel stays readable; the deep-link still goes to the full note
+    // on GitLab.
+    const truncated = screen.getByText((content) =>
+      content.startsWith("Please address this concern:") &&
+      content.length <= 210 &&
+      content.endsWith("…"),
+    );
+    expect(truncated).toBeInTheDocument();
+
+    const noteLink = screen.getByRole("link", {
+      name: /open note 8 on gitlab/i,
+    });
+    expect(noteLink).toHaveAttribute(
+      "href",
+      "https://gitlab.example.com/group/project/-/merge_requests/42#note_8",
+    );
+    expect(noteLink).toHaveAttribute("target", "_blank");
+
+    // The resolved badge marks the second comment so reviewers can tell
+    // at a glance which threads have already been closed.
+    expect(screen.getByLabelText("note 8 resolved")).toBeInTheDocument();
+  });
+
+  it("omits the Latest review feedback panel when latestReviewFeedback is absent", () => {
+    render(<RunDetailPage run={run} initialEvents={[]} logsTail={[]} />);
+
+    expect(
+      screen.queryByRole("heading", { name: /latest review feedback/i }),
+    ).not.toBeInTheDocument();
+  });
 });

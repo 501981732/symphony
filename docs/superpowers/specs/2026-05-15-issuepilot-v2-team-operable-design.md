@@ -1,13 +1,40 @@
 # IssuePilot V2 团队可运营版本设计
 
 日期：2026-05-15
-状态：待用户评审
+状态：已确认；Phase 1-4 已合入，下一步 Phase 5
 关联文档：
 
 - `docs/superpowers/specs/2026-05-11-issuepilot-design.md`
 - `docs/superpowers/specs/2026-05-15-issuepilot-gap-closure-design.md`
 - `docs/superpowers/specs/2026-05-15-issuepilot-v1-local-release-design.md`
 - `docs/superpowers/plans/2026-05-15-issuepilot-v1-installable-local-release.md`
+- `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase1-team-runtime-foundation-design.md`
+- `docs/superpowers/specs/2026-05-15-issuepilot-v2-phase2-dashboard-operations-design.md`
+- `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase3-ci-feedback-design.md`
+- `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md`
+- `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md`
+
+## 0. 文档入口和当前进度
+
+本文件是 V2 的总设计 spec，也是 V2 文档导航入口。每个 V2 实施计划必须有一个对应的
+补充 spec；补充 spec 只锁定该 Phase 的细节，不替代本总 spec。
+
+当前 V2 进度：**Phase 1、Phase 2、Phase 3、Phase 4 已合入 `main`；下一步是
+Phase 5 Workspace Retention。**
+
+| 顺序 | Phase | 状态 | 对应 spec | 对应 plan |
+| --- | --- | --- | --- | --- |
+| 1 | Team Runtime Foundation | 已完成 | `2026-05-16-issuepilot-v2-phase1-team-runtime-foundation-design.md` | `2026-05-15-issuepilot-v2-team-runtime-foundation.md` |
+| 2 | Dashboard Operations | 已完成 | `2026-05-15-issuepilot-v2-phase2-dashboard-operations-design.md` | `2026-05-15-issuepilot-v2-dashboard-operations.md` |
+| 3 | CI Feedback | 已完成 | `2026-05-16-issuepilot-v2-phase3-ci-feedback-design.md` | `2026-05-15-issuepilot-v2-ci-feedback.md` |
+| 4 | Review Feedback Sweep | 已完成 | `2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md` | `2026-05-15-issuepilot-v2-review-feedback-sweep.md` |
+| 5 | Workspace Retention | 下一步，待实施 | `2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md` | `2026-05-15-issuepilot-v2-workspace-retention.md` |
+
+阅读顺序：
+
+1. 先读本文件的目标、边界和架构。
+2. 再按上表顺序读对应 Phase 的补充 spec。
+3. 真正执行时读对应 plan；plan 只作为实施任务拆解，不作为产品源头。
 
 ## 1. 背景
 
@@ -349,11 +376,17 @@ V2 实现需要覆盖：
 
 ### Phase 1：Team Runtime Foundation
 
+状态：已完成，已合入 `main`。
+
 - team config parser。
 - project registry。
 - lease store。
 - scheduler 多项目并发。
 - dashboard overview 按 project 分组。
+
+补充设计：
+
+- `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase1-team-runtime-foundation-design.md`
 
 实施计划：
 
@@ -361,25 +394,33 @@ V2 实现需要覆盖：
 
 ### Phase 2：Dashboard Operations
 
+状态：已完成，已合入 `main`。
+
 - retry / stop / archive API。
 - operator action events。
 - dashboard 按状态展示可用操作。
 - focused E2E 覆盖 retry 和 stop。
 
-实施计划：
-
-- `docs/superpowers/plans/2026-05-15-issuepilot-v2-dashboard-operations.md`
-
 补充设计：
 
 - `docs/superpowers/specs/2026-05-15-issuepilot-v2-phase2-dashboard-operations-design.md`
 
+实施计划：
+
+- `docs/superpowers/plans/2026-05-15-issuepilot-v2-dashboard-operations.md`
+
 ### Phase 3：CI 回流
+
+状态：已完成，已合入 `main`。
 
 - GitLab pipeline lookup。
 - CI status event。
 - failed pipeline -> `ai-rework` 策略。
 - dashboard 显示 CI 状态。
+
+补充设计：
+
+- `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase3-ci-feedback-design.md`
 
 实施计划：
 
@@ -387,10 +428,16 @@ V2 实现需要覆盖：
 
 ### Phase 4：Review Feedback Sweep
 
+状态：已完成。
+
 - MR discussion cursor。
 - feedback summary event。
 - `ai-rework` prompt 注入。
 - dashboard 展示 feedback 摘要。
+
+补充设计：
+
+- `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md`
 
 实施计划：
 
@@ -398,10 +445,16 @@ V2 实现需要覆盖：
 
 ### Phase 5：Workspace Retention
 
+状态：下一步，待实施。
+
 - retention config。
 - cleanup planner。
 - cleanup events。
 - runbook 和 rollback 文档。
+
+补充设计：
+
+- `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md`
 
 实施计划：
 

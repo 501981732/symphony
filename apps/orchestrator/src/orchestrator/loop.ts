@@ -22,6 +22,16 @@ export interface LoopDeps {
    * read workflow config.
    */
   scanCiFeedback?: (() => Promise<void>) | undefined;
+  /**
+   * Optional review feedback sweep (V2 Phase 4). Runs once per tick
+   * after `scanCiFeedback` so CI signals win when both a failing
+   * pipeline and a reviewer comment compete for `ai-rework`. The loop
+   * deliberately knows nothing about workflow config; daemons opt in
+   * by passing the bound callback. Errors are logged and swallowed so
+   * a transient outage on the MR notes endpoint does not stall the
+   * main loop or block dispatch of newly claimed runs.
+   */
+  sweepReviewFeedback?: (() => Promise<void>) | undefined;
   logError(err: unknown): void;
 }
 
@@ -94,6 +104,14 @@ export function startLoop(deps: LoopDeps): LoopHandle {
     if (deps.scanCiFeedback) {
       try {
         await deps.scanCiFeedback();
+      } catch (err) {
+        deps.logError(err);
+      }
+    }
+
+    if (deps.sweepReviewFeedback) {
+      try {
+        await deps.sweepReviewFeedback();
       } catch (err) {
         deps.logError(err);
       }

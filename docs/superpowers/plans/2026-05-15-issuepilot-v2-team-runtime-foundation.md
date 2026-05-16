@@ -1,5 +1,11 @@
 # IssuePilot V2 团队运行时底座实施计划
 
+Phase：V2 Phase 1
+状态：已完成，已合入 `main`
+对应 spec：`docs/superpowers/specs/2026-05-16-issuepilot-v2-phase1-team-runtime-foundation-design.md`
+上级 spec：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
+下一步：V2 Phase 2 Dashboard Operations
+
 > **给执行 agent：** 执行本计划时必须使用子技能 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`。步骤使用 checkbox（`- [ ]`）追踪。
 
 **目标：** 交付 V2 team mode 的第一阶段底座：一个 daemon 可以加载多个项目 workflow，使用轻量 run lease 控制并发，并向 dashboard 暴露 project-aware state，同时保持 V1 `--workflow` 单项目入口兼容。

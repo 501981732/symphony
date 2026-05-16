@@ -241,7 +241,9 @@ describe("createGitLabAdapter", () => {
       },
     ]);
     const notes = await adapter.listMergeRequestNotes(3);
-    expect(notes).toEqual([{ id: 1, body: "hi", author: "alice" }]);
+    expect(notes).toEqual([
+      { id: 1, body: "hi", author: "alice", system: false },
+    ]);
   });
 
   it("closeIssue delegates to Issues.edit with stateEvent close", async () => {

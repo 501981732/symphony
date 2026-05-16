@@ -117,9 +117,21 @@ export interface IssuePromptInfo {
   assignees: string[];
 }
 
+import type { ReviewFeedbackSummary } from "@issuepilot/shared-contracts";
+
+export type { ReviewFeedbackSummary };
+
 export interface PromptContext {
   issue: IssuePromptInfo;
   attempt: number;
   workspace: { path: string };
   git: { branch: string };
+  /**
+   * V2 Phase 4 review feedback context. When supplied, the renderer
+   * also exposes it as `review_feedback` (snake_case) so Liquid
+   * templates can iterate with `{% for c in review_feedback.comments
+   * %}`. Absent on the first attempt or when no human reviewer comment
+   * has been observed yet.
+   */
+  reviewFeedback?: ReviewFeedbackSummary;
 }

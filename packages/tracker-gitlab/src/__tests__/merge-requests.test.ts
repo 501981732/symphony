@@ -317,10 +317,67 @@ describe("listMergeRequestNotes", () => {
     });
     const r = await listMergeRequestNotes(client, 6);
     expect(r).toEqual([
-      { id: 1, body: "hello", author: "alice" },
-      { id: 2, body: "bot", author: "Bot" },
-      { id: 3, body: "anon", author: "unknown" },
+      { id: 1, body: "hello", author: "alice", system: false },
+      { id: 2, body: "bot", author: "Bot", system: false },
+      { id: 3, body: "anon", author: "unknown", system: false },
     ]);
     expect(all).toHaveBeenCalledWith("group/project", 6, { perPage: 100 });
+  });
+
+  it("exposes timestamps + resolved markers required by the review feedback sweep (V2 Phase 4)", async () => {
+    const all = vi.fn(async () => [
+      {
+        id: 11,
+        body: "Please remove the debug log.",
+        author: { username: "alice", name: "Alice" },
+        created_at: "2026-05-16T00:01:00.000Z",
+        updated_at: "2026-05-16T00:01:00.000Z",
+        system: false,
+        resolvable: true,
+        resolved: false,
+      },
+      {
+        id: 12,
+        body: "removed: ai-ready",
+        author: { username: "issuepilot-bot", name: "IssuePilot" },
+        created_at: "2026-05-16T00:00:30.000Z",
+        updated_at: "2026-05-16T00:00:30.000Z",
+        system: true,
+      },
+      {
+        id: 13,
+        body: "Acknowledged.",
+        author: { username: "bob", name: "Bob" },
+        created_at: "2026-05-16T00:02:00.000Z",
+        updated_at: "2026-05-16T00:02:00.000Z",
+        system: false,
+        resolvable: true,
+        resolved: true,
+      },
+    ]);
+    const client = makeClient({
+      MergeRequestNotes: { all },
+    });
+
+    const r = await listMergeRequestNotes(client, 7);
+
+    expect(r[0]).toMatchObject({
+      id: 11,
+      author: "alice",
+      body: "Please remove the debug log.",
+      createdAt: "2026-05-16T00:01:00.000Z",
+      updatedAt: "2026-05-16T00:01:00.000Z",
+      system: false,
+      resolvable: true,
+      resolved: false,
+    });
+    expect(r[1]).toMatchObject({
+      id: 12,
+      system: true,
+    });
+    expect(r[2]).toMatchObject({
+      id: 13,
+      resolved: true,
+    });
   });
 });

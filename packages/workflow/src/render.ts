@@ -1,8 +1,8 @@
 import { Liquid } from "liquidjs";
 
-import type { PromptContext } from "./types.js";
+import type { PromptContext, ReviewFeedbackSummary } from "./types.js";
 
-export type { PromptContext } from "./types.js";
+export type { PromptContext, ReviewFeedbackSummary } from "./types.js";
 
 export interface PromptRenderLogger {
   warn(message: string, meta?: Record<string, unknown>): void;
@@ -76,8 +76,26 @@ export async function renderPrompt(
   return output;
 }
 
-function toPromptRenderContext(context: PromptContext): PromptContext {
-  return {
+/**
+ * Convert the typed {@link PromptContext} into the plain object that
+ * Liquid actually iterates over. Two responsibilities:
+ *
+ *  - Defensive copy: deep-clone the array fields so a Liquid filter
+ *    (e.g. `| sort`) cannot mutate the caller's run record.
+ *  - Provide the snake_case aliases that V2 Phase 4 prompt templates
+ *    rely on (`review_feedback`). The camelCase property is still
+ *    accepted on the typed entry, but Liquid templates should always
+ *    reach for the snake_case alias to match the rest of the schema.
+ *
+ * The function returns `Record<string, unknown>` instead of
+ * {@link PromptContext} because the alias key is not part of the typed
+ * surface. {@link detectMissingVariables} keeps walking the object
+ * generically so its behaviour is unaffected.
+ */
+function toPromptRenderContext(
+  context: PromptContext,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {
     issue: {
       id: context.issue.id,
       iid: context.issue.iid,
@@ -93,6 +111,32 @@ function toPromptRenderContext(context: PromptContext): PromptContext {
     workspace: { path: context.workspace.path },
     git: { branch: context.git.branch },
   };
+  if (context.reviewFeedback) {
+    out["review_feedback"] = cloneReviewFeedback(context.reviewFeedback);
+  }
+  return out;
+}
+
+function cloneReviewFeedback(
+  summary: ReviewFeedbackSummary,
+): Record<string, unknown> {
+  return {
+    mrIid: summary.mrIid,
+    mrUrl: summary.mrUrl,
+    generatedAt: summary.generatedAt,
+    cursor: summary.cursor,
+    comments: summary.comments.map(
+      (c: ReviewFeedbackSummary["comments"][number]) => ({
+        noteId: c.noteId,
+        author: c.author,
+        body: c.body,
+        url: c.url,
+        createdAt: c.createdAt,
+        resolved: c.resolved,
+        ...(c.discussionId ? { discussionId: c.discussionId } : {}),
+      }),
+    ),
+  };
 }
 
 /**
@@ -103,7 +147,7 @@ function toPromptRenderContext(context: PromptContext): PromptContext {
  */
 export function detectMissingVariables(
   template: string,
-  context: PromptContext,
+  context: PromptContext | Record<string, unknown>,
 ): string[] {
   const missing = new Set<string>();
   for (const path of extractVariablePaths(template)) {

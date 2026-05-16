@@ -1,5 +1,12 @@
 # IssuePilot V2 Dashboard Operations 实施计划
 
+Phase：V2 Phase 2
+状态：已完成，已合入 `main`
+对应 spec：`docs/superpowers/specs/2026-05-15-issuepilot-v2-phase2-dashboard-operations-design.md`
+上级 spec：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
+上一步：V2 Phase 1 Team Runtime Foundation
+下一步：V2 Phase 3 CI Feedback
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 给 V1/V2 daemon 加上 dashboard 受控的 `retry` / `stop` / `archive` 三件套，并通过 Codex app-server 的 `turn/interrupt` 协议把 stop 做成真实 cancel。
@@ -62,7 +69,7 @@
 - `apps/orchestrator/src/server/__tests__/server.test.ts`：覆盖三个新路由的 200 / 404 / 409 / 500 行为，含 operator header 兜底为 `"system"`、archived 过滤。
 - `apps/orchestrator/src/daemon.ts`（V1 单 workflow 模式）：构造 `runCancelRegistry`，注入 `OperatorActionDeps`；`runAgent` 路径里 register/unregister。
 - `apps/orchestrator/src/__tests__/daemon.test.ts`：覆盖 `operatorActions` deps 被注入 + cancel registry 在 runAgent 期间 register/unregister。
-- `apps/orchestrator/src/team/daemon.ts`（V2 team 模式）：同上。
+- `apps/orchestrator/src/team/daemon.ts`（V2 team 模式）：Phase 2 明确不装配 `operatorActions`；server routes 返回 HTTP 503 `actions_unavailable`，等 V2 dispatch 落地后再补。
 - `apps/orchestrator/src/team/__tests__/daemon.test.ts`：覆盖 team 模式下的 deps 注入。
 - `apps/dashboard/lib/api.ts`：新增 `retryRun` / `stopRun` / `archiveRun` POST 客户端；`fetchRuns` 默认隐藏 archived。
 - `apps/dashboard/lib/__tests__/api.test.ts`（或 dashboard 现有的 colocated api.test.ts）：覆盖三个客户端的 200 / 409 / 404 路径。

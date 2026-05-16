@@ -101,7 +101,18 @@ export interface GitLabAdapter {
   >;
   listMergeRequestNotes(
     mrIid: number,
-  ): Promise<Array<{ id: number; body: string; author: string }>>;
+  ): Promise<
+    Array<{
+      id: number;
+      body: string;
+      author: string;
+      system: boolean;
+      createdAt?: string;
+      updatedAt?: string;
+      resolvable?: boolean;
+      resolved?: boolean;
+    }>
+  >;
 
   getPipelineStatus(
     ref: string,

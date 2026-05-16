@@ -1,5 +1,11 @@
 # IssuePilot V2 Workspace Retention 实施计划
 
+Phase：V2 Phase 5
+状态：待实施
+对应 spec：`docs/superpowers/specs/2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md`
+上级 spec：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
+上一步：V2 Phase 4 Review Feedback Sweep
+
 > **给执行 agent：** 执行本计划时必须使用子技能 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`。步骤使用 checkbox（`- [ ]`）追踪。
 
 **目标：** 给 `~/.issuepilot` 下的 workspace 增加基于 retention policy 的自动清理：成功 7 天、失败 30 天、active run 永不清理；总容量超过上限时只清理已过期的 terminal run；失败现场默认保留，且清理可被 dry-run 预览。

@@ -1,4 +1,5 @@
 import { type IssueRef } from "./issue.js";
+import { type ReviewFeedbackSummary } from "./review.js";
 
 /**
  * Lifecycle states reported by the orchestrator for an in-flight or finished
@@ -77,6 +78,24 @@ export interface RunRecord {
    * Always set together with {@link RunRecord.latestCiStatus}.
    */
   latestCiCheckedAt?: string;
+  /**
+   * V2 Phase 4: ISO-8601 timestamp of the most recent MR note already
+   * fed back to the agent. The review sweep skips any note with
+   * `createdAt <= lastDiscussionCursor`, which guarantees a single
+   * reviewer comment is never re-injected into successive prompts.
+   *
+   * Absent means no sweep has ever run for this run; the sweep should
+   * still emit `review_feedback_summary_generated` even when the result
+   * is empty so observers see liveness.
+   */
+  lastDiscussionCursor?: string;
+  /**
+   * V2 Phase 4: latest summary produced by `sweepReviewFeedbackOnce`.
+   * Surfaced on the dashboard and injected into the next-attempt prompt
+   * context. Absent means no sweep produced a summary yet (or the run
+   * never reached `human-review`).
+   */
+  latestReviewFeedback?: ReviewFeedbackSummary;
 }
 
 /**

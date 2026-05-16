@@ -427,8 +427,13 @@ run IssuePilot on its day-to-day work.
   scanner is wired into the orchestrator loop only at daemon startup —
   toggling `ci.enabled` requires restarting `issuepilot run` for the change
   to take effect.
-- MR / PR review feedback sweep (feed human review comments back into the
-  next agent turn).
+- ✅ Review feedback sweep (V2 Phase 4): the orchestrator polls human
+  comments on the human-review MR, persists them as a `ReviewFeedbackSummary`
+  on the run record, and — when the issue is recycled to `ai-rework` — the
+  carried-forward summary is prepended to the next agent prompt as a
+  standardised `## Review feedback` block. Always-on; no workflow toggle.
+  The dashboard run detail view shows a `Latest review feedback` panel
+  with deep-links back to each MR note.
 - Review workflow polish: surface the structured handoff / failure / closing
   note fields directly in the dashboard and generated reports.
 - Optional automated merge policy after CI/approval checks. The P0 default
@@ -476,6 +481,7 @@ processes.
 - [使用指南（中文）](docs/getting-started.zh-CN.md) — Chinese getting-started guide.
 - [IssuePilot real GitLab smoke runbook](docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md) — Real GitLab + Codex end-to-end acceptance checklist.
 - [IssuePilot design spec](docs/superpowers/specs/2026-05-11-issuepilot-design.md) — Architecture, protocols, state machine.
+- [IssuePilot V2 roadmap and document map](docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md) — Current V2 phase order, progress, and spec/plan mapping.
 - [IssuePilot implementation plan](docs/superpowers/plans/2026-05-11-issuepilot-implementation-plan.md) — The 8-phase implementation plan and task breakdown.
 - [Original Symphony spec](SPEC.md)
 - [Elixir reference implementation](elixir/README.md)

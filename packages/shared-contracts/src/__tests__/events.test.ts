@@ -76,6 +76,9 @@ const REQUIRED_EVENT_TYPES = [
   "ci_status_observed",
   "ci_status_rework_triggered",
   "ci_status_lookup_failed",
+  "review_feedback_sweep_started",
+  "review_feedback_summary_generated",
+  "review_feedback_sweep_failed",
 ] as const;
 
 describe("@issuepilot/shared-contracts/events", () => {
@@ -107,6 +110,12 @@ describe("@issuepilot/shared-contracts/events", () => {
     expect(isEventType("ci_status_observed")).toBe(true);
     expect(isEventType("ci_status_rework_triggered")).toBe(true);
     expect(isEventType("ci_status_lookup_failed")).toBe(true);
+  });
+
+  it("isEventType narrows new review feedback sweep types (V2 Phase 4)", () => {
+    expect(isEventType("review_feedback_sweep_started")).toBe(true);
+    expect(isEventType("review_feedback_summary_generated")).toBe(true);
+    expect(isEventType("review_feedback_sweep_failed")).toBe(true);
   });
 
   it("IssuePilotEvent requires id / runId / issue / type / message / createdAt", () => {

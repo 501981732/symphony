@@ -1,5 +1,12 @@
 # IssuePilot V2 Review Feedback Sweep 实施计划
 
+Phase：V2 Phase 4
+状态：已实施
+对应 spec：`docs/superpowers/specs/2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md`
+上级 spec：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
+上一步：V2 Phase 3 CI Feedback
+下一步：V2 Phase 5 Workspace Retention
+
 > **给执行 agent：** 执行本计划时必须使用子技能 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`。步骤使用 checkbox（`- [ ]`）追踪。
 
 **目标：** 把 MR 上的 human review 评论汇总成一段结构化 feedback，在 issue 被打回 `ai-rework` 时注入下一轮 agent prompt，并避免重复喂同一批评论。

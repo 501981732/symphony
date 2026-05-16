@@ -21,6 +21,14 @@ export interface RawIssueNote {
   body: string;
   author?: { username?: string | null; name?: string | null } | null;
   system?: boolean;
+  /** GitLab `created_at`; only present on the notes API, not on system events. */
+  created_at?: string;
+  /** GitLab `updated_at`; may equal `created_at` for unedited notes. */
+  updated_at?: string;
+  /** Whether the surrounding discussion is resolvable (MR discussions only). */
+  resolvable?: boolean;
+  /** Whether the discussion has been resolved by a maintainer. */
+  resolved?: boolean;
 }
 
 export interface RawMergeRequest {
