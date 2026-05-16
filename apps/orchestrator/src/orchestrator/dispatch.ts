@@ -257,12 +257,15 @@ export async function dispatch(
       vars,
     });
 
-    // V2 Phase 4: when the run is in an `ai-rework` retry (attempt > 1)
-    // and the sweep produced a summary, prepend a standardised block so
-    // the agent always gets the reviewer comments in the same shape.
-    // The first attempt path is intentionally left alone — reviewer
-    // comments only become meaningful after the initial MR has landed.
-    if (latestReviewFeedback && promptAttempt > 1) {
+    // V2 Phase 4: when the sweep produced a summary, prepend a
+    // standardised block so the agent always gets the reviewer comments
+    // in the same shape. We do not gate on `attempt > 1` because the
+    // claim path on ai-rework carries forward `latestReviewFeedback`
+    // from the prior completed run into a *new* runId whose own attempt
+    // counter starts at 1 — the presence of `latestReviewFeedback` is
+    // itself proof that we are in a rework cycle (sweep only records a
+    // summary when at least one fresh reviewer comment was collected).
+    if (latestReviewFeedback) {
       prompt = `${buildReviewFeedbackBlock(latestReviewFeedback)}\n\n${prompt}`;
     }
 

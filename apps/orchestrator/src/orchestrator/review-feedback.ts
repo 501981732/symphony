@@ -307,6 +307,15 @@ export async function sweepReviewFeedbackOnce(
     const cursorIso = run.lastDiscussionCursor;
     const generatedAt = nowIso(input);
 
+    // Collect every human note + flag which ones are new relative to
+    // the cursor. The summary persists the *accumulated* history so a
+    // reviewer can post a comment, walk away for a while, post another
+    // one, and the agent still sees both on the next ai-rework cycle.
+    // Without this we'd happily overwrite the prior summary on every
+    // sweep tick — meaning whatever comment landed first gets dropped
+    // before the agent ever reads it (verified in the Phase 4 e2e
+    // before this accumulator landed).
+    const allHumanComments: ReviewComment[] = [];
     const fresh: ReviewComment[] = [];
     for (const raw of notes) {
       if (!isLikelyHumanNote(raw, input.workflow)) continue;
@@ -314,7 +323,6 @@ export async function sweepReviewFeedbackOnce(
       // timestamp we cannot honour the cursor invariant and would risk
       // re-injecting the same comment on every tick.
       if (typeof raw.createdAt !== "string") continue;
-      if (cursorIso && raw.createdAt <= cursorIso) continue;
 
       const comment: ReviewComment = {
         noteId: raw.id,
@@ -324,9 +332,13 @@ export async function sweepReviewFeedbackOnce(
         createdAt: raw.createdAt,
         resolved: raw.resolved === true,
       };
-      fresh.push(comment);
+      allHumanComments.push(comment);
+      if (!cursorIso || raw.createdAt > cursorIso) {
+        fresh.push(comment);
+      }
     }
 
+    allHumanComments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     fresh.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
     if (fresh.length === 0) {
@@ -347,7 +359,10 @@ export async function sweepReviewFeedbackOnce(
       mrUrl: mr.webUrl,
       generatedAt,
       cursor: newCursor,
-      comments: fresh,
+      // Persist the full history; on the next ai-rework cycle the
+      // prompt will replay every reviewer comment, not just whichever
+      // ones happened to arrive in the latest sweep window.
+      comments: allHumanComments,
     };
 
     const stored = input.state.getRun(run.runId);
@@ -365,6 +380,10 @@ export async function sweepReviewFeedbackOnce(
       mrUrl: mr.webUrl,
       generatedAt,
       cursor: newCursor,
+      // The event payload reports only the *delta* that this tick
+      // observed — the dashboard separately renders the accumulated
+      // summary from the RunRecord, so reporting fresh-only here keeps
+      // the audit log honest about what each tick actually did.
       commentCount: fresh.length,
       comments: fresh,
     });

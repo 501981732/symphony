@@ -530,7 +530,8 @@ export async function startDaemon(
   eventBus.subscribe((record) => {
     if (
       !record.type.startsWith("operator_action_") &&
-      !record.type.startsWith("ci_status_")
+      !record.type.startsWith("ci_status_") &&
+      !record.type.startsWith("review_feedback_")
     ) {
       return;
     }

@@ -262,6 +262,58 @@ describe("sweepReviewFeedbackOnce", () => {
     expect(run?.["lastDiscussionCursor"]).toBe("2026-05-16T00:05:00.000Z");
   });
 
+  it("accumulates the full reviewer history on the run record across sweeps", async () => {
+    const ctx = createDeps({
+      notes: [
+        {
+          id: 410,
+          body: "Earlier comment shipped on the first sweep.",
+          author: "alice",
+          createdAt: "2026-05-16T00:01:00.000Z",
+          system: false,
+        },
+        {
+          id: 411,
+          body: "Brand new follow-up after the first attempt.",
+          author: "bob",
+          createdAt: "2026-05-16T00:05:00.000Z",
+          system: false,
+        },
+      ],
+    });
+    // Simulate the state right after the first sweep: cursor parked at
+    // the earlier note, but no latestReviewFeedback stored yet so we
+    // can verify the second tick reconstructs the full history.
+    const runId = seedReviewRun(ctx.state, {
+      lastDiscussionCursor: "2026-05-16T00:01:00.000Z",
+    });
+
+    await sweepReviewFeedbackOnce(ctx.deps);
+
+    const summaryEvent = ctx.events.find(
+      (e) => e.type === "review_feedback_summary_generated",
+    );
+    const data = summaryEvent?.data as {
+      cursor: string;
+      comments: Array<{ noteId: number }>;
+      commentCount: number;
+    };
+    // Event payload reports the *delta* — only the new note for this tick.
+    expect(data.commentCount).toBe(1);
+    expect(data.comments.map((c) => c.noteId)).toEqual([411]);
+
+    // Run record persists the *full accumulated history* so the next
+    // dispatch can replay every reviewer comment instead of losing the
+    // older one that landed on a previous sweep.
+    const run = ctx.state.getRun(runId);
+    const stored = run?.["latestReviewFeedback"] as {
+      cursor: string;
+      comments: Array<{ noteId: number }>;
+    };
+    expect(stored.cursor).toBe("2026-05-16T00:05:00.000Z");
+    expect(stored.comments.map((c) => c.noteId)).toEqual([410, 411]);
+  });
+
   it("emits an empty summary without rewinding the cursor when nothing new has landed", async () => {
     const ctx = createDeps({
       notes: [

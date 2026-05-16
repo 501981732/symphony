@@ -280,16 +280,37 @@ describe("dispatch", () => {
     expect(finalPrompt).toContain("AGENT PROMPT BODY");
   });
 
-  it("does not prepend the review feedback block when attempt is 1 (first try)", async () => {
+  it("does not prepend the review feedback block when no summary exists (first attempt of a brand-new issue)", async () => {
     const renderPrompt = vi.fn(() => "AGENT PROMPT BODY");
     const runAgent = vi.fn(async (opts: { prompt: string }) => {
       (runAgent as unknown as { lastPrompt?: string }).lastPrompt = opts.prompt;
       return { status: "completed", summary: "ok" };
     });
     const deps = createFakeDeps({ renderPrompt, runAgent });
-    // attempt stays at 1; latestReviewFeedback is technically possible to
-    // exist (e.g. an old sweep) but the prepend should still be skipped
-    // because the run has not been recycled into ai-rework yet.
+    // Brand-new ai-ready claim: no carry-forward, no latestReviewFeedback.
+    deps.state.setRun("run-1", {
+      runId: "run-1",
+      status: "claimed",
+      attempt: 1,
+      branch: "ai/1-fix",
+    });
+
+    await dispatch(baseInput, deps);
+
+    const finalPrompt = (runAgent as unknown as { lastPrompt?: string })
+      .lastPrompt;
+    expect(finalPrompt).not.toContain("## Review feedback");
+  });
+
+  it("prepends the review feedback block on a carry-forwarded rework cycle even when attempt is 1", async () => {
+    const renderPrompt = vi.fn(() => "AGENT PROMPT BODY");
+    const runAgent = vi.fn(async (opts: { prompt: string }) => {
+      (runAgent as unknown as { lastPrompt?: string }).lastPrompt = opts.prompt;
+      return { status: "completed", summary: "ok" };
+    });
+    const deps = createFakeDeps({ renderPrompt, runAgent });
+    // Carry-forward path: ai-rework re-claim spins up a fresh runId with
+    // attempt=1 but inherits latestReviewFeedback from the prior cycle.
     deps.state.setRun("run-1", {
       runId: "run-1",
       status: "claimed",
@@ -304,8 +325,8 @@ describe("dispatch", () => {
           {
             noteId: 1,
             author: "alice",
-            body: "old comment",
-            url: "x",
+            body: "please add a unit test",
+            url: "https://gitlab.example.com/x#note_1",
             createdAt: "2026-05-16T00:00:00.000Z",
             resolved: false,
           },
@@ -317,7 +338,8 @@ describe("dispatch", () => {
 
     const finalPrompt = (runAgent as unknown as { lastPrompt?: string })
       .lastPrompt;
-    expect(finalPrompt).not.toContain("## Review feedback");
+    expect(finalPrompt).toContain("## Review feedback");
+    expect(finalPrompt).toContain("please add a unit test");
   });
 
   it("still runs afterRun hook even if agent fails but does not retry", async () => {
