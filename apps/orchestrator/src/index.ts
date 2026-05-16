@@ -55,3 +55,7 @@ export {
   splitCommand,
 } from "./daemon.js";
 export { buildCli, type CliDeps } from "./cli.js";
+export {
+  runWorkspaceCleanupOnce,
+  type RunWorkspaceCleanupInput,
+} from "./maintenance/workspace-cleanup.js";
