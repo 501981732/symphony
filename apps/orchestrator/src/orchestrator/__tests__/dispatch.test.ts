@@ -221,6 +221,105 @@ describe("dispatch", () => {
     expect(scripts).toContain("echo beforeRun");
   });
 
+  it("injects review feedback into the prompt context and prepends a `## Review feedback` block when reworking (V2 Phase 4)", async () => {
+    const captured: Array<{ template: string; vars: Record<string, unknown> }> =
+      [];
+    const renderPrompt = vi.fn(
+      (opts: { template: string; vars: Record<string, unknown> }) => {
+        captured.push(opts);
+        return "AGENT PROMPT BODY";
+      },
+    );
+    const runAgent = vi.fn(async (opts: { prompt: string }) => {
+      // expose what the agent actually received so the test can assert
+      // dispatch prepended the review feedback block.
+      (runAgent as unknown as { lastPrompt?: string }).lastPrompt = opts.prompt;
+      return { status: "completed", summary: "ok" };
+    });
+    const deps = createFakeDeps({ renderPrompt, runAgent });
+    deps.state.setRun("run-1", {
+      runId: "run-1",
+      status: "claimed",
+      attempt: 2,
+      branch: "ai/1-fix",
+      latestReviewFeedback: {
+        mrIid: 42,
+        mrUrl: "https://gitlab.example.com/g/p/-/merge_requests/42",
+        generatedAt: "2026-05-16T00:02:00.000Z",
+        cursor: "2026-05-16T00:02:00.000Z",
+        comments: [
+          {
+            noteId: 7,
+            author: "alice",
+            body: "Please add a test for the empty branch path.",
+            url: "https://gitlab.example.com/g/p/-/merge_requests/42#note_7",
+            createdAt: "2026-05-16T00:01:30.000Z",
+            resolved: false,
+          },
+        ],
+      },
+    });
+
+    await dispatch(baseInput, deps);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.vars).toMatchObject({
+      reviewFeedback: {
+        mrIid: 42,
+        comments: expect.arrayContaining([
+          expect.objectContaining({ author: "alice" }),
+        ]),
+      },
+    });
+
+    const finalPrompt = (runAgent as unknown as { lastPrompt?: string })
+      .lastPrompt;
+    expect(finalPrompt).toContain("## Review feedback");
+    expect(finalPrompt).toContain("alice");
+    expect(finalPrompt).toContain("Please add a test for the empty branch path.");
+    expect(finalPrompt).toContain("AGENT PROMPT BODY");
+  });
+
+  it("does not prepend the review feedback block when attempt is 1 (first try)", async () => {
+    const renderPrompt = vi.fn(() => "AGENT PROMPT BODY");
+    const runAgent = vi.fn(async (opts: { prompt: string }) => {
+      (runAgent as unknown as { lastPrompt?: string }).lastPrompt = opts.prompt;
+      return { status: "completed", summary: "ok" };
+    });
+    const deps = createFakeDeps({ renderPrompt, runAgent });
+    // attempt stays at 1; latestReviewFeedback is technically possible to
+    // exist (e.g. an old sweep) but the prepend should still be skipped
+    // because the run has not been recycled into ai-rework yet.
+    deps.state.setRun("run-1", {
+      runId: "run-1",
+      status: "claimed",
+      attempt: 1,
+      branch: "ai/1-fix",
+      latestReviewFeedback: {
+        mrIid: 1,
+        mrUrl: "https://gitlab.example.com/x",
+        generatedAt: "2026-05-16T00:00:00.000Z",
+        cursor: "2026-05-16T00:00:00.000Z",
+        comments: [
+          {
+            noteId: 1,
+            author: "alice",
+            body: "old comment",
+            url: "x",
+            createdAt: "2026-05-16T00:00:00.000Z",
+            resolved: false,
+          },
+        ],
+      },
+    });
+
+    await dispatch(baseInput, deps);
+
+    const finalPrompt = (runAgent as unknown as { lastPrompt?: string })
+      .lastPrompt;
+    expect(finalPrompt).not.toContain("## Review feedback");
+  });
+
   it("still runs afterRun hook even if agent fails but does not retry", async () => {
     const deps = createFakeDeps({
       runAgent: vi.fn(async () => ({ status: "failed", reason: "bad" })),

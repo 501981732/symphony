@@ -1,3 +1,5 @@
+import type { ReviewFeedbackSummary } from "@issuepilot/shared-contracts";
+
 import type { RuntimeState } from "../runtime/state.js";
 
 import type { Classification } from "./classify.js";
@@ -115,6 +117,34 @@ function addMs(date: Date, ms: number): string {
   return new Date(date.getTime() + ms).toISOString();
 }
 
+/**
+ * Build the standardised `## Review feedback` block that dispatch
+ * prepends to the agent prompt on `ai-rework` retries (attempt > 1).
+ * The block is deliberately separate from the user-supplied workflow
+ * template: operators do not have to remember to add it themselves,
+ * and the agent receives the reviewer comments in a consistent shape
+ * regardless of which workflow file claimed the issue. Templates can
+ * still opt into a custom rendering via the `review_feedback` Liquid
+ * alias (see `packages/workflow`); when they do, the prepended block
+ * is duplicated but never goes missing.
+ */
+function buildReviewFeedbackBlock(summary: ReviewFeedbackSummary): string {
+  const lines: string[] = [
+    "## Review feedback",
+    "",
+    `Reviewer comments collected from MR !${summary.mrIid} since the previous attempt.`,
+    `Address them in this run rather than asking the reviewer to repeat themselves.`,
+    `MR: ${summary.mrUrl}`,
+    "",
+  ];
+  for (const c of summary.comments) {
+    lines.push(`- @${c.author} (${c.createdAt}): ${c.body}`);
+  }
+  lines.push("");
+  lines.push("---");
+  return lines.join("\n");
+}
+
 export async function dispatch(
   input: DispatchInput,
   deps: DispatchDeps,
@@ -196,25 +226,45 @@ export async function dispatch(
       });
     }
 
-    const prompt = await deps.renderPrompt({
-      template: input.promptTemplate,
-      vars: {
-        issue: {
-          id: input.issue.id ?? String(input.issue.iid),
-          iid: input.issue.iid,
-          identifier: `${input.issue.projectId}#${input.issue.iid}`,
-          title: input.issue.title,
-          description: input.issue.description ?? "",
-          labels: input.issue.labels ?? [],
-          url: input.issue.url,
-          author: input.issue.author ?? "",
-          assignees: input.issue.assignees ?? [],
-        },
-        attempt: deps.state.getRun(runId)?.attempt ?? 1,
-        workspace: { path: worktreePath },
-        git: { branch: input.branch },
+    const runBeforePrompt = deps.state.getRun(runId);
+    const promptAttempt = runBeforePrompt?.attempt ?? 1;
+    const latestReviewFeedback = runBeforePrompt?.["latestReviewFeedback"] as
+      | ReviewFeedbackSummary
+      | undefined;
+
+    const vars: Record<string, unknown> = {
+      issue: {
+        id: input.issue.id ?? String(input.issue.iid),
+        iid: input.issue.iid,
+        identifier: `${input.issue.projectId}#${input.issue.iid}`,
+        title: input.issue.title,
+        description: input.issue.description ?? "",
+        labels: input.issue.labels ?? [],
+        url: input.issue.url,
+        author: input.issue.author ?? "",
+        assignees: input.issue.assignees ?? [],
       },
+      attempt: promptAttempt,
+      workspace: { path: worktreePath },
+      git: { branch: input.branch },
+    };
+    if (latestReviewFeedback) {
+      vars["reviewFeedback"] = latestReviewFeedback;
+    }
+
+    let prompt = await deps.renderPrompt({
+      template: input.promptTemplate,
+      vars,
     });
+
+    // V2 Phase 4: when the run is in an `ai-rework` retry (attempt > 1)
+    // and the sweep produced a summary, prepend a standardised block so
+    // the agent always gets the reviewer comments in the same shape.
+    // The first attempt path is intentionally left alone — reviewer
+    // comments only become meaningful after the initial MR has landed.
+    if (latestReviewFeedback && promptAttempt > 1) {
+      prompt = `${buildReviewFeedbackBlock(latestReviewFeedback)}\n\n${prompt}`;
+    }
 
     const outcome = await deps.runAgent({
       cwd: worktreePath,

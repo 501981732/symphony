@@ -149,4 +149,60 @@ describe("renderPrompt", () => {
     );
     expect(out).toBe("attempt=3");
   });
+
+  it("接受 reviewFeedback 上下文并以 review_feedback 暴露给 Liquid 模板", async () => {
+    const tpl = [
+      "{% if review_feedback %}",
+      "## Review feedback",
+      "{% for c in review_feedback.comments %}",
+      "- {{ c.author }}: {{ c.body }}",
+      "{% endfor %}",
+      "{% endif %}",
+    ].join("\n");
+
+    const out = await renderPrompt(tpl, {
+      ...ctx(),
+      reviewFeedback: {
+        mrIid: 42,
+        mrUrl: "https://gitlab.example.com/g/p/-/merge_requests/42",
+        generatedAt: "2026-05-16T00:00:00.000Z",
+        cursor: "2026-05-16T00:01:00.000Z",
+        comments: [
+          {
+            noteId: 1,
+            author: "alice",
+            body: "Please rename helper",
+            url: "https://gitlab.example.com/g/p/-/merge_requests/42#note_1",
+            createdAt: "2026-05-16T00:01:00.000Z",
+            resolved: false,
+          },
+          {
+            noteId: 2,
+            author: "bob",
+            body: "Add a test for the empty branch path",
+            url: "https://gitlab.example.com/g/p/-/merge_requests/42#note_2",
+            createdAt: "2026-05-16T00:01:30.000Z",
+            resolved: false,
+          },
+        ],
+      },
+    });
+
+    expect(out).toContain("## Review feedback");
+    expect(out).toContain("- alice: Please rename helper");
+    expect(out).toContain("- bob: Add a test for the empty branch path");
+  });
+
+  it("review_feedback 在未传 reviewFeedback 时不存在并触发 warn", async () => {
+    const logger: PromptRenderLogger = { warn: vi.fn() };
+    const tpl = "[{{ review_feedback.comments }}]";
+
+    const out = await renderPrompt(tpl, ctx(), { logger });
+
+    expect(out).toBe("[]");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "prompt variable not found",
+      expect.objectContaining({ path: "review_feedback.comments" }),
+    );
+  });
 });
