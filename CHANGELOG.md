@@ -4,6 +4,34 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 2026-05-16 — **V2 Phase 4 后续 hardening**：基于 code review 修复 important
+  + 部分 minor 一致性问题，未引入新功能。`apps/orchestrator/src/orchestrator/dispatch.ts`
+  在注入 `## Review feedback` 块时把每条 reviewer body 包到
+  `<<<REVIEWER_BODY id=N>>> ... <<<END_REVIEWER_BODY>>>` envelope 里，并对
+  envelope marker 自身做最小 escape——reviewer 评论内的 markdown 分隔符或
+  `Ignore all prior instructions` 这类 prompt-injection 文本不再能破出 review
+  区段；`buildReviewFeedbackBlock` 的 JSDoc 同步移除了"`attempt > 1`"的旧措辞，
+  与 carry-forward 路径行为对齐。`sweepReviewFeedbackOnce` 的候选筛选保留
+  `status === "completed"` + `endedAt` / `archivedAt` 均为空 这条规则，但
+  把 `ReviewFeedbackWorkflowSlice.tracker.handoffLabel` 的 JSDoc 改写成
+  "字段保留作未来在 handoff 时回填 `RunRecord.issue.labels` 后启用 label
+  二次校验"——避免文档误导成"已经做 label safety net"，与 Phase 3 CI feedback
+  scanner 的同一约束保持一致（`RunRecord.issue.labels` 是 claim 时刻快照，
+  handoff 后不刷新，所以现阶段不能用作 label 判据）。`review_feedback_summary_generated`
+  事件在 empty case（无 fresh 评论）时 `cursor` 字段从合成 `generatedAt` 改成
+  `cursor ?? null`，让事件 payload 与持久化的 `lastDiscussionCursor` 在
+  "尚未推进"语义上保持一致。新增 2 条单测：reviewer body 含 markdown /
+  prompt-injection 时 envelope 把恶意片段全部夹在 marker 之间；首次 sweep
+  MR 存在但零人类评论时 `cursor` 为 `null`。Phase 4 设计 spec 增补：
+  决策 4 写明 reviewer envelope 与信任范围；新增决策 6 解释为何只靠
+  `status + endedAt` 作 safety net、`handoffLabel` 字段语义；新增决策 7
+  显式列出 `review_feedback_*` 事件的全部 `reason` 取值（`no_mr` /
+  `no_new_comments` / 缺省，以及 failed 路径 `lookup_failed`）。
+  顺手把 `apps/orchestrator/src/daemon.ts` 里 Phase 4 引入的 import 顺序
+  调成 ESLint 的 `import/order` 期望（lint smoke 之前因此 warn 失败）。
+
 ### Added
 
 - 2026-05-16 — **V2 Phase 4 Review Feedback Sweep 落地：MR 上的人工评论会被

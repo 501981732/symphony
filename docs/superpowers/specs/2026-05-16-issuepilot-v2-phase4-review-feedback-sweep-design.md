@@ -43,8 +43,14 @@ Phase 4 不包含：
 1. Review feedback sweep 由 orchestrator 执行，agent 不直接获得任意 GitLab 读取能力。
 2. cursor 以 GitLab discussion/note 更新时间为基础，必须避免重复喂同一批评论。
 3. IssuePilot 自己写入的 marker notes、handoff/failure/closing/ci-feedback notes 必须被过滤。
-4. prompt 注入发生在下一轮 run 构造 prompt context 时，不修改历史 prompt。
+4. prompt 注入发生在下一轮 run 构造 prompt context 时，不修改历史 prompt。reviewer body 在注入到 agent prompt 前会被 `<<<REVIEWER_BODY id=N>>> ... <<<END_REVIEWER_BODY>>>` envelope 包裹，并对 envelope marker 本身做最小 escape，使评论里的 markdown 分隔符或 prompt injection 不能破出 review 区段。当前 P0 范围内默认信任 reviewer 是已通过认证的人类，envelope 只做结构隔离，不做内容审查。
 5. lookup 失败只写 `review_feedback_sweep_failed`，不改变 labels，避免把 review 阶段误推进。
+6. sweep 候选筛选只看 `RunRecord.status === "completed"` 且 `endedAt` / `archivedAt` 均为空。`RunRecord.issue.labels` 是 claim 时刻的快照，handoff 之后不会被刷新，因此**不能**作为"issue 现在还在 human-review"的判据；这一约束与 Phase 3 CI feedback scanner 保持一致。`syncHumanReviewFinalLabels` 在 ai-rework / 关闭等任一最终状态触发时会设 `endedAt`，等于关闭了 sweep 的入口。`ReviewFeedbackWorkflowSlice.tracker.handoffLabel` 字段保留为占位，预留给未来在 handoff 时回填 `RunRecord.issue.labels` 的重构，届时再启用 label 二次校验。
+7. `review_feedback_summary_generated` 事件的 `reason` 字段是稳定 wire format，目前共三个取值：
+   - `"no_mr"`：run 对应 source branch 没有打开的 MR；
+   - `"no_new_comments"`：MR 存在，但本次 sweep 没有越过 cursor 的人类评论；
+   - 缺省（无 `reason` 字段）：本次 sweep 收集到了 fresh 人类评论并写入 `latestReviewFeedback`。
+   `review_feedback_sweep_failed` 事件目前只有一个 `reason: "lookup_failed"`，对应 GitLab notes API 抛错的情况。
 
 ## 5. 与已完成 Phase 的关系
 

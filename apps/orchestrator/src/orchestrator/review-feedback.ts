@@ -49,9 +49,20 @@ export interface ReviewFeedbackGitLabSlice {
 
 /**
  * Workflow slice the sweep needs. Keeping it minimal lets tests build
- * a literal without standing up the entire team workflow loader. The
- * handoff label is required so we can sanity-check the run is in the
- * `human-review` stage even when `RunRecord.status === "completed"`;
+ * a literal without standing up the entire team workflow loader.
+ *
+ * Note on `handoffLabel`: it is accepted here for symmetry with the
+ * other orchestrator slices and is reserved for a future refactor that
+ * refreshes `RunRecord.issue.labels` from GitLab at handoff time so the
+ * sweep can validate the issue is still parked at the human-review
+ * stage. The current implementation deliberately does **not** consult
+ * the field — `RunRecord.issue.labels` is the claim-time snapshot and
+ * is never refreshed (see the analogous note in `ci-feedback.ts`), so
+ * cross-checking it would reject every valid candidate. The safety net
+ * the sweep actually relies on is `RunRecord.status === "completed"`
+ * with both `endedAt` and `archivedAt` empty — the dispatch pipeline
+ * only parks a run in that exact shape after handoff to human-review.
+ *
  * `botAccountName` lets deployments suppress reviewer notes written by
  * a service account whose body does not happen to carry our marker.
  */
@@ -194,10 +205,13 @@ function emit(
  * Run statuses considered "parked at human-review" for the purpose of
  * review feedback scanning. Mirrors the CI feedback scanner: V1 dispatch
  * parks a run at `status: "completed"` once reconciliation finishes,
- * which is the moment we want to start polling reviewer comments. The
- * issue label set captured at claim time is also checked downstream so
- * we never sweep a run whose human-review stage has already been
- * recycled.
+ * which is the moment we want to start polling reviewer comments. We
+ * additionally require both `endedAt` and `archivedAt` to be empty —
+ * `syncHumanReviewFinalLabels` sets `endedAt` the moment the issue
+ * leaves human-review (either to `ai-rework` or by closing), so this
+ * guarantees we stop sweeping a stale MR. See the workflow slice
+ * `handoffLabel` doc for why we deliberately do not also cross-check
+ * `RunRecord.issue.labels`.
  */
 const REVIEW_RUN_STATUSES = new Set<string>(["completed"]);
 
@@ -342,13 +356,18 @@ export async function sweepReviewFeedbackOnce(
     fresh.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
     if (fresh.length === 0) {
+      // Keep the event payload's `cursor` field aligned with the
+      // persisted `lastDiscussionCursor`: when we have no cursor yet
+      // (first sweep with zero fresh comments), report `null` instead
+      // of a synthetic `generatedAt`, so downstream consumers can tell
+      // "we have not advanced the cursor" from "we advanced it to T".
       emit(input, run, "review_feedback_summary_generated", {
         reason: "no_new_comments",
         branch: run.branch,
         mrIid: mr.iid,
         mrUrl: mr.webUrl,
         comments: [],
-        cursor: cursorIso ?? generatedAt,
+        cursor: cursorIso ?? null,
       });
       continue;
     }

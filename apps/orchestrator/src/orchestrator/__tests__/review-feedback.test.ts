@@ -347,6 +347,41 @@ describe("sweepReviewFeedbackOnce", () => {
     expect(run?.["latestReviewFeedback"]).toBeUndefined();
   });
 
+  it("emits cursor=null on the first sweep when the MR exists but has no human comments yet", async () => {
+    const ctx = createDeps({
+      notes: [
+        {
+          id: 350,
+          body: "<!-- issuepilot:handoff:run-1 -->\nIssuePilot handoff",
+          author: "issuepilot-bot",
+          createdAt: "2026-05-16T00:00:30.000Z",
+          system: false,
+        },
+      ],
+    });
+    // No prior cursor — this is the very first sweep on the run.
+    const runId = seedReviewRun(ctx.state);
+
+    await sweepReviewFeedbackOnce(ctx.deps);
+
+    const summaryEvent = ctx.events.find(
+      (e) => e.type === "review_feedback_summary_generated",
+    );
+    const data = summaryEvent?.data as {
+      reason: string;
+      cursor: string | null;
+      comments: unknown[];
+    };
+    expect(data.reason).toBe("no_new_comments");
+    expect(data.comments).toEqual([]);
+    // Event payload's `cursor` must match the persisted cursor: still
+    // undefined / null because no human note advanced it.
+    expect(data.cursor).toBeNull();
+
+    const run = ctx.state.getRun(runId);
+    expect(run?.["lastDiscussionCursor"]).toBeUndefined();
+  });
+
   it("emits review_feedback_sweep_failed when listMergeRequestNotes throws", async () => {
     const ctx = createDeps({ throwListNotes: new Error("kaboom") });
     const runId = seedReviewRun(ctx.state);
@@ -411,4 +446,5 @@ describe("sweepReviewFeedbackOnce", () => {
     expect(ctx.gitlab.findMergeRequestBySourceBranch).not.toHaveBeenCalled();
     expect(ctx.events).toEqual([]);
   });
+
 });

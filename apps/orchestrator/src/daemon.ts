@@ -48,7 +48,6 @@ import {
   type OperatorActionInput,
 } from "./operations/actions.js";
 import { scanCiFeedbackOnce } from "./orchestrator/ci-feedback.js";
-import { sweepReviewFeedbackOnce } from "./orchestrator/review-feedback.js";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
@@ -58,6 +57,7 @@ import {
 } from "./orchestrator/human-review.js";
 import { startLoop } from "./orchestrator/loop.js";
 import { reconcile } from "./orchestrator/reconcile.js";
+import { sweepReviewFeedbackOnce } from "./orchestrator/review-feedback.js";
 import { createRunCancelRegistry } from "./runtime/run-cancel-registry.js";
 import { createConcurrencySlots } from "./runtime/slots.js";
 import { createRuntimeState, type RuntimeState } from "./runtime/state.js";
