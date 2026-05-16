@@ -1,10 +1,20 @@
 import type {
   IssuePilotEvent,
   OrchestratorStateSnapshot,
+  ReportsListResponse,
   RunDetailResponse,
   RunRecord,
+  RunReportSummary,
   RunStatus,
 } from "@issuepilot/shared-contracts";
+
+/**
+ * V2.5 Command Center: each run row in `GET /api/runs` carries an
+ * inline `report` summary when the orchestrator's report store knows
+ * about it. Legacy runs lack the field; callers should treat it as
+ * optional.
+ */
+export type RunWithReport = RunRecord & { report?: RunReportSummary };
 
 const DEFAULT_API_BASE = "http://127.0.0.1:4738";
 
@@ -104,7 +114,7 @@ export interface ListRunsParams {
 export function listRuns(
   params: ListRunsParams = {},
   opts: ApiGetOptions = {},
-): Promise<RunRecord[]> {
+): Promise<RunWithReport[]> {
   const search = new URLSearchParams();
   if (params.status) {
     const value = Array.isArray(params.status)
@@ -119,7 +129,13 @@ export function listRuns(
     search.set("includeArchived", "true");
   }
   const query = search.toString();
-  return apiGet<RunRecord[]>(`/api/runs${query ? `?${query}` : ""}`, opts);
+  return apiGet<RunWithReport[]>(`/api/runs${query ? `?${query}` : ""}`, opts);
+}
+
+export function listReports(
+  opts: ApiGetOptions = {},
+): Promise<ReportsListResponse> {
+  return apiGet<ReportsListResponse>("/api/reports", opts);
 }
 
 export function getRunDetail(

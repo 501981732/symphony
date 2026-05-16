@@ -6,11 +6,13 @@ import {
 import type {
   IssuePilotInternalEvent,
   ProjectSummary,
+  RunReportSummary,
   TeamRuntimeSummary,
 } from "@issuepilot/shared-contracts";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import type { OperatorActionResult } from "../operations/actions.js";
+import type { ReportStore } from "../reports/store.js";
 import type { RuntimeState } from "../runtime/state.js";
 
 export interface ServerDeps {
@@ -71,6 +73,12 @@ export interface ServerDeps {
       operator: string;
     }): Promise<OperatorActionResult>;
   };
+  /**
+   * V2.5 Command Center: report store providing per-run report
+   * artifacts and summaries. When absent, the API responds with the
+   * legacy shape so older callers and tests remain unaffected.
+   */
+  reports?: ReportStore;
 }
 
 function resolveSnapshotField<T>(
@@ -133,15 +141,20 @@ function countTurnEvents(events: EventRecord[]): number {
 function enrichRunForDashboard<T extends Record<string, unknown>>(
   run: T,
   events: EventRecord[],
+  reports?: ReportStore,
 ): T & {
   turnCount: number;
   lastEvent?: { type: string; message: string; createdAt?: string };
+  report?: RunReportSummary;
 } {
   const lastEvent = summarizeLastEvent(events);
+  const runId = typeof run["runId"] === "string" ? run["runId"] : "";
+  const report = runId ? reports?.summary(runId) : undefined;
   return {
     ...run,
     turnCount: countTurnEvents(events),
     ...(lastEvent ? { lastEvent } : {}),
+    ...(report ? { report } : {}),
   };
 }
 
@@ -248,7 +261,11 @@ export async function createServer(
     runs = runs.slice(0, limit ?? 50);
     return Promise.all(
       runs.map(async (run) =>
-        enrichRunForDashboard(run, await deps.readEvents(run.runId)),
+        enrichRunForDashboard(
+          run,
+          await deps.readEvents(run.runId),
+          deps.reports,
+        ),
       ),
     );
   });
@@ -261,13 +278,23 @@ export async function createServer(
       if (!run) {
         return reply.code(404).send({ error: "Run not found" });
       }
-      const [events, logsTail] = await Promise.all([
+      const [events, logsTail, report] = await Promise.all([
         deps.readEvents(runId, { limit: 200 }),
         deps.readLogsTail?.(runId, { limit: 200 }) ?? Promise.resolve([]),
+        deps.reports?.get(runId) ?? Promise.resolve(undefined),
       ]);
-      return { run: enrichRunForDashboard(run, events), events, logsTail };
+      return {
+        run: enrichRunForDashboard(run, events, deps.reports),
+        events,
+        logsTail,
+        ...(report ? { report } : {}),
+      };
     },
   );
+
+  app.get("/api/reports", async () => {
+    return { reports: deps.reports?.allSummaries() ?? [] };
+  });
 
   app.get<{
     Querystring: { runId?: string; limit?: string; offset?: string };
