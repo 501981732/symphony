@@ -85,7 +85,7 @@ describe("planWorkspaceCleanup", () => {
       now: BASE_TIME,
     });
 
-    expect(plan.delete).toEqual([
+    expect(plan.delete).toMatchObject([
       { workspacePath: "/tmp/ws/expired", reason: "successful-expired" },
     ]);
   });
@@ -122,7 +122,7 @@ describe("planWorkspaceCleanup", () => {
       now: BASE_TIME,
     });
 
-    expect(plan.delete).toEqual([
+    expect(plan.delete).toMatchObject([
       { workspacePath: "/tmp/ws/failed-old", reason: "failed-expired" },
     ]);
   });
@@ -172,7 +172,7 @@ describe("planWorkspaceCleanup", () => {
       "/tmp/ws/expired-newest",
     ]);
     expect(plan.delete.every((d) => d.reason !== "over-capacity")).toBe(false);
-    expect(plan.delete[0]).toEqual({
+    expect(plan.delete[0]).toMatchObject({
       workspacePath: "/tmp/ws/expired-oldest",
       reason: "successful-expired",
     });
@@ -226,7 +226,7 @@ describe("planWorkspaceCleanup", () => {
       now: BASE_TIME,
     });
 
-    expect(plan.delete).toEqual([
+    expect(plan.delete).toMatchObject([
       { workspacePath: "/tmp/ws/blocked-old", reason: "failed-expired" },
     ]);
   });

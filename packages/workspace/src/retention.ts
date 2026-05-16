@@ -51,6 +51,17 @@ export type CleanupDeleteReason =
 export interface CleanupDelete {
   workspacePath: string;
   reason: CleanupDeleteReason;
+  /**
+   * Project / run identifiers carried alongside `workspacePath` so the
+   * executor can re-check `RuntimeState` right before `rm` (TOCTOU
+   * guard) without re-walking the disk. `bytes` is the enumerator's
+   * pre-sweep size estimate for this entry; the executor subtracts it
+   * from `totalBytes` after a successful delete to keep the
+   * `workspaceUsageGb` snapshot honest until the next sweep.
+   */
+  projectId: string;
+  runId: string;
+  bytes: number;
 }
 
 export interface CleanupError {
@@ -175,6 +186,9 @@ export function planWorkspaceCleanup(
     workspacePath: candidate.entry.workspacePath,
     reason:
       overCapacity && index > 0 ? "over-capacity" : candidate.naturalReason,
+    projectId: candidate.entry.projectId,
+    runId: candidate.entry.runId,
+    bytes: candidate.entry.bytes,
   }));
 
   return {

@@ -56,19 +56,19 @@ function seedWorkspace(args: {
   projectId: string;
   runId: string;
   bytes: number;
-  mtimeAgoMs: number;
 }): string {
   const wsPath = path.join(args.root, args.projectId, args.runId);
   fs.mkdirSync(wsPath, { recursive: true });
-  const filePath = path.join(wsPath, "payload.bin");
-  fs.writeFileSync(filePath, Buffer.alloc(args.bytes, 0xab));
-  const targetMs = BASE_TIME.getTime() - args.mtimeAgoMs;
-  const targetSec = targetMs / 1000;
-  // Push both file and directory mtime back so enumerateWorkspaceEntries
-  // sees the "older" timestamps. Use utimesSync (not utimes) so the test
-  // stays synchronous on platforms where ext4 / APFS lazily flushes.
-  fs.utimesSync(filePath, targetSec, targetSec);
-  fs.utimesSync(wsPath, targetSec, targetSec);
+  fs.writeFileSync(
+    path.join(wsPath, "payload.bin"),
+    Buffer.alloc(args.bytes, 0xab),
+  );
+  // NOTE: the planner derives retention age from `RuntimeState.endedAt`
+  // (set via `state.setRun(..., { endedAt: ... })`), NOT from filesystem
+  // mtime. Earlier versions of this helper also called `fs.utimesSync`
+  // on both the file and the directory; that call had no effect on the
+  // planner and was removed to keep this test honest. If you need to
+  // fake "old", set `endedAt` on the run record.
   return wsPath;
 }
 
@@ -107,7 +107,6 @@ describe("workspace retention E2E", () => {
       projectId: "platform-web",
       runId: "run-old-success",
       bytes: 2048,
-      mtimeAgoMs: 8 * ONE_DAY_MS,
     });
 
     const state = createRuntimeState();
@@ -164,7 +163,6 @@ describe("workspace retention E2E", () => {
       projectId: "platform-web",
       runId: "run-active-old",
       bytes: 1024,
-      mtimeAgoMs: 60 * ONE_DAY_MS,
     });
 
     const state = createRuntimeState();
@@ -217,7 +215,6 @@ describe("workspace retention E2E", () => {
         projectId: "platform-web",
         runId: `run-failed-${i}`,
         bytes: 4096,
-        mtimeAgoMs: 5 * ONE_DAY_MS,
       });
       failedRuns.push(wsPath);
     }

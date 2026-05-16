@@ -17,6 +17,23 @@ import {
 
 import type { RuntimeState } from "../runtime/state.js";
 
+/**
+ * Return value of {@link runWorkspaceCleanupOnce}. Extends the planner
+ * `CleanupPlan` with `totalBytesAfter`, the best-effort estimate of
+ * workspace usage after the sweep finished. The daemon uses this to
+ * refresh `OrchestratorStateSnapshot.service.workspaceUsageGb` so the
+ * dashboard does not display the pre-sweep total until the next
+ * cleanup window.
+ */
+export interface CleanupRunResult extends CleanupPlan {
+  /**
+   * `plan.totalBytes` minus the sum of {@link CleanupDelete.bytes} for
+   * every entry the executor successfully `rm`'d (or skipped because
+   * the run flipped active mid-sweep). Never goes below zero.
+   */
+  totalBytesAfter: number;
+}
+
 export interface RunWorkspaceCleanupInput {
   workspaceRoot: string;
   state: RuntimeState;
@@ -50,7 +67,7 @@ export interface RunWorkspaceCleanupInput {
  */
 export async function runWorkspaceCleanupOnce(
   input: RunWorkspaceCleanupInput,
-): Promise<CleanupPlan> {
+): Promise<CleanupRunResult> {
   const now = input.now ?? (() => new Date());
   const enumerator = input.enumerator ?? defaultEnumerator;
   const fsImpl = input.fs ?? { rm: fsPromises.rm };
@@ -71,6 +88,7 @@ export async function runWorkspaceCleanupOnce(
     return {
       retainBytes: input.retention.maxWorkspaceGb * 1024 ** 3,
       totalBytes: 0,
+      totalBytesAfter: 0,
       delete: [],
       keepFailureMarkers: [],
       errors: [
@@ -112,18 +130,41 @@ export async function runWorkspaceCleanupOnce(
     });
   }
 
+  let removedBytes = 0;
   for (const target of plan.delete) {
-    await deleteOne(input, fsImpl, target);
+    const removed = await deleteOne(input, fsImpl, target);
+    removedBytes += removed;
   }
 
-  return plan;
+  const totalBytesAfter = Math.max(0, plan.totalBytes - removedBytes);
+
+  return { ...plan, totalBytesAfter };
 }
 
 async function deleteOne(
   input: RunWorkspaceCleanupInput,
   fsImpl: Pick<typeof fsPromises, "rm">,
   target: CleanupDelete,
-): Promise<void> {
+): Promise<number> {
+  // TOCTOU guard: between `planWorkspaceCleanup` and this `rm`, an
+  // operator could have re-triggered the run via Retry. Re-read the
+  // current status off `RuntimeState` and abort if the workspace is
+  // back to active. The planner ran with a snapshot lookup, so the
+  // re-check has to go through `RuntimeState` directly.
+  const current = input.state.getRun(target.runId) as
+    | { status?: unknown }
+    | undefined;
+  const status =
+    typeof current?.status === "string" ? current.status : undefined;
+  if (status && ACTIVE_RUN_STATUSES.has(status)) {
+    emit(input, "workspace_cleanup_failed", "cleanup:reclaimed", {
+      reason: "rm_failed",
+      workspacePath: target.workspacePath,
+      planReason: target.reason,
+      message: `run ${target.runId} became ${status} between plan and rm; skipped`,
+    });
+    return 0;
+  }
   try {
     await fsImpl.rm(target.workspacePath, { recursive: true, force: true });
   } catch (err) {
@@ -133,12 +174,13 @@ async function deleteOne(
       planReason: target.reason,
       message: err instanceof Error ? err.message : String(err),
     });
-    return;
+    return 0;
   }
   emit(input, "workspace_cleanup_completed", "cleanup:deleted", {
     workspacePath: target.workspacePath,
     reason: target.reason,
   });
+  return target.bytes;
 }
 
 const ACTIVE_RUN_STATUSES = new Set<string>([
