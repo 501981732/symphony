@@ -1,8 +1,9 @@
 # IssuePilot V2 Phase 5 - Workspace Retention 补充设计
 
 日期：2026-05-16
-状态：待实施
+状态：已实施（2026-05-16，分支 `v2/phase5-workspace-retention`）
 对应计划：`docs/superpowers/plans/2026-05-15-issuepilot-v2-workspace-retention.md`
+对应 runbook：`docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`
 上级设计：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
 
 ## 1. 定位
@@ -50,14 +51,18 @@ Phase 5 不包含：
 - workspace 归档到远端对象存储。
 - 跨 host 共享 workspace 的协调协议。
 - 数据库化 retention metadata。
+- **V2 team daemon (`issuepilot.team.yaml`) 的 cleanup wiring**：team config schema 解析 `retention` 节，但 `startTeamDaemon` 不调用 `runWorkspaceCleanupOnce`；启动时会打 warn 提醒。Phase 5 只在 V1 `--workflow` 单项目入口下激活 cleanup loop，team-mode wiring 留给后续 release（追踪：本节 §4 follow-up）。
 
 ## 5. 关键决策
 
 1. planner 必须是纯函数，便于测试和 dry-run。
-2. executor 单条失败不能阻塞后续 cleanup，但必须写 `workspace_cleanup_failed`。
-3. cleanup 前必须先写 planned event；实际删除后写 completed event。
+2. executor 单条失败不能阻塞后续 cleanup，但必须写 `workspace_cleanup_failed`。executor 在 `rm` 前会重新查 `RuntimeState` 一次，若 run 在 plan -> rm 之间被 retry 翻回 `active` / `running` 等状态，跳过本条删除并 emit `workspace_cleanup_failed(reason=rm_failed, message=...reclaimed...)`（TOCTOU guard）。
+3. cleanup 前必须先写 planned event；实际删除后写 completed event。`overCapacity` 字段是诊断标记：当 `totalBytes > maxWorkspaceGb * 2^30` 时该标记为 true，表示「本轮所有 expired entry 都得删」；它**不会**让 planner 跨越保留期去删 unexpired 失败/active run（spec §3 不可妥协）。
 4. retention 不改变 GitLab labels、MR 或 issue 状态。
 5. V1 `--workflow` 单项目入口也应支持 retention fallback，但默认行为必须保守。
+6. cleanup 事件用 sentinel `runId=workspace-cleanup` 落到 event store 的 `__system__-0.jsonl`，`/api/events?runId=workspace-cleanup` 返回历史，`/api/events/stream?runId=workspace-cleanup` 提供实时流。这样 cleanup audit log 与 per-run audit log 走同一条读路径，操作员 runbook 只需要一个端点。
+7. `workspaceUsageGb` 必须反映**清理后**的容量：`runWorkspaceCleanupOnce` 返回 `CleanupRunResult.totalBytesAfter`（`plan.totalBytes` 减去成功 `rm` 的 entry 字节数），daemon 用它刷新 `OrchestratorStateSnapshot.service.workspaceUsageGb`，避免 dashboard 在下一轮 cleanup 之前一直显示扫描前的旧值。
+8. `nextCleanupAt` 在 daemon 启动时为 `undefined`（首次 cleanup 完成后才赋值），避免 dashboard 在首轮 tick 之前撒谎说 "下一次清理在 1 小时后"。
 
 ## 6. 验收口径
 

@@ -434,13 +434,25 @@ run IssuePilot on its day-to-day work.
   standardised `## Review feedback` block. Always-on; no workflow toggle.
   The dashboard run detail view shows a `Latest review feedback` panel
   with deep-links back to each MR note.
+- ✅ Workspace retention (V2 Phase 5): the orchestrator periodically
+  sweeps `~/.issuepilot/workspaces`, deleting expired successful runs
+  (default 7d), preserving failure forensics within the retention window
+  (default 30d), and never touching active runs even under capacity
+  pressure. Configure via the `retention` block in `issuepilot.team.yaml`
+  or workflow front matter. Operators can preview a sweep with
+  `issuepilot doctor --workspace --workflow <path>`; the dashboard service
+  header surfaces `Workspace usage` + `Next cleanup`; every sweep emits
+  `workspace_cleanup_planned` / `_completed` / `_failed` events. See
+  `docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md` for the
+  operator runbook.
 - Review workflow polish: surface the structured handoff / failure / closing
   note fields directly in the dashboard and generated reports.
 - Optional automated merge policy after CI/approval checks. The P0 default
   remains human-controlled merge.
 - Richer run reports: diff summary, test results, risk callouts, timing
   breakdown.
-- Workspace cleanup and retention policy (by age / size / status).
+- ~~Workspace cleanup and retention policy (by age / size / status).~~
+  Delivered in V2 Phase 5 — see ✅ entry above.
 
 ### V3 — Productionized execution platform
 

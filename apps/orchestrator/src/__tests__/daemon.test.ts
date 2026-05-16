@@ -62,6 +62,12 @@ function createWorkflow(root: string): WorkflowConfig {
       onFailure: "ai-rework",
       waitForPipeline: true,
     },
+    retention: {
+      successfulRunDays: 7,
+      failedRunDays: 30,
+      maxWorkspaceGb: 50,
+      cleanupIntervalMs: 3_600_000,
+    },
     pollIntervalMs: 10_000,
     promptTemplate: "Fix issue {{issue.iid}}",
     source: {
@@ -333,7 +339,9 @@ describe("syncHumanReviewFinalLabels", () => {
 
     const run = state.getRun(runId);
     expect(run?.["endedAt"]).toBe("2026-05-15T13:00:00.000Z");
-    expect((run?.["issue"] as { labels: string[] }).labels).toEqual(["ai-rework"]);
+    expect((run?.["issue"] as { labels: string[] }).labels).toEqual([
+      "ai-rework",
+    ]);
   });
 
   it("preserves the earliest endedAt across repeated terminal events", () => {

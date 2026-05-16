@@ -32,6 +32,19 @@ export interface LoopDeps {
    * main loop or block dispatch of newly claimed runs.
    */
   sweepReviewFeedback?: (() => Promise<void>) | undefined;
+  /**
+   * Optional workspace cleanup hook (V2 Phase 5). Runs once per
+   * `intervalMs` after the review sweep, rate-limited so the `du` /
+   * `rm` work cannot starve the poll loop. Errors are logged and
+   * swallowed; the next due tick retries. Daemons turn cleanup off by
+   * passing `undefined`.
+   */
+  cleanup?:
+    | {
+        runOnce: () => Promise<void>;
+        intervalMs: number;
+      }
+    | undefined;
   logError(err: unknown): void;
 }
 
@@ -44,6 +57,7 @@ export function startLoop(deps: LoopDeps): LoopHandle {
   let stopped = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let currentPollIntervalMs = deps.pollIntervalMs;
+  let lastCleanupAt = 0;
   const inflightDispatches = new Set<Promise<void>>();
 
   const scheduleTimer = () => {
@@ -114,6 +128,18 @@ export function startLoop(deps: LoopDeps): LoopHandle {
         await deps.sweepReviewFeedback();
       } catch (err) {
         deps.logError(err);
+      }
+    }
+
+    if (deps.cleanup) {
+      const nowMsCleanup = Date.now();
+      if (nowMsCleanup - lastCleanupAt >= deps.cleanup.intervalMs) {
+        lastCleanupAt = nowMsCleanup;
+        try {
+          await deps.cleanup.runOnce();
+        } catch (err) {
+          deps.logError(err);
+        }
       }
     }
 

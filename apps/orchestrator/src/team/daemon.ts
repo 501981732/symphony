@@ -101,6 +101,21 @@ export async function startTeamDaemon(
   const config = await loadConfig(configPath);
   const workflowLoader = createWorkflowLoader();
   const registry = await createRegistry(config, workflowLoader);
+
+  // V2 Phase 5 scope acknowledgement: `retention` is parsed for forward
+  // compatibility (team config and V1 workflow front matter share the
+  // schema) but the team daemon currently does not run
+  // `runWorkspaceCleanupOnce`. Phase 5 ships the cleanup loop on the
+  // V1 single-project daemon only; the team-mode wiring is tracked as
+  // a follow-up. Emit a single warn at startup so operators don't
+  // assume retention is active just because the schema validated.
+  console.warn(
+    "[issuepilot] V2 team daemon does not yet run workspace cleanup; " +
+      "`retention` is parsed but not enforced. Use the V1 single-project " +
+      "entrypoint (`issuepilot start --workflow ...`) for automatic " +
+      "workspace retention. Tracked in docs/superpowers/specs/2026-05-16-" +
+      "issuepilot-v2-phase5-workspace-retention-design.md §4 (follow-up).",
+  );
   const state = deps.state ?? createRuntimeState();
   const eventBus: EventBus<TeamEvent> = createEventBus<TeamEvent>();
   const leaseStore = createLeaseStoreImpl({

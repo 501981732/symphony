@@ -2,6 +2,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import {
+  enumerateWorkspaceEntries,
+  planWorkspaceCleanup,
+} from "@issuepilot/workspace";
 import { Command } from "commander";
 import { execaCommand } from "execa";
 
@@ -164,9 +168,7 @@ export function buildCli(deps: CliDeps = {}): Command {
         typeof opts.config === "string" &&
         opts.config.length > 0
       ) {
-        console.error(
-          "Error: --workflow and --config cannot be used together",
-        );
+        console.error("Error: --workflow and --config cannot be used together");
         process.exitCode = 1;
         return;
       }
@@ -317,8 +319,73 @@ export function buildCli(deps: CliDeps = {}): Command {
 
   program
     .command("doctor")
-    .description("Check system prerequisites")
-    .action(async () => {
+    .description(
+      "Check system prerequisites; pass --workspace --workflow <path> for a workspace-cleanup dry-run.",
+    )
+    .option(
+      "--workspace",
+      "Run the V2 Phase 5 workspace-cleanup planner in dry-run mode",
+    )
+    .option(
+      "--workflow <path>",
+      "Workflow file backing the dry-run (required with --workspace)",
+    )
+    .action(async (opts) => {
+      if (opts.workspace === true) {
+        const resolvedWorkflow = resolveWorkflowPath(opts.workflow);
+        if (resolvedWorkflow.warning) console.warn(resolvedWorkflow.warning);
+        const workflowPath = resolvedWorkflow.path;
+        if (!fs.existsSync(workflowPath)) {
+          console.error(`Error: workflow file not found: ${workflowPath}`);
+          process.exitCode = 1;
+          return;
+        }
+        try {
+          const workflow = await workflowValidator(workflowPath);
+          const enumeration = await enumerateWorkspaceEntries({
+            workspaceRoot: workflow.workspace.root,
+            // Dry-run cannot consult RuntimeState (no daemon is running),
+            // so every directory shows up as `unknown` and the planner
+            // refuses to delete it. That is the safest default for a
+            // doctor command; operators that want a real preview should
+            // tail `workspace_cleanup_planned` events instead.
+            lookupRun: () => undefined,
+          });
+          const plan = planWorkspaceCleanup({
+            entries: enumeration.entries,
+            retention: workflow.retention,
+            now: new Date(),
+            errors: enumeration.errors,
+          });
+          const totalGb = (plan.totalBytes / 1024 ** 3).toFixed(3);
+          const retainGb = (plan.retainBytes / 1024 ** 3).toFixed(0);
+          console.log(`Workspace cleanup dry-run`);
+          console.log(`  workspace root: ${workflow.workspace.root}`);
+          console.log(`  entries: ${enumeration.entries.length}`);
+          console.log(
+            `  total usage: ${totalGb} GB (cap ${retainGb} GB${plan.totalBytes > plan.retainBytes ? ", OVER" : ""})`,
+          );
+          console.log(`  will delete: ${plan.delete.length}`);
+          console.log(
+            `  keep failure markers: ${plan.keepFailureMarkers.length}`,
+          );
+          if (plan.errors.length > 0) {
+            console.log(`  errors: ${plan.errors.length}`);
+            for (const err of plan.errors) {
+              console.log(`    [WARN] ${err.workspacePath}: ${err.reason}`);
+            }
+          }
+          for (const entry of plan.delete) {
+            console.log(`    [${entry.reason}] ${entry.workspacePath}`);
+          }
+          return;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`Workspace cleanup dry-run failed: ${message}`);
+          process.exitCode = 1;
+          return;
+        }
+      }
       const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
 
       const nodeVersion = process.version;

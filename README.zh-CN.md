@@ -410,11 +410,22 @@ Request，不替代代码审查。
   统一的 `## Review feedback` markdown 区段拼接到 agent prompt 之前。该 sweep
   始终开启，无需 workflow 开关。dashboard 的 run 详情页面新增 `Latest review
 feedback` 面板，可直接跳转到 MR 上的每条评论。
+- ✅ Workspace retention（V2 Phase 5）：orchestrator 按 `retention.cleanup_interval_ms`
+  周期清理 `~/.issuepilot/workspaces`，成功 run 默认 7 天到期、失败 run 默认
+  保留 30 天供取证，active run 永远不删；总容量超出 `max_workspace_gb` 时
+  也只允许从已过期的 terminal run 里挑，保留期内的 failure 现场不会被强删。
+  配置通过 `issuepilot.team.yaml` 或 workflow front matter 的 `retention`
+  块覆盖。操作员可用 `issuepilot doctor --workspace --workflow <path>`
+  做 dry-run 预览；dashboard service header 新增 `Workspace usage` /
+  `Next cleanup` 两列；每次 sweep emit `workspace_cleanup_planned` /
+  `_completed` / `_failed` 事件，详细 SOP 见
+  `docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`。
 - review 工作流打磨：在 dashboard 和生成报告中直接展示结构化 handoff /
   failure / closing note 字段。
 - 可选自动 merge 策略（满足 CI / approval 后）。P0 默认仍由人类控制 merge。
 - 更完整的运行报告：diff summary、测试结果、风险点、耗时分解。
-- workspace 清理与保留策略（按时间 / 大小 / 状态分级）。
+- ~~workspace 清理与保留策略（按时间 / 大小 / 状态分级）。~~
+  已在 V2 Phase 5 交付，见上方 ✅ 条目。
 
 ### V3 — 生产化执行平台
 

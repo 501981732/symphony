@@ -40,6 +40,7 @@ import {
 } from "@issuepilot/workspace";
 import { execa } from "execa";
 
+import { runWorkspaceCleanupOnce } from "./maintenance/workspace-cleanup.js";
 import {
   archiveRun,
   retryRun,
@@ -520,33 +521,56 @@ export async function startDaemon(
       });
   };
 
-  // Operator action services and the CI feedback scanner both publish
-  // directly to the event bus (they do not have access to publishEvent's
-  // eventStore-aware path). Bridge those records into the eventStore so
-  // `/api/events?runId=...` and the dashboard's audit log can surface them
-  // alongside dispatch/codex events. The bus already received the record
-  // from the caller; this subscriber strictly appends to disk and never
-  // re-publishes.
+  // V2 Phase 5: persist workspace cleanup events to a sentinel slot so
+  // `/api/events?runId=workspace-cleanup` returns the audit history
+  // the runbook tells operators to grep. These events are not tied to
+  // a single run/issue (they describe the whole `~/.issuepilot` root),
+  // so we map the sentinel `runId` -> `("__system__", 0)` once at
+  // startup; the same `runIndex` is reused below for operator/CI/review
+  // bridging.
+  const WORKSPACE_CLEANUP_RUN_ID = "workspace-cleanup";
+  const WORKSPACE_CLEANUP_KEY = {
+    projectSlug: "__system__",
+    issueIid: 0,
+  } as const;
+  runIndex.set(WORKSPACE_CLEANUP_RUN_ID, WORKSPACE_CLEANUP_KEY);
+
+  // Operator action services, the CI feedback scanner and the workspace
+  // cleanup sweep all publish directly to the event bus (they do not
+  // have access to publishEvent's eventStore-aware path). Bridge those
+  // records into the eventStore so `/api/events?runId=...` and the
+  // dashboard's audit log can surface them alongside dispatch/codex
+  // events. The bus already received the record from the caller; this
+  // subscriber strictly appends to disk and never re-publishes.
   eventBus.subscribe((record) => {
     if (
       !record.type.startsWith("operator_action_") &&
       !record.type.startsWith("ci_status_") &&
-      !record.type.startsWith("review_feedback_")
+      !record.type.startsWith("review_feedback_") &&
+      !record.type.startsWith("workspace_cleanup_")
     ) {
       return;
     }
-    const existing = runIndex.get(record.runId);
-    const run = state.getRun(record.runId);
-    const issueIid =
-      existing?.issueIid ??
-      (typeof run?.["issue"] === "object" &&
-      run["issue"] !== null &&
-      "iid" in run["issue"]
-        ? Number((run["issue"] as { iid: unknown }).iid)
-        : undefined);
-    if (!issueIid || !Number.isFinite(issueIid)) return;
-    const key = existing ?? runKey(workflow, issueIid);
-    runIndex.set(record.runId, key);
+    let key: { projectSlug: string; issueIid: number } | undefined;
+    if (record.type.startsWith("workspace_cleanup_")) {
+      // System-level events: ignore `record.runId` (always the
+      // sentinel) and the per-run lookup below. Pin straight to the
+      // shared `__system__-0.jsonl` log.
+      key = WORKSPACE_CLEANUP_KEY;
+    } else {
+      const existing = runIndex.get(record.runId);
+      const run = state.getRun(record.runId);
+      const issueIid =
+        existing?.issueIid ??
+        (typeof run?.["issue"] === "object" &&
+        run["issue"] !== null &&
+        "iid" in run["issue"]
+          ? Number((run["issue"] as { iid: unknown }).iid)
+          : undefined);
+      if (!issueIid || !Number.isFinite(issueIid)) return;
+      key = existing ?? runKey(workflow, issueIid);
+      runIndex.set(record.runId, key);
+    }
     void eventStore
       .append(key.projectSlug, key.issueIid, record)
       .catch((err) => {
@@ -613,6 +637,17 @@ export async function startDaemon(
     },
   });
 
+  // V2 Phase 5: latest cleanup plan summary, refreshed by the
+  // maintenance executor each time the loop runs cleanup. Both fields
+  // start as `undefined` so the dashboard knows "cleanup hasn't run
+  // yet" (distinct from a literal 0GB usage). The first sweep runs on
+  // the very next tick (lastCleanupAt = 0 in the loop), so seeding
+  // `nextWorkspaceCleanupAt` to "now + interval" would have advertised
+  // an hour-out ETA while the real ETA is the next tick — leave both
+  // undefined until the executor reports back.
+  let lastWorkspaceUsageGb: number | undefined;
+  let nextWorkspaceCleanupAt: string | undefined;
+
   const serverFactory = deps.createServer ?? createServer;
   const app = await serverFactory(
     {
@@ -623,6 +658,8 @@ export async function startDaemon(
       handoffLabel: workflow.tracker.handoffLabel,
       pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
       concurrency: workflow.agent.maxConcurrentAgents,
+      workspaceUsageGb: () => lastWorkspaceUsageGb,
+      nextCleanupAt: () => nextWorkspaceCleanupAt,
       readEvents: async (runId, readOpts) => {
         const key = runIndex.get(runId);
         if (!key) return [];
@@ -988,6 +1025,36 @@ export async function startDaemon(
           });
         }
       : undefined,
+    // V2 Phase 5: workspace retention sweep. Each tick we honour the
+    // workflow `retention.cleanup_interval_ms` (defaults to one hour);
+    // when the interval has elapsed since the last sweep, the executor
+    // walks `workflow.workspace.root`, builds a `CleanupPlan` from
+    // RuntimeState + retention policy, and rm's expired terminal
+    // workspaces. Per-entry failures stay confined to a single
+    // `workspace_cleanup_failed` event so the rest of the loop is
+    // unaffected. Result usage / next-ETA is stashed on the closures
+    // above so `/api/state` and the dashboard service header can show
+    // them without polling the filesystem.
+    cleanup: {
+      runOnce: async () => {
+        const result = await runWorkspaceCleanupOnce({
+          workspaceRoot: workflow.workspace.root,
+          state,
+          retention: workflow.retention,
+          eventBus,
+        });
+        // I3: report post-sweep usage. `totalBytes` is the enumeration
+        // snapshot before any `rm`; reporting it would leave the
+        // dashboard quoting a stale pre-cleanup number for up to
+        // `cleanupIntervalMs`. `totalBytesAfter` subtracts the bytes
+        // of every workspace the executor actually removed.
+        lastWorkspaceUsageGb = result.totalBytesAfter / 1024 ** 3;
+        nextWorkspaceCleanupAt = new Date(
+          Date.now() + workflow.retention.cleanupIntervalMs,
+        ).toISOString();
+      },
+      intervalMs: workflow.retention.cleanupIntervalMs,
+    },
     // V2 Phase 4: always-on review feedback sweep. The plan deliberately
     // does not introduce a `reviewSweep.enabled` toggle yet; sweeping a
     // run that has no MR is a no-op (emits `no_mr` and moves on), so
@@ -1000,8 +1067,7 @@ export async function startDaemon(
         state,
         eventBus,
         gitlab: {
-          findMergeRequestBySourceBranch:
-            gitlab.findMergeRequestBySourceBranch,
+          findMergeRequestBySourceBranch: gitlab.findMergeRequestBySourceBranch,
           listMergeRequestNotes: gitlab.listMergeRequestNotes,
         },
         workflow: {

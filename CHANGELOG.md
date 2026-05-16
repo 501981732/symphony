@@ -4,6 +4,80 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-16 — **V2 Phase 5 Workspace Retention 落地：`~/.issuepilot` 下的
+  worktree 在终态满足 retention policy 时被 orchestrator 周期性自动清理，
+  active run 永远不动、未到期失败现场默认保留、容量压力不允许凌驾于
+  forensics 之上。** 新增 `RetentionConfig`（`packages/shared-contracts/src/retention.ts`）
+  + `DEFAULT_RETENTION_CONFIG = { successfulRunDays: 7, failedRunDays: 30,
+  maxWorkspaceGb: 50, cleanupIntervalMs: 3_600_000 }`，team config 与
+  workflow front matter 共用同一 schema，未配置时回落到默认值；team config
+  与 workflow `retention.cleanup_interval_ms` 最小 60_000 ms，避免误填导致
+  主循环空转（schema 测试同步覆盖）。**Behavior change**：相对 V2 Phase 1
+  早期默认（`failedRunDays = 14`），本次把失败现场默认保留期延长到 30 天，
+  与 V2 spec §11 对齐；如果你的部署希望维持 14 天，请在 team config / workflow
+  显式设置 `retention.failed_run_days: 14`。
+  新增纯函数 planner `packages/workspace/src/retention.ts`
+  (`planWorkspaceCleanup` / `enumerateWorkspaceEntries`)：按 `RuntimeState`
+  注解每个 workspace 目录为 `active / successful / failed / blocked / completed
+  / unknown`，根据 mtime 与 `endedAt` 计算到期、永远不把 `active` 列入
+  `delete`、`over-capacity` 也只能从已过期的 terminal run 中挑、并把 stat
+  失败转成 `errors[]`。新增 executor
+  `apps/orchestrator/src/maintenance/workspace-cleanup.ts` 的
+  `runWorkspaceCleanupOnce`：调 planner、emit
+  `workspace_cleanup_planned`（含 `totalBytes` / `retainBytes` /
+  `overCapacity` / `deleteCount`）、逐条 `fs.rm` 并按结果 emit
+  `workspace_cleanup_completed` 或 `workspace_cleanup_failed`，单条失败
+  不阻塞整轮。`apps/orchestrator/src/orchestrator/loop.ts` 在 tick 末尾
+  按 `retention.cleanup_interval_ms` 触发 sweep；
+  `apps/orchestrator/src/daemon.ts` 装配 executor 并把
+  `workspaceUsageGb` / `nextCleanupAt` 透出到 `OrchestratorStateSnapshot.service`
+  + `/api/state`。dashboard `apps/dashboard/components/overview/service-header.tsx`
+  在两字段存在时新增 `Workspace usage` / `Next cleanup` 两块。新增
+  `issuepilot doctor --workspace --workflow <path>` dry-run：从 workflow 读出
+  `workspace.root` + retention，调 `enumerateWorkspaceEntries` + planner 并
+  打印「entries / total usage / will delete / keep failure markers」摘要；
+  dry-run 不持有 RuntimeState，所有目录视为 `unknown`，因此天然不会删任何文件，
+  把"真实想删什么"留给订阅 `workspace_cleanup_planned` 事件。新增三个 shared
+  contracts 事件类型 + `OrchestratorStateSnapshot.service.{workspaceUsageGb,
+  nextCleanupAt}`。`apps/orchestrator` 新增 `runWorkspaceCleanupOnce` /
+  `RunWorkspaceCleanupInput` 公共导出供 e2e 测试调用。新增 e2e
+  `tests/e2e/workspace-cleanup.test.ts` 覆盖 plan §Task 6 三条契约
+  （A 过期成功 → 删除 + completed 事件；B active run → 不删；C 五个保留期内
+  failed run + 容量超限 → `deleteCount=0` + `overCapacity=true`）。新增
+  runbook `docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`：
+  决策树（常规 vs 强制 vs 关闭）、`doctor --workspace` dry-run 用法、
+  `workspace_cleanup_failed.reason` 分类表（`enumerate_failed` / `stat_failed`
+  / `rm_failed`）与诊断步骤、误删 + active 被误清 + dry-run 异常三种场景的
+  rollback 步骤、操作前自检清单。Phase 5 不解决远端 GitLab `ai/*` 分支清理、
+  workspace 归档与多 host 共享协议（spec §4），如需后续走 V3 RFC。详见
+  spec `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md`
+  与实施计划 `docs/superpowers/plans/2026-05-15-issuepilot-v2-workspace-retention.md`。
+
+- 2026-05-16 — **V2 Phase 5 review hardening**：基于 code review 修复 important
+  + 部分 minor 一致性问题，未引入新功能。`runWorkspaceCleanupOnce` 改为
+  返回 `CleanupRunResult`（在 `CleanupPlan` 基础上新增 `totalBytesAfter` =
+  `plan.totalBytes` 减去本轮成功删除的 entry 字节数）；daemon 用 `totalBytesAfter`
+  刷新 `OrchestratorStateSnapshot.service.workspaceUsageGb`，避免 dashboard
+  在下一个 `cleanupIntervalMs` 之内一直显示扫描前的旧值。`CleanupDelete`
+  追加 `projectId` / `runId` / `bytes`：executor 在 `fs.rm` 前用
+  `RuntimeState.getRun(runId)` 再次校验 status，若 run 在 plan -> rm 之间被
+  retry 重新翻回 `claimed/running/retrying/stopping`，跳过本条删除并 emit
+  `workspace_cleanup_failed(reason=rm_failed, message=...reclaimed...)`，
+  消除 TOCTOU 窗口。daemon SSE 持久化 subscriber 加上 `workspace_cleanup_`
+  前缀分支：cleanup 事件用 sentinel `runId=workspace-cleanup` 落到
+  event store 的 `__system__-0.jsonl`，`/api/events?runId=workspace-cleanup`
+  返回历史、`/api/events/stream?runId=workspace-cleanup` 提供实时流
+  （runbook §3 / §5 同步更新 curl 命令）。daemon 启动时 `nextWorkspaceCleanupAt`
+  改为 `undefined`，由首轮 cleanup 完成后回填，dashboard 不再撒谎说"下一次
+  清理在 1 小时后"。V2 team daemon 在启动时打 warn 提示 `retention` 节
+  被解析但不消费（Phase 5 只在 V1 入口激活，team-mode wiring 留给后续 release），
+  spec §4 显式列入「Phase 5 不包含」。tests/e2e/workspace-cleanup.test.ts
+  的 `seedWorkspace` 删除掉无作用的 `fs.utimesSync` 调用：planner 用
+  `RuntimeState.endedAt` 算保留期，并不读 mtime，原先的代码与注释会误导
+  后续 contributor。
+
 ### Changed
 
 - 2026-05-16 — **V2 Phase 4 后续 hardening**：基于 code review 修复 important

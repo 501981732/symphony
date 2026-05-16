@@ -4,11 +4,7 @@ import * as path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  TeamConfigError,
-  loadTeamConfig,
-  parseTeamConfig,
-} from "../config.js";
+import { TeamConfigError, loadTeamConfig, parseTeamConfig } from "../config.js";
 
 describe("team config", () => {
   it("parses defaults and resolves workflow paths relative to the config file", () => {
@@ -231,6 +227,75 @@ describe("team config", () => {
     }
     expect(caught).toBeInstanceOf(TeamConfigError);
     expect((caught as TeamConfigError).path).toBe("ci.on_failure");
+  });
+
+  it("defaults retention policy to spec §11 (7d successful, 30d failed, 50GB, 1h interval)", () => {
+    const config = parseTeamConfig(
+      [
+        "version: 1",
+        "projects:",
+        "  - id: platform-web",
+        "    name: Platform Web",
+        "    workflow: ./WORKFLOW.md",
+      ].join("\n"),
+      "/srv/issuepilot/issuepilot.team.yaml",
+    );
+
+    expect(config.retention).toEqual({
+      successfulRunDays: 7,
+      failedRunDays: 30,
+      maxWorkspaceGb: 50,
+      cleanupIntervalMs: 3_600_000,
+    });
+  });
+
+  it("reads retention overrides and accepts cleanup_interval_ms", () => {
+    const config = parseTeamConfig(
+      [
+        "version: 1",
+        "retention:",
+        "  successful_run_days: 3",
+        "  failed_run_days: 14",
+        "  max_workspace_gb: 20",
+        "  cleanup_interval_ms: 600000",
+        "projects:",
+        "  - id: platform-web",
+        "    name: Platform Web",
+        "    workflow: ./WORKFLOW.md",
+      ].join("\n"),
+      "/srv/issuepilot/issuepilot.team.yaml",
+    );
+
+    expect(config.retention).toEqual({
+      successfulRunDays: 3,
+      failedRunDays: 14,
+      maxWorkspaceGb: 20,
+      cleanupIntervalMs: 600_000,
+    });
+  });
+
+  it("rejects retention.cleanup_interval_ms below the 60s floor with snake_case path", () => {
+    let caught: unknown;
+    try {
+      parseTeamConfig(
+        [
+          "version: 1",
+          "retention:",
+          "  cleanup_interval_ms: 30000",
+          "projects:",
+          "  - id: platform-web",
+          "    name: Platform Web",
+          "    workflow: ./WORKFLOW.md",
+        ].join("\n"),
+        "/srv/issuepilot/issuepilot.team.yaml",
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(TeamConfigError);
+    expect((caught as TeamConfigError).path).toBe(
+      "retention.cleanup_interval_ms",
+    );
   });
 
   it("loads a config file from disk", async () => {

@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
+import {
+  DEFAULT_RETENTION_CONFIG,
+  type RetentionConfig,
+} from "@issuepilot/shared-contracts";
 import matter from "gray-matter";
 import YAML from "yaml";
 import { z, type ZodIssue } from "zod";
@@ -120,6 +124,32 @@ const CiSchema = z
   })
   .prefault({});
 
+const RetentionSchema = z
+  .object({
+    successful_run_days: z
+      .number()
+      .int()
+      .min(0)
+      .default(DEFAULT_RETENTION_CONFIG.successfulRunDays),
+    failed_run_days: z
+      .number()
+      .int()
+      .min(0)
+      .default(DEFAULT_RETENTION_CONFIG.failedRunDays),
+    max_workspace_gb: z
+      .number()
+      .min(0)
+      .default(DEFAULT_RETENTION_CONFIG.maxWorkspaceGb),
+    // 60s floor matches the team-config zod rule; below that the daemon
+    // would re-`du` faster than the main poll loop and starve dispatch.
+    cleanup_interval_ms: z
+      .number()
+      .int()
+      .min(60_000)
+      .default(DEFAULT_RETENTION_CONFIG.cleanupIntervalMs),
+  })
+  .prefault({});
+
 const WorkflowFrontMatterSchema = z.object({
   tracker: TrackerSchema,
   workspace: WorkspaceSchema,
@@ -128,6 +158,7 @@ const WorkflowFrontMatterSchema = z.object({
   codex: CodexSchema,
   hooks: HooksSchema,
   ci: CiSchema,
+  retention: RetentionSchema,
   poll_interval_ms: z.number().int().min(1_000).default(10_000),
 });
 
@@ -209,6 +240,13 @@ export async function parseWorkflowFile(
     waitForPipeline: fm.ci.wait_for_pipeline,
   };
 
+  const retention: RetentionConfig = {
+    successfulRunDays: fm.retention.successful_run_days,
+    failedRunDays: fm.retention.failed_run_days,
+    maxWorkspaceGb: fm.retention.max_workspace_gb,
+    cleanupIntervalMs: fm.retention.cleanup_interval_ms,
+  };
+
   return {
     tracker,
     workspace,
@@ -217,6 +255,7 @@ export async function parseWorkflowFile(
     codex,
     hooks,
     ci,
+    retention,
     pollIntervalMs: fm.poll_interval_ms,
     promptTemplate,
     source: {

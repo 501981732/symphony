@@ -276,6 +276,9 @@ importers:
 
   packages/workspace:
     dependencies:
+      '@issuepilot/shared-contracts':
+        specifier: workspace:*
+        version: link:../shared-contracts
       execa:
         specifier: ^9.6.1
         version: 9.6.1

@@ -55,6 +55,13 @@ describe("parseWorkflowFile", () => {
       waitForPipeline: true,
     });
 
+    expect(cfg.retention).toEqual({
+      successfulRunDays: 7,
+      failedRunDays: 30,
+      maxWorkspaceGb: 50,
+      cleanupIntervalMs: 3_600_000,
+    });
+
     expect(cfg.promptTemplate).toMatch(/Issue: \{\{ issue.identifier \}\}/);
     expect(cfg.promptTemplate).toMatch(/You are the AI engineer/);
 
@@ -101,6 +108,26 @@ describe("parseWorkflowFile", () => {
       enabled: false,
       onFailure: "ai-rework",
       waitForPipeline: true,
+    });
+  });
+
+  it("retention 节自定义值会被透传", async () => {
+    const cfg = await parseWorkflowFile(fixture("workflow.retention.md"));
+
+    expect(cfg.retention).toEqual({
+      successfulRunDays: 1,
+      failedRunDays: 60,
+      maxWorkspaceGb: 100,
+      cleanupIntervalMs: 120_000,
+    });
+  });
+
+  it("retention.cleanup_interval_ms 低于 60 秒下限抛 WorkflowConfigError", async () => {
+    await expect(
+      parseWorkflowFile(fixture("workflow.retention-bad-interval.md")),
+    ).rejects.toMatchObject({
+      name: "WorkflowConfigError",
+      path: "retention.cleanup_interval_ms",
     });
   });
 

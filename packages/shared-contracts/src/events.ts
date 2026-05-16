@@ -103,6 +103,10 @@ export const EVENT_TYPE_VALUES = [
   "review_feedback_sweep_started",
   "review_feedback_summary_generated",
   "review_feedback_sweep_failed",
+  // Workspace retention sweep (V2 Phase 5)
+  "workspace_cleanup_planned",
+  "workspace_cleanup_completed",
+  "workspace_cleanup_failed",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPE_VALUES)[number];

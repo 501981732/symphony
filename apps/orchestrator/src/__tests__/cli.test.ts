@@ -358,6 +358,89 @@ describe("CLI", () => {
     mockLog.mockRestore();
   });
 
+  it("doctor --workspace dry-runs the cleanup planner without deleting files", async () => {
+    const wfPath = path.join(tmpDir, "WORKFLOW.md");
+    fs.writeFileSync(wfPath, "---\ntitle: ignored by mock\n---\n");
+    const workspaceRoot = path.join(tmpDir, "workspaces");
+    const wsToKeep = path.join(workspaceRoot, "platform-web", "run-fresh");
+    const wsToDelete = path.join(workspaceRoot, "platform-web", "run-old");
+    fs.mkdirSync(wsToKeep, { recursive: true });
+    fs.mkdirSync(wsToDelete, { recursive: true });
+    fs.writeFileSync(path.join(wsToKeep, "keep.txt"), "k".repeat(2048));
+    fs.writeFileSync(path.join(wsToDelete, "stale.txt"), "s".repeat(4096));
+
+    const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const validateWorkflow = vi.fn(async () => ({
+      tracker: {
+        kind: "gitlab",
+        baseUrl: "https://gitlab.example.com",
+        projectId: "platform-web",
+        tokenEnv: "GITLAB_TOKEN",
+        activeLabels: ["ai-ready"],
+        runningLabel: "ai-running",
+        handoffLabel: "human-review",
+        failedLabel: "ai-failed",
+        blockedLabel: "ai-blocked",
+        reworkLabel: "ai-rework",
+        mergingLabel: "ai-merging",
+      },
+      workspace: {
+        root: workspaceRoot,
+        strategy: "worktree",
+        repoCacheRoot: path.join(tmpDir, "repos"),
+      },
+      git: {
+        repoUrl: "git@example.com:platform-web.git",
+        baseBranch: "main",
+        branchPrefix: "ai",
+      },
+      agent: {
+        runner: "codex-app-server",
+        maxConcurrentAgents: 1,
+        maxTurns: 3,
+        maxAttempts: 2,
+        retryBackoffMs: 1000,
+      },
+      codex: {
+        command: "codex app-server",
+        approvalPolicy: "never",
+        threadSandbox: "workspace-write",
+        turnTimeoutMs: 60_000,
+        turnSandboxPolicy: { type: "workspaceWrite" },
+      },
+      hooks: {},
+      ci: { enabled: false, onFailure: "ai-rework", waitForPipeline: true },
+      retention: {
+        successfulRunDays: 7,
+        failedRunDays: 30,
+        maxWorkspaceGb: 50,
+        cleanupIntervalMs: 60_000,
+      },
+      pollIntervalMs: 10_000,
+      promptTemplate: "Fix {{ issue.title }}",
+      source: {
+        path: wfPath,
+        sha256: "sha",
+        loadedAt: new Date(0).toISOString(),
+      },
+    }));
+    const cli = buildCli({ validateWorkflow });
+
+    await cli.parseAsync(["doctor", "--workspace", "--workflow", wfPath], {
+      from: "user",
+    });
+
+    const output = mockLog.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Workspace cleanup dry-run");
+    expect(output).toMatch(/entries:\s*2/);
+    expect(output).toMatch(/will delete:\s*0/); // both fresh, no run records
+    // Dry-run never deletes from disk.
+    expect(fs.existsSync(wsToKeep)).toBe(true);
+    expect(fs.existsSync(wsToDelete)).toBe(true);
+    expect(process.exitCode).toBe(0);
+    mockLog.mockRestore();
+  });
+
   it("dashboard starts with configured port and API URL", async () => {
     const spawnDashboard = vi.fn(async () => ({
       wait: async () => undefined,
@@ -527,15 +610,7 @@ describe("CLI", () => {
     const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await cli.parseAsync(
-      [
-        "run",
-        "--config",
-        configPath,
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "9999",
-      ],
+      ["run", "--config", configPath, "--host", "0.0.0.0", "--port", "9999"],
       { from: "user" },
     );
 
