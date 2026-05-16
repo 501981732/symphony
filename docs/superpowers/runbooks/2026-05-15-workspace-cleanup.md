@@ -5,7 +5,9 @@
 对应 spec：`docs/superpowers/specs/2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md`
 对应实施计划：`docs/superpowers/plans/2026-05-15-issuepilot-v2-workspace-retention.md`
 
-本 runbook 面向操作员，描述 `~/.issuepilot` workspace 自动清理的日常操作、诊断与回滚步骤。Phase 5 的 cleanup 路径由 orchestrator 主循环周期性触发，所有 cleanup 行为都会落到 event log，可在 dashboard 或 `/api/events?type=workspace_cleanup_*` 查询。
+本 runbook 面向操作员，描述 `~/.issuepilot` workspace 自动清理的日常操作、诊断与回滚步骤。Phase 5 的 cleanup 路径由 V1 单项目 orchestrator（`issuepilot start --workflow ...`）主循环周期性触发，所有 cleanup 行为都会落到 event log。Cleanup 事件用 sentinel `runId=workspace-cleanup` 持久化到 event store，可通过 `/api/events?runId=workspace-cleanup` 查询历史或 `/api/events/stream?runId=workspace-cleanup` 实时观察。
+
+> **范围说明（V2 team daemon）**：V2 `issuepilot.team.yaml` schema 也支持 `retention` 节，但 V2 team daemon 当前不消费它（启动时会打 warn 提示）。需要 retention 时请使用 V1 入口；team-mode wiring 留给后续 release。
 
 ---
 
@@ -81,11 +83,17 @@ Workspace cleanup dry-run
 - `total usage`：实际占用（粗略 `du`，与 GitHub Actions 风格的 `du -sh` 一致）。
 - `will delete: 0`：dry-run 总为 0，**真实** delete 数请订阅 `workspace_cleanup_planned` 事件。
 
-> 当你想看 daemon 当下真实想删什么，使用：
+> 当你想看 daemon 当下真实想删什么，订阅 sentinel `runId`：
 >
 > ```bash
-> curl -sS "$ISSUEPILOT_API/api/events?type=workspace_cleanup_planned&limit=1" | jq
+> # 最近 1 条 cleanup 事件（含 planned / completed / failed）
+> curl -sS "$ISSUEPILOT_API/api/events?runId=workspace-cleanup&limit=1" | jq
+>
+> # 实时观察（SSE 流，Ctrl-C 退出）
+> curl -N "$ISSUEPILOT_API/api/events/stream?runId=workspace-cleanup"
 > ```
+>
+> Cleanup 不属于任何单个 issue，所以 event store 用约定的 `runId=workspace-cleanup` 把这些事件聚到一起，按 `data.workspacePath` 区分目标。如果要按事件类型筛，jq 一下即可：`jq 'select(.type=="workspace_cleanup_planned")'`。
 
 ---
 
