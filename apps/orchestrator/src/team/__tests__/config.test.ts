@@ -4,11 +4,7 @@ import * as path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  TeamConfigError,
-  loadTeamConfig,
-  parseTeamConfig,
-} from "../config.js";
+import { TeamConfigError, loadTeamConfig, parseTeamConfig } from "../config.js";
 
 describe("team config", () => {
   it("parses defaults and resolves workflow paths relative to the config file", () => {

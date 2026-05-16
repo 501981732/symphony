@@ -610,15 +610,7 @@ describe("CLI", () => {
     const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await cli.parseAsync(
-      [
-        "run",
-        "--config",
-        configPath,
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "9999",
-      ],
+      ["run", "--config", configPath, "--host", "0.0.0.0", "--port", "9999"],
       { from: "user" },
     );
 

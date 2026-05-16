@@ -2,6 +2,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import {
+  enumerateWorkspaceEntries,
+  planWorkspaceCleanup,
+} from "@issuepilot/workspace";
 import { Command } from "commander";
 import { execaCommand } from "execa";
 
@@ -20,10 +24,6 @@ import {
   validateWorkflow,
   type DaemonHandle,
 } from "./daemon.js";
-import {
-  enumerateWorkspaceEntries,
-  planWorkspaceCleanup,
-} from "@issuepilot/workspace";
 import {
   startDashboard,
   type DashboardHandle,
@@ -168,9 +168,7 @@ export function buildCli(deps: CliDeps = {}): Command {
         typeof opts.config === "string" &&
         opts.config.length > 0
       ) {
-        console.error(
-          "Error: --workflow and --config cannot be used together",
-        );
+        console.error("Error: --workflow and --config cannot be used together");
         process.exitCode = 1;
         return;
       }

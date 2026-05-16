@@ -1,8 +1,9 @@
 # IssuePilot V2 Workspace Retention 实施计划
 
 Phase：V2 Phase 5
-状态：待实施
+状态：已实施（2026-05-16，分支 `v2/phase5-workspace-retention`）
 对应 spec：`docs/superpowers/specs/2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md`
+对应 runbook：`docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`
 上级 spec：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
 上一步：V2 Phase 4 Review Feedback Sweep
 

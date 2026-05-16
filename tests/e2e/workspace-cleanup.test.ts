@@ -77,7 +77,9 @@ interface CollectedEvents {
   ofType: (type: string) => IssuePilotInternalEvent[];
 }
 
-function collectEvents(bus: ReturnType<typeof createEventBus<IssuePilotInternalEvent>>): CollectedEvents {
+function collectEvents(
+  bus: ReturnType<typeof createEventBus<IssuePilotInternalEvent>>,
+): CollectedEvents {
   const all: IssuePilotInternalEvent[] = [];
   bus.subscribe((evt) => {
     all.push(evt);
@@ -146,9 +148,9 @@ describe("workspace retention E2E", () => {
       (completed[0]?.data as { workspacePath?: string; reason?: string })
         .workspacePath,
     ).toBe(wsPath);
-    expect(
-      (completed[0]?.data as { reason?: string }).reason,
-    ).toBe("successful-expired");
+    expect((completed[0]?.data as { reason?: string }).reason).toBe(
+      "successful-expired",
+    );
 
     // Spec §12: planned + completed are mandatory; failed must not be
     // emitted on a clean sweep.
@@ -200,9 +202,7 @@ describe("workspace retention E2E", () => {
 
     const planned = events.ofType("workspace_cleanup_planned");
     expect(planned).toHaveLength(1);
-    expect(
-      (planned[0]?.data as { deleteCount?: number }).deleteCount,
-    ).toBe(0);
+    expect((planned[0]?.data as { deleteCount?: number }).deleteCount).toBe(0);
   });
 
   it("C: over-capacity sweep keeps unexpired failure forensics intact", async () => {

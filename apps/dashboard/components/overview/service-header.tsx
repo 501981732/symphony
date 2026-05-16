@@ -23,7 +23,10 @@ function formatTimestamp(value: string | null): string {
     // locale, which differs between Node and browser and triggers React
     // hydration mismatch warnings — same fix as ProjectList.formatLastPoll
     // (V2 review I6 + pre-existing hydration follow-up).
-    return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
+    return d
+      .toISOString()
+      .replace("T", " ")
+      .replace(/\.\d{3}Z$/, "Z");
   } catch {
     return value;
   }

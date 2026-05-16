@@ -40,6 +40,7 @@ import {
 } from "@issuepilot/workspace";
 import { execa } from "execa";
 
+import { runWorkspaceCleanupOnce } from "./maintenance/workspace-cleanup.js";
 import {
   archiveRun,
   retryRun,
@@ -47,7 +48,6 @@ import {
   type OperatorActionDeps,
   type OperatorActionInput,
 } from "./operations/actions.js";
-import { runWorkspaceCleanupOnce } from "./maintenance/workspace-cleanup.js";
 import { scanCiFeedbackOnce } from "./orchestrator/ci-feedback.js";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
@@ -1040,8 +1040,7 @@ export async function startDaemon(
         state,
         eventBus,
         gitlab: {
-          findMergeRequestBySourceBranch:
-            gitlab.findMergeRequestBySourceBranch,
+          findMergeRequestBySourceBranch: gitlab.findMergeRequestBySourceBranch,
           listMergeRequestNotes: gitlab.listMergeRequestNotes,
         },
         workflow: {

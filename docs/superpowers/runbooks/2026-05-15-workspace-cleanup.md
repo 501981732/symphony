@@ -93,11 +93,11 @@ Workspace cleanup dry-run
 
 每一条 failed 事件 `data.reason` 给出粗分类：
 
-| `data.reason`     | 含义                              | 建议处理                                                          |
-| ----------------- | --------------------------------- | ----------------------------------------------------------------- |
-| `enumerate_failed` | 整个 workspace root 读取失败      | 检查 `workspace.root` 路径是否存在；权限；磁盘是否 read-only。     |
-| `stat_failed`     | 单个目录 `stat` 失败              | 通常是 race（目录刚被人删）或者权限。等下一轮 cleanup 再观察。     |
-| `rm_failed`       | 单个 `fs.rm` 失败                 | 看 `data.message`：`EACCES` → 权限；`EBUSY` → 仍被进程持有；`ENOTEMPTY` 通常意味着含挂载点，需手动卸载。 |
+| `data.reason`      | 含义                         | 建议处理                                                                                                 |
+| ------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `enumerate_failed` | 整个 workspace root 读取失败 | 检查 `workspace.root` 路径是否存在；权限；磁盘是否 read-only。                                           |
+| `stat_failed`      | 单个目录 `stat` 失败         | 通常是 race（目录刚被人删）或者权限。等下一轮 cleanup 再观察。                                           |
+| `rm_failed`        | 单个 `fs.rm` 失败            | 看 `data.message`：`EACCES` → 权限；`EBUSY` → 仍被进程持有；`ENOTEMPTY` 通常意味着含挂载点，需手动卸载。 |
 
 定位步骤：
 

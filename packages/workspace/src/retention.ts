@@ -206,9 +206,7 @@ export interface EnumerateWorkspaceEntriesInput {
   lookupRun(
     projectId: string,
     runId: string,
-  ):
-    | { status: WorkspaceEntryStatus; endedAt?: string | undefined }
-    | undefined;
+  ): { status: WorkspaceEntryStatus; endedAt?: string | undefined } | undefined;
 }
 
 export interface EnumerateWorkspaceEntriesResult {

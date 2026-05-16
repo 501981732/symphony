@@ -167,7 +167,9 @@ function buildRunLookup(
 ): (
   projectId: string,
   runId: string,
-) => { status: WorkspaceEntryStatus; endedAt?: string | undefined } | undefined {
+) =>
+  | { status: WorkspaceEntryStatus; endedAt?: string | undefined }
+  | undefined {
   const byKey = new Map<
     string,
     { status: WorkspaceEntryStatus; endedAt?: string | undefined }

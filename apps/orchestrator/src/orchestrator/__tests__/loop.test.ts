@@ -273,11 +273,7 @@ describe("startLoop", () => {
 
     await loop.tick();
 
-    expect(sequence).toEqual([
-      "reconcileRunning",
-      "scanCiFeedback",
-      "claim",
-    ]);
+    expect(sequence).toEqual(["reconcileRunning", "scanCiFeedback", "claim"]);
 
     await loop.stop();
   });

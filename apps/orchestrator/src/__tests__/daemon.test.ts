@@ -339,7 +339,9 @@ describe("syncHumanReviewFinalLabels", () => {
 
     const run = state.getRun(runId);
     expect(run?.["endedAt"]).toBe("2026-05-15T13:00:00.000Z");
-    expect((run?.["issue"] as { labels: string[] }).labels).toEqual(["ai-rework"]);
+    expect((run?.["issue"] as { labels: string[] }).labels).toEqual([
+      "ai-rework",
+    ]);
   });
 
   it("preserves the earliest endedAt across repeated terminal events", () => {
