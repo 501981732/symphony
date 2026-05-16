@@ -62,6 +62,40 @@ describe("@issuepilot/shared-contracts/state", () => {
       .toEqualTypeOf<DashboardSummary>();
   });
 
+  it("OrchestratorStateSnapshot.service exposes optional workspaceUsageGb + nextCleanupAt for Phase 5", () => {
+    expectTypeOf<OrchestratorStateSnapshot>()
+      .toHaveProperty("service")
+      .toHaveProperty("workspaceUsageGb")
+      .toEqualTypeOf<number | undefined>();
+    expectTypeOf<OrchestratorStateSnapshot>()
+      .toHaveProperty("service")
+      .toHaveProperty("nextCleanupAt")
+      .toEqualTypeOf<string | undefined>();
+
+    const snapshot: OrchestratorStateSnapshot = {
+      service: {
+        status: "ready",
+        workflowPath: "/srv/issuepilot/team.yaml",
+        gitlabProject: "team",
+        pollIntervalMs: 10_000,
+        concurrency: 2,
+        lastConfigReloadAt: null,
+        lastPollAt: null,
+        workspaceUsageGb: 12.4,
+        nextCleanupAt: "2026-05-16T01:00:00.000Z",
+      },
+      summary: {
+        running: 0,
+        retrying: 0,
+        "human-review": 0,
+        failed: 0,
+        blocked: 0,
+      },
+    };
+    expect(snapshot.service.workspaceUsageGb).toBe(12.4);
+    expect(snapshot.service.nextCleanupAt).toBe("2026-05-16T01:00:00.000Z");
+  });
+
   it("accepts a team runtime snapshot with project summaries", () => {
     const snapshot: OrchestratorStateSnapshot = {
       service: {

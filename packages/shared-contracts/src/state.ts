@@ -44,6 +44,21 @@ export interface OrchestratorStateSnapshot {
     lastConfigReloadAt: string | null;
     /** ISO-8601 of the most recent poll attempt, or null pre-start. */
     lastPollAt: string | null;
+    /**
+     * Approximate disk usage (gibibytes) under the workspace root, sampled
+     * during the most recent {@link RetentionConfig.cleanupIntervalMs}
+     * planner pass. `undefined` means cleanup has not run yet in this
+     * process — distinct from `0`, which means the root exists but is
+     * empty.
+     */
+    workspaceUsageGb?: number;
+    /**
+     * ISO-8601 timestamp of the next planned workspace cleanup pass. The
+     * dashboard shows it as a relative "in 47m" so operators can decide
+     * whether to wait or force a sweep. `undefined` when the cleanup
+     * scheduler has not yet started (e.g. daemon still in `starting`).
+     */
+    nextCleanupAt?: string;
   };
   /** Spec §14 counters shown in the dashboard overview. */
   summary: DashboardSummary;

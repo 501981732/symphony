@@ -79,6 +79,9 @@ const REQUIRED_EVENT_TYPES = [
   "review_feedback_sweep_started",
   "review_feedback_summary_generated",
   "review_feedback_sweep_failed",
+  "workspace_cleanup_planned",
+  "workspace_cleanup_completed",
+  "workspace_cleanup_failed",
 ] as const;
 
 describe("@issuepilot/shared-contracts/events", () => {
@@ -116,6 +119,12 @@ describe("@issuepilot/shared-contracts/events", () => {
     expect(isEventType("review_feedback_sweep_started")).toBe(true);
     expect(isEventType("review_feedback_summary_generated")).toBe(true);
     expect(isEventType("review_feedback_sweep_failed")).toBe(true);
+  });
+
+  it("isEventType narrows new workspace cleanup types (V2 Phase 5)", () => {
+    expect(isEventType("workspace_cleanup_planned")).toBe(true);
+    expect(isEventType("workspace_cleanup_completed")).toBe(true);
+    expect(isEventType("workspace_cleanup_failed")).toBe(true);
   });
 
   it("IssuePilotEvent requires id / runId / issue / type / message / createdAt", () => {
