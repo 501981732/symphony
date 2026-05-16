@@ -1,21 +1,15 @@
-import type {
-  OrchestratorStateSnapshot,
-  RunRecord,
-} from "@issuepilot/shared-contracts";
+import type { OrchestratorStateSnapshot } from "@issuepilot/shared-contracts";
 
-import { OverviewPage } from "../components/overview/overview-page";
-import { getState, listRuns } from "../lib/api";
+import { CommandCenterPage } from "../components/command-center/command-center-page";
+import { getState, listRuns, type RunWithReport } from "../lib/api";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 async function fetchOverview(): Promise<{
   snapshot: OrchestratorStateSnapshot;
-  runs: RunRecord[];
+  runs: RunWithReport[];
 }> {
-  // Pull archived runs too so the `Show archived` toggle in `RunsTable` has
-  // something to reveal. The orchestrator default-hides archived runs; the
-  // dashboard always wants the full set and filters client-side.
   const [snapshot, runs] = await Promise.all([
     getState(),
     listRuns({ includeArchived: true }),
@@ -25,7 +19,7 @@ async function fetchOverview(): Promise<{
 
 async function refreshAction(): Promise<{
   snapshot: OrchestratorStateSnapshot;
-  runs: RunRecord[];
+  runs: RunWithReport[];
 }> {
   "use server";
   return fetchOverview();
@@ -35,7 +29,7 @@ export default async function HomePage() {
   try {
     const { snapshot, runs } = await fetchOverview();
     return (
-      <OverviewPage
+      <CommandCenterPage
         initialSnapshot={snapshot}
         initialRuns={runs}
         refetch={refreshAction}
