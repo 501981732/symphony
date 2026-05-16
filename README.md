@@ -56,9 +56,12 @@ is TypeScript-first and GitLab-first; the original Symphony spec and Elixir
 implementation remain in this repository as reference material.
 
 > [!WARNING]
-> IssuePilot has closed the P0 local loop and is in V1 local pilot hardening.
-> The tarball install path is usable, but release tags, archived smoke evidence,
-> and the stable local API/CLI compatibility window are still being locked down.
+> IssuePilot has closed the P0 local loop, locked the V1 local tarball, and
+> merged V2 Phases 1-5 (team mode, dashboard actions, CI flip-back, review
+> feedback sweep, workspace retention). Release tags, archived smoke evidence,
+> and the stable local API/CLI compatibility window are still being locked down;
+> the V2 team daemon does not auto-run the workspace cleanup loop yet — see the
+> V2 roadmap entry below for the Phase 5 follow-up.
 
 ## Why IssuePilot?
 
@@ -415,12 +418,21 @@ internal pilot teams without changing the core execution model.
 Goal: graduate from "single machine" to "shared team machine" so a team can
 run IssuePilot on its day-to-day work.
 
-- 🚧 Phase 1 foundation: experimental `issuepilot run --config
+Status: **all five V2 phases are merged into `main`.** A team can run a single
+daemon against multiple GitLab projects, observe and act on runs via the
+dashboard, and let the orchestrator handle CI flip-back / review feedback /
+workspace cleanup. Visual versions:
+
+- Architecture: [`docs/superpowers/diagrams/v2-architecture.svg`](docs/superpowers/diagrams/v2-architecture.svg)
+- End-to-end lifecycle: [`docs/superpowers/diagrams/v2-flow.svg`](docs/superpowers/diagrams/v2-flow.svg)
+- V2 master spec + per-phase progress: [`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`](docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md)
+- Team-mode walkthrough: [`docs/getting-started.md#13-v2-team-mode-multiple-projects-on-one-shared-machine`](docs/getting-started.md#13-v2-team-mode-multiple-projects-on-one-shared-machine)
+
+- ✅ Phase 1 — Team Runtime Foundation: `issuepilot run --config
   /path/to/issuepilot.team.yaml` team mode for multi-project loading,
   lease-backed scheduling, and project-aware dashboard state.
-- Deployable to a shared team box or intranet service (multi-user friendly).
-- Multi-project workflow configuration in a single daemon.
-- Concurrency lifted from 1 to 2–5, with slot scheduling and lease policy.
+- ✅ Single daemon manages multiple projects on a shared box; concurrency
+  is configurable from 1 to 5 with global + per-project lease slots.
 - ✅ Dashboard gains `retry`, `stop`, and `archive run` actions (V2 Phase 2).
 - ✅ CI status ingestion + automatic flip of CI failures back to `ai-rework`
   (V2 Phase 3; opt-in via `ci.enabled: true` in `WORKFLOW.md`). Note: the
@@ -445,14 +457,20 @@ run IssuePilot on its day-to-day work.
   `workspace_cleanup_planned` / `_completed` / `_failed` events. See
   `docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md` for the
   operator runbook.
+  - **Limitation**: the V2 team daemon parses the `retention` schema but
+    does not run the cleanup loop yet. For automatic cleanup today,
+    launch each project through the V1 entrypoint
+    (`issuepilot run --workflow ...`); team-mode wiring is tracked as a
+    Phase 5 follow-up.
+
+Items deferred beyond V2 (not blocking V2):
+
 - Review workflow polish: surface the structured handoff / failure / closing
   note fields directly in the dashboard and generated reports.
 - Optional automated merge policy after CI/approval checks. The P0 default
   remains human-controlled merge.
 - Richer run reports: diff summary, test results, risk callouts, timing
   breakdown.
-- ~~Workspace cleanup and retention policy (by age / size / status).~~
-  Delivered in V2 Phase 5 — see ✅ entry above.
 
 ### V3 — Productionized execution platform
 
@@ -489,11 +507,15 @@ processes.
 
 ## Documentation
 
-- **[Getting Started (English)](docs/getting-started.md)** — First time running IssuePilot? Start here. Walks you from clone to your first end-to-end run in ~30 minutes.
+- **[Getting Started (English)](docs/getting-started.md)** — First time running IssuePilot? Start here. Walks you from clone to your first end-to-end run in ~30 minutes. §13 covers V2 team mode.
 - [使用指南（中文）](docs/getting-started.zh-CN.md) — Chinese getting-started guide.
+- **[V2 architecture diagram](docs/superpowers/diagrams/v2-architecture.svg)** — Visual map of the V2 team-operable runtime (config → registry → scheduler → loop → adapters → events → dashboard).
+- **[V2 end-to-end flow diagram](docs/superpowers/diagrams/v2-flow.svg)** — Issue lifecycle from `ai-ready` through CI flip-back / review feedback / workspace cleanup.
+- [Diagram source files](docs/superpowers/diagrams/) — Mermaid sources and render instructions.
+- [IssuePilot V2 roadmap and document map](docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md) — V2 phase order, progress, and spec/plan mapping (Phases 1-5 merged).
+- [Workspace cleanup runbook](docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md) — Operator SOP for V2 Phase 5 retention.
 - [IssuePilot real GitLab smoke runbook](docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md) — Real GitLab + Codex end-to-end acceptance checklist.
 - [IssuePilot design spec](docs/superpowers/specs/2026-05-11-issuepilot-design.md) — Architecture, protocols, state machine.
-- [IssuePilot V2 roadmap and document map](docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md) — Current V2 phase order, progress, and spec/plan mapping.
 - [IssuePilot implementation plan](docs/superpowers/plans/2026-05-11-issuepilot-implementation-plan.md) — The 8-phase implementation plan and task breakdown.
 - [Original Symphony spec](SPEC.md)
 - [Elixir reference implementation](elixir/README.md)

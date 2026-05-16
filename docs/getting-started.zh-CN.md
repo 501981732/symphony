@@ -21,6 +21,16 @@
   运行：issuepilot doctor / issuepilot run / issuepilot dashboard
 ```
 
+> **本指南覆盖的版本**：V1 单项目本地闭环（默认入口 `issuepilot run --workflow ...`）
+> **以及** V2 团队可运营版本 Phase 1-5 已合入 `main` 的能力：多项目 team config、
+> dashboard retry/stop/archive、CI 失败自动回流 `ai-rework`、review feedback sweep、
+> workspace retention 自动清理。V2 团队模式入口、操作与限制集中在 §13 团队模式。
+>
+> 想看视觉版本：
+>
+> - 架构图：[`docs/superpowers/diagrams/v2-architecture.svg`](./superpowers/diagrams/v2-architecture.svg)
+> - 端到端流程图：[`docs/superpowers/diagrams/v2-flow.svg`](./superpowers/diagrams/v2-flow.svg)
+
 ---
 
 ## 1. IssuePilot 做什么
@@ -32,9 +42,12 @@ IssuePilot 是本地单机 orchestrator。它会：
 3. 在 worktree 里启动 `codex app-server`，让 Codex 完成代码修改。
 4. 推送分支，创建或更新 MR，给 Issue 写 handoff note。
 5. 把 Issue label 从 `ai-running` 切到 `human-review`、`ai-failed` 或 `ai-blocked`。
+6. 在 `human-review` 阶段周期性扫 MR pipeline、扫 reviewer 评论、按 retention policy
+   清理过期 worktree（V2 已交付，详见 §13）。
 
-V1 是本地开发工具，不是 SaaS、集群或自动合并系统。MR 合并前必须人工 review。
-稳定本地路径是安装后的 `issuepilot` CLI；source-checkout 命令继续保留给贡献者开发和紧急回滚。
+V1 是本地单项目工具，V2 在不破坏 V1 入口的前提下追加团队共享机器场景。两者都不
+是 SaaS、不是集群、不会自动合并 MR。MR 合并前必须人工 review。稳定本地路径是安装后
+的 `issuepilot` CLI；source-checkout 命令继续保留给贡献者开发和紧急回滚。
 
 ---
 
@@ -494,6 +507,219 @@ Issue note 第一行有 marker：
 
 ## 12. 下一步
 
+- V2 架构图与流程图：[`docs/superpowers/diagrams/`](./superpowers/diagrams/)
 - 架构细节：[`docs/superpowers/specs/2026-05-11-issuepilot-design.md`](./superpowers/specs/2026-05-11-issuepilot-design.md)
+- V2 总设计与 Phase 1-5 进度：[`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`](./superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md)
+- Workspace cleanup runbook：[`docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`](./superpowers/runbooks/2026-05-15-workspace-cleanup.md)
 - 完整 smoke runbook：[`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`](./superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md)
 - 更新记录：[`CHANGELOG.md`](../CHANGELOG.md)
+
+---
+
+## 13. V2 团队模式：在一台共享机器上管多个项目
+
+V2 在不破坏 V1 `--workflow` 单项目入口的前提下，新增 `--config` 团队模式入口和
+四组与之配套的能力：dashboard 操作、CI 失败回流、review feedback sweep、workspace
+retention 自动清理。本节集中说明它们怎么用、有什么限制。
+
+### 13.1 入口对比
+
+| 用法 | 适用 | 命令 |
+| --- | --- | --- |
+| V1 单项目 | 个人开发机；一台 daemon 只服务一个项目 | `issuepilot run --workflow /path/to/WORKFLOW.md` |
+| V2 团队模式 | 共享机器；一台 daemon 管多个 GitLab 项目；带 lease 防重复 claim | `issuepilot run --config /path/to/issuepilot.team.yaml` |
+
+`--workflow` 与 `--config` 互斥；同时传会直接报错退出。
+
+### 13.2 team config 最小模板
+
+```yaml
+version: 1
+
+server:
+  host: 127.0.0.1
+  port: 4738
+
+scheduler:
+  max_concurrent_runs: 2
+  max_concurrent_runs_per_project: 1
+  lease_ttl_ms: 900000
+  poll_interval_ms: 10000
+
+projects:
+  - id: platform-web
+    name: Platform Web
+    workflow: /srv/repos/platform-web/WORKFLOW.md
+    enabled: true
+  - id: infra-tools
+    name: Infra Tools
+    workflow: /srv/repos/infra-tools/WORKFLOW.md
+    enabled: true
+
+# 可选：team 级 CI 默认值；project 内可再覆盖
+ci:
+  enabled: true
+  on_failure: ai-rework        # 或 human-review
+  wait_for_pipeline: true
+
+# 可选：team 级 workspace retention 默认值
+retention:
+  successful_run_days: 7
+  failed_run_days: 30
+  max_workspace_gb: 50
+  cleanup_interval_ms: 3600000
+```
+
+字段约束（违反会启动失败并报具体 dotted path）：
+
+- `version` 固定 `1`。
+- `scheduler.max_concurrent_runs`：1..5；超过会拒绝启动。
+- `scheduler.lease_ttl_ms`：不小于 `60_000`。
+- `projects[].id`：小写字母数字 + 中划线；同一 config 内不能重复。
+- 相对 `workflow` 路径会基于 config 文件目录解析为绝对路径。
+
+每个 `projects[].workflow` 必须指向一份合法的 `WORKFLOW.md`。team config **不复制**
+workflow 的 GitLab labels / prompt / hooks，这些仍由各 project 自己的 `WORKFLOW.md` 决定。
+
+### 13.3 启动与校验
+
+```bash
+# 启动前校验（不连 GitLab、不启动 daemon）
+issuepilot validate --config /path/to/issuepilot.team.yaml
+
+# 启动 team daemon
+issuepilot run --config /path/to/issuepilot.team.yaml
+```
+
+`validate --config` 走与 daemon 启动同一条 `loadTeamConfig` 管道，YAML 错误和 zod
+schema 错误都会按 dotted path 报出来（例如 `scheduler.lease_ttl_ms`）。
+
+dashboard 启动方式与 V1 一致；连接同一个 `--api-url` 即可：
+
+```bash
+issuepilot dashboard --api-url http://127.0.0.1:4738
+```
+
+V2 模式下 dashboard 顶部 `Projects` 区会按 team config 顺序列出每个项目，
+`enabled: false` 的项目会显示中性 `disabled` badge；workflow 加载失败的项目
+显示红色 `load error` + 错误摘要。
+
+### 13.4 Phase 2：dashboard retry / stop / archive
+
+dashboard 在 run 列表与 detail 页提供三个按钮，所有操作都会写
+`operator_action_*` 事件到 event store，可在 detail 页时间线和
+`/api/events?runId=<runId>` 查到。
+
+| 操作 | 适用 run 状态 | 行为 | 备注 |
+| --- | --- | --- | --- |
+| Retry | `ai-failed`、`ai-blocked`、`ai-rework`、archived failed run | 把 issue label 翻到 `ai-rework`，dashboard run 状态置 `claimed` | V2 team daemon 暂未装配，调用返回 `503 actions_unavailable`；V1 入口可用 |
+| Stop | active `ai-running` run | 通过 Codex `turn/interrupt` 真实取消 turn；5s 超时升级 `stopping` 中间态，最终走 `turnTimeoutMs` 收敛 | 不直接动 GitLab labels；失败时 emit `operator_action_failed { code: cancel_timeout / cancel_threw / not_registered }` |
+| Archive | terminal run（`completed` / `failed` / `blocked`） | 在 run record 写 `archivedAt`，dashboard 默认隐藏 | 列表上方有 `Show archived` toggle 可显示历史 |
+
+操作者身份默认走 server 端 `"system"` 兜底；HTTP `x-issuepilot-operator` header 留作
+V3 RBAC 接入口。
+
+### 13.5 Phase 3：CI 状态回流
+
+把 `WORKFLOW.md` 或 team config 的 `ci.enabled` 打开，orchestrator 在 `human-review`
+阶段会按 `poll_interval_ms` 节奏读 MR 最新 pipeline 状态：
+
+```yaml
+ci:
+  enabled: true
+  on_failure: ai-rework         # 或 human-review
+  wait_for_pipeline: true
+```
+
+行为矩阵：
+
+| pipeline 状态 | `on_failure` | 行为 |
+| --- | --- | --- |
+| `success` | — | 保持 `human-review`，dashboard 标记可 review |
+| `failed` | `ai-rework` | label 翻到 `ai-rework` + 写带 `<!-- issuepilot:ci-feedback:<runId> -->` marker 的 note |
+| `failed` | `human-review` | 不动 labels，仅写一条 marker note + emit `ci_status_observed { action: "noop" }` |
+| `running` / `pending` / `unknown` | — | 保持 `human-review`，等下一轮 poll，不写 note |
+| `canceled` / `skipped` | — | 写一条提示人工 review 的 marker note + emit `ci_status_observed { action: "manual" }` |
+
+约束：
+
+- scanner 是在 daemon 启动时一次性接到 main loop 上的；**修改 `ci.enabled` 必须
+  重启 `issuepilot run`** 才会生效。
+- precedence：`projects[].ci` > team `ci` > workflow `ci`，要 override 必须三个键
+  齐发，不支持半 override。
+- 自动 merge 仍不在 V2 范围内。
+
+### 13.6 Phase 4：review feedback sweep
+
+每轮 poll 在 `human-review` 阶段，orchestrator 会扫对应 MR 的人类评论（自动跳过
+GitLab system note 与自己写的 marker note），结构化为 `ReviewFeedbackSummary` 写回
+run record。
+
+- dashboard run detail 页底部新增 `Latest review feedback` 面板：展示 MR 链接、
+  最近 sweep 时间、每条评论的 author / time / resolved badge / 截断 body，并附跳回
+  MR note 的深链接。
+- issue 被人工打回 `ai-rework` 后，下一轮 dispatch 会把 summary 拼成标准化的
+  `## Review feedback` markdown 块注入到 prompt 之前；reviewer 的内容会用
+  `<<<REVIEWER_BODY id=N>>> ... <<<END_REVIEWER_BODY>>>` envelope 包起来防止
+  prompt injection。
+- 始终开启；没有 MR 或没有评论时是 no-op，不需要 workflow 开关。
+- 不会触发自动 merge，也不会替代 Phase 3 CI 回流。
+
+### 13.7 Phase 5：workspace retention 自动清理
+
+默认 retention policy（可在 workflow 或 team config 顶层 `retention` 节覆盖）：
+
+| Run 状态 | 默认保留 |
+| --- | --- |
+| active / running / stopping / claimed / retrying | 永不自动清理 |
+| successful / closed | 7 天 |
+| failed / blocked | 30 天 |
+| archived terminal | 按原终态保留期计算 |
+
+约束：
+
+- 总 workspace 超过 `max_workspace_gb`（默认 50）时**只允许**清理已过期的 terminal
+  run；容量压力不会成为删除 active 或未过期失败现场的理由。
+- 失败 worktree 会在清理时保留 `.issuepilot/failed-at-*` marker；marker 默认不被删。
+- cleanup 三段式事件：`workspace_cleanup_planned` → `workspace_cleanup_completed`
+  / `workspace_cleanup_failed`，落到 sentinel `runId=workspace-cleanup`，可通过
+  `/api/events?runId=workspace-cleanup` 或 dashboard timeline 查到。
+- **限制：V2 team daemon 目前只会解析 `retention` schema、不会自动跑 cleanup loop。**
+  团队场景下若想启用 cleanup，目前的做法是：用 V1 入口 `issuepilot run --workflow ...`
+  逐个项目启动 daemon；team-mode wiring 列在 Phase 5 follow-up。
+
+#### dry-run 预览
+
+不启动 daemon 也可以预览将被清理的目录：
+
+```bash
+issuepilot doctor --workspace --workflow /path/to/target-project/WORKFLOW.md
+```
+
+输出示例（无 daemon 时 run state 不可读，所有目录默认 `unknown`，planner 拒删；
+真实预览应 tail `workspace_cleanup_planned` 事件）：
+
+```text
+Workspace cleanup dry-run
+  workspace root: ~/.issuepilot/workspaces
+  entries: 14
+  total usage: 2.471 GB (cap 50 GB)
+  will delete: 0
+  keep failure markers: 3
+```
+
+#### 操作 runbook
+
+误删 / 失败诊断 / 临时禁用 cleanup 等场景，参见：
+[`docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`](./superpowers/runbooks/2026-05-15-workspace-cleanup.md)。
+
+### 13.8 V2 边界
+
+V2 主体已完成，但以下条目**显式不在 V2 范围**，会在 V3 / V4 处理：
+
+- 多用户 RBAC、token / 预算 / 配额。
+- 远程 worker、Docker / K8s sandbox。
+- 自动 merge、跨 issue 依赖规划、auto-decomposition。
+- Postgres / SQLite 作为强依赖的长期 run history。
+- 多 tracker 插件化、GitLab 之外的 issue tracker。
+- 远端 `ai/*` 分支清理与 MR 自动归档。

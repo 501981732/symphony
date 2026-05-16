@@ -6,6 +6,58 @@
 
 ### Added
 
+- 2026-05-16 — **V2 文档收口 + 架构图/流程图 + 中英文使用手册新增 V2 团队
+  模式章节**。本次只动文档，不动代码；目的是把"V2 Phase 1–5 已全部合入
+  `main`"这件事在仓库的所有面向用户的入口同步出来，并补齐之前缺的视觉
+  化文档。
+  - `docs/superpowers/diagrams/v2-architecture.mmd` + `.svg`（新）：V2 团队
+    可运营 runtime 架构图，覆盖 team config / workflow loader / project
+    registry / scheduler + lease store / main loop / Phase 2–5 周期任务 /
+    adapter 层（tracker-gitlab、workspace、runner-codex-app-server）/
+    observability（event bus + JSONL event store + run record + pino
+    logger）/ Fastify HTTP API（state/runs/events/SSE/operator actions）/
+    `~/.issuepilot` 本地存储 / dashboard 三个视图。
+  - `docs/superpowers/diagrams/v2-flow.mmd` + `.svg`（新）：V2 端到端
+    生命周期流程图，覆盖 lease 申请 / claim → 401/403 → ai-blocked 升级、
+    dispatcher → retry/failed/blocked/completed 四种 outcome、handoff →
+    Phase 3 CI scanner 五种 pipeline 分支、Phase 4 review sweep → 注入
+    `## Review feedback` prompt、Phase 2 dashboard retry/stop/archive、
+    Phase 5 workspace retention 三段式 sweep（active 永不删 / successful 7d
+    / failed 30d）。
+  - `docs/superpowers/diagrams/README.md`（新）：mermaid 源 + SVG 产物的
+    维护方式、`npx -y -p @mermaid-js/mermaid-cli mmdc ...` 渲染命令、
+    "节点 label 含括号 / 引号 / `#` 必须用 `"..."` 包裹"等踩坑记录。
+  - `docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
+    顶部状态行从「Phase 1–4 已合入」改成「Phase 1–5 全部已合入；V2 团队
+    可运营版本的功能交付已经完成」；`§0 文档入口和当前进度` 进度表把
+    Phase 5 由「下一步，待实施」改为「已完成（V1 入口已激活；team daemon
+    wiring 列为后续 follow-up）」；新增可视化入口段落引用上面两张图。
+    `§16 Phase 5` 展开成实施清单 + follow-up 边界说明，明确 team daemon
+    暂未自动跑 cleanup loop 的现状。
+  - `docs/getting-started.md` / `docs/getting-started.zh-CN.md`（双语
+    同步更新）：顶部添加版本覆盖说明（V1 + V2 Phase 1–5）和图链接；
+    底部新增 §13 V2 团队模式章节，覆盖入口对比、team config 最小模板、
+    `validate --config` / `run --config` 启动、Phase 2 dashboard
+    retry/stop/archive（含 V2 team daemon 暂返回 `503 actions_unavailable`
+    的限制）、Phase 3 CI 状态矩阵（含「改 ci.enabled 必须重启 daemon」
+    与「override 必须三键齐发」约束）、Phase 4 review feedback sweep
+    工作机制（含 reviewer envelope 防 prompt injection）、Phase 5 retention
+    默认策略 + `doctor --workspace` dry-run 示例 + team daemon 暂未跑
+    cleanup loop 的诚实说明 + runbook 链接、最后 §13.8 V2 边界（显式
+    列出 RBAC / 远程 worker / 自动 merge / Postgres / 多 tracker / 远端
+    `ai/*` 分支清理等 V3+ 范围）。
+  - `README.md` / `README.zh-CN.md`（双语同步更新）：顶部 WARNING 框
+    更新为「V2 Phase 1–5 已全部合入 main；team daemon 不自动跑 cleanup
+    loop 是 follow-up」；§Roadmap §V2 把「Deployable to a shared team
+    box / Multi-project workflow / Concurrency lifted from 1 to 2–5」从
+    待办无标记改为 ✅，Phase 1 从 🚧 改为 ✅，开头加视觉版本 + 团队
+    模式手册链接，Phase 5 ✅ 条目下追加 team daemon wiring follow-up
+    限制；§Documentation 区追加架构图 / 流程图 / 图源目录 / runbook 四个
+    新入口。
+  - 后续待办（不阻塞本次文档收口）：V2 team daemon 装配 workspace
+    cleanup loop；V2 team daemon 装配 operator actions（目前返回
+    `503 actions_unavailable`）。
+
 - 2026-05-16 — **V2 Phase 5 Workspace Retention 落地：`~/.issuepilot` 下的
   worktree 在终态满足 retention policy 时被 orchestrator 周期性自动清理，
   active run 永远不动、未到期失败现场默认保留、容量压力不允许凌驾于

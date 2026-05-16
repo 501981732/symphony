@@ -1,0 +1,151 @@
+%% IssuePilot V2 团队可运营版本 — 架构图
+%% Source of truth: docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md
+%% Render: see docs/superpowers/diagrams/README.md (mmdc -i v2-architecture.mmd -o v2-architecture.svg)
+flowchart LR
+    classDef extern fill:#fef3c7,stroke:#b45309,color:#1f2937;
+    classDef config fill:#e0e7ff,stroke:#4338ca,color:#1f2937;
+    classDef runtime fill:#dcfce7,stroke:#15803d,color:#1f2937;
+    classDef adapter fill:#fde68a,stroke:#92400e,color:#1f2937;
+    classDef obs fill:#cffafe,stroke:#0e7490,color:#1f2937;
+    classDef ui fill:#fce7f3,stroke:#be185d,color:#1f2937;
+    classDef store fill:#f1f5f9,stroke:#475569,color:#1f2937;
+
+    %% ---------------- External world ----------------
+    subgraph EXTERNAL["外部"]
+        direction TB
+        OPS["运维 / Operator"]:::extern
+        REVIEWER["Code reviewer"]:::extern
+        GITLAB[("GitLab<br/>Issues / Labels / Notes / MRs / Pipelines")]:::extern
+        CODEX["Codex app-server<br/>JSON-RPC over stdio"]:::extern
+    end
+
+    %% ---------------- Configuration sources ----------------
+    subgraph CFG["配置入口 — V1 单项目 + V2 团队"]
+        direction TB
+        TEAM_CFG["issuepilot.team.yaml<br/>scheduler / projects / retention / ci"]:::config
+        WORKFLOW["WORKFLOW.md<br/>tracker / git / agent / codex / retention / ci"]:::config
+    end
+
+    %% ---------------- Orchestrator daemon ----------------
+    subgraph ORCH["Orchestrator daemon — Fastify + Node.js 22"]
+        direction TB
+
+        subgraph CFG_LAYER["配置层"]
+            CFG_LOADER["team config loader<br/>zod + YAML"]:::config
+            WORKFLOW_LOADER["workflow loader<br/>front-matter + hot reload"]:::config
+        end
+
+        REGISTRY["project registry<br/>workflow + ci precedence"]:::config
+        SCHEDULER["scheduler<br/>全局 + per-project 并发上限"]:::runtime
+        LEASE[("lease store<br/>~/.issuepilot/state/leases-*.json")]:::store
+        LOOP["main loop<br/>reconcile → CI scan → review sweep → cleanup → claim → dispatch"]:::runtime
+
+        subgraph PHASE_SVCS["Phase 2-5 周期任务"]
+            direction TB
+            OPS_ACTIONS["operator actions — Phase 2<br/>retry / stop / archive"]:::runtime
+            CI_SCAN["CI feedback scanner — Phase 3"]:::runtime
+            REVIEW_SWEEP["review feedback sweep — Phase 4"]:::runtime
+            CLEANUP["workspace retention — Phase 5<br/>planner + executor"]:::runtime
+        end
+
+        DISPATCH["dispatcher<br/>workspace → runner → reconcile"]:::runtime
+
+        subgraph ADAPTERS["Adapter 层"]
+            direction TB
+            GITLAB_ADAPTER["tracker-gitlab<br/>issues / labels / notes / MRs / pipelines"]:::adapter
+            WORKSPACE_ADAPTER["workspace<br/>bare mirror + git worktree + hooks"]:::adapter
+            RUNNER_ADAPTER["runner-codex-app-server<br/>JSON-RPC + dynamic GitLab tools"]:::adapter
+        end
+
+        subgraph OBSERVABILITY["Observability"]
+            direction TB
+            EVENT_BUS["in-memory event bus"]:::obs
+            EVENT_STORE[("JSONL event store")]:::store
+            RUN_STORE[("run record store")]:::store
+            LOGGER["pino logger<br/>+ secret redact"]:::obs
+        end
+
+        subgraph API["Fastify HTTP API"]
+            direction TB
+            API_STATE["/api/state, /api/runs, /api/events"]:::ui
+            API_OPS["POST /api/runs/:id/{retry,stop,archive}"]:::ui
+            API_SSE["/api/events/stream — SSE"]:::ui
+        end
+    end
+
+    %% ---------------- Local artefacts ----------------
+    subgraph LOCAL["~/.issuepilot 本地存储"]
+        direction TB
+        REPOS[("repos/ — bare mirrors")]:::store
+        WORKSPACES[("workspaces/&lt;project&gt;/&lt;iid&gt;")]:::store
+        STATE[("state/ — events / runs / logs / leases")]:::store
+        CREDS[("credentials — 0600 OAuth tokens")]:::store
+    end
+
+    %% ---------------- Dashboard ----------------
+    subgraph DASH["Dashboard — Next.js, 读 + 操作触发"]
+        direction TB
+        DASH_OVERVIEW["Overview<br/>service header / projects / runs"]:::ui
+        DASH_DETAIL["Run detail<br/>timeline / tool calls / log tail / review feedback"]:::ui
+        DASH_ACTIONS["Run actions<br/>retry / stop / archive"]:::ui
+    end
+
+    %% ---------------- Wiring ----------------
+    OPS -->|"issuepilot run --config 或 --workflow"| CFG_LOADER
+    OPS --> WORKFLOW_LOADER
+    TEAM_CFG --> CFG_LOADER
+    WORKFLOW --> WORKFLOW_LOADER
+
+    CFG_LOADER --> REGISTRY
+    WORKFLOW_LOADER --> REGISTRY
+    REGISTRY --> SCHEDULER
+    SCHEDULER --> LEASE
+    SCHEDULER --> LOOP
+
+    LOOP --> OPS_ACTIONS
+    LOOP --> CI_SCAN
+    LOOP --> REVIEW_SWEEP
+    LOOP --> CLEANUP
+    LOOP --> DISPATCH
+
+    DISPATCH --> WORKSPACE_ADAPTER
+    DISPATCH --> RUNNER_ADAPTER
+    DISPATCH --> GITLAB_ADAPTER
+    CI_SCAN --> GITLAB_ADAPTER
+    REVIEW_SWEEP --> GITLAB_ADAPTER
+    OPS_ACTIONS --> GITLAB_ADAPTER
+    CLEANUP --> WORKSPACES
+
+    GITLAB_ADAPTER <-->|"REST + token / OAuth"| GITLAB
+    RUNNER_ADAPTER <-->|"JSON-RPC stdio"| CODEX
+    WORKSPACE_ADAPTER --> REPOS
+    WORKSPACE_ADAPTER --> WORKSPACES
+
+    DISPATCH --> EVENT_BUS
+    OPS_ACTIONS --> EVENT_BUS
+    CI_SCAN --> EVENT_BUS
+    REVIEW_SWEEP --> EVENT_BUS
+    CLEANUP --> EVENT_BUS
+    EVENT_BUS --> EVENT_STORE
+    EVENT_BUS --> LOGGER
+    DISPATCH --> RUN_STORE
+
+    EVENT_STORE --> STATE
+    RUN_STORE --> STATE
+    LOGGER --> STATE
+
+    EVENT_BUS --> API_SSE
+    RUN_STORE --> API_STATE
+
+    API_STATE -->|"HTTP JSON"| DASH_OVERVIEW
+    API_STATE --> DASH_DETAIL
+    API_SSE -->|"SSE"| DASH_DETAIL
+    API_SSE --> DASH_OVERVIEW
+    DASH_ACTIONS -->|"POST"| API_OPS
+    API_OPS --> OPS_ACTIONS
+
+    REVIEWER -->|"review MR + comments"| GITLAB
+    GITLAB -->|"MR / pipeline / comments"| CI_SCAN
+    GITLAB --> REVIEW_SWEEP
+
+    CREDS --> GITLAB_ADAPTER

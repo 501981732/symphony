@@ -21,6 +21,18 @@ installed CLI
   run: issuepilot doctor / issuepilot run / issuepilot dashboard
 ```
 
+> **What this guide covers**: the V1 single-project local loop (default entrypoint
+> `issuepilot run --workflow ...`) **and** the V2 team-operable release whose
+> Phases 1-5 are already merged into `main`: multi-project team config, dashboard
+> retry / stop / archive, automatic CI-failure flip back to `ai-rework`, review
+> feedback sweep, and workspace retention with automatic cleanup. V2 team-mode
+> entrypoint, actions and constraints are concentrated in §13 Team mode.
+>
+> Prefer a visual version?
+>
+> - Architecture: [`docs/superpowers/diagrams/v2-architecture.svg`](./superpowers/diagrams/v2-architecture.svg)
+> - End-to-end lifecycle: [`docs/superpowers/diagrams/v2-flow.svg`](./superpowers/diagrams/v2-flow.svg)
+
 ---
 
 ## 1. What IssuePilot Does
@@ -32,9 +44,14 @@ IssuePilot is a local, single-machine orchestrator. It:
 3. Starts `codex app-server` inside that worktree and lets Codex implement the Issue.
 4. Pushes a branch, creates or updates an MR, and writes an Issue handoff note.
 5. Moves the Issue from `ai-running` to `human-review`, `ai-failed`, or `ai-blocked`.
+6. During `human-review` it periodically scans MR pipelines, sweeps reviewer
+   comments, and prunes expired worktrees per retention policy (V2, see §13).
 
-V1 is a local developer tool. It is not SaaS, not a worker cluster, and not an auto-merge system. Humans still review MRs before merging.
-The stable local path is the installed `issuepilot` CLI. Source-checkout commands remain available for contributors and emergency rollback.
+V1 is a single-project local developer tool. V2 adds a shared-team-machine
+scenario on top of V1 without breaking the V1 entrypoint. Neither is SaaS, a
+worker cluster, or an auto-merge system. Humans still review MRs before merging.
+The stable local path is the installed `issuepilot` CLI. Source-checkout commands
+remain available for contributors and emergency rollback.
 
 ---
 
@@ -494,6 +511,243 @@ next action for the human reviewer.
 
 ## 12. Next Steps
 
+- V2 architecture & flow diagrams: [`docs/superpowers/diagrams/`](./superpowers/diagrams/)
 - Architecture details: [`docs/superpowers/specs/2026-05-11-issuepilot-design.md`](./superpowers/specs/2026-05-11-issuepilot-design.md)
+- V2 master spec & Phase 1-5 progress: [`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`](./superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md)
+- Workspace cleanup runbook: [`docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`](./superpowers/runbooks/2026-05-15-workspace-cleanup.md)
 - Full smoke runbook: [`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`](./superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md)
 - Recent changes: [`CHANGELOG.md`](../CHANGELOG.md)
+
+---
+
+## 13. V2 Team Mode: Multiple Projects on One Shared Machine
+
+V2 keeps the V1 `--workflow` single-project entrypoint intact and adds a
+`--config` team-mode entrypoint plus four capabilities wired to it: dashboard
+actions, CI-failure flip-back, review feedback sweep, and workspace retention
+with automatic cleanup. This section concentrates the entrypoint, what each
+capability does, and where its limits live.
+
+### 13.1 Entrypoint Comparison
+
+| Use case | When | Command |
+| --- | --- | --- |
+| V1 single project | Personal workstation; one daemon serves one project | `issuepilot run --workflow /path/to/WORKFLOW.md` |
+| V2 team mode | Shared box; one daemon manages several GitLab projects; lease-protected against double-claim | `issuepilot run --config /path/to/issuepilot.team.yaml` |
+
+`--workflow` and `--config` are mutually exclusive — passing both prints an
+error and exits.
+
+### 13.2 Minimal Team Config
+
+```yaml
+version: 1
+
+server:
+  host: 127.0.0.1
+  port: 4738
+
+scheduler:
+  max_concurrent_runs: 2
+  max_concurrent_runs_per_project: 1
+  lease_ttl_ms: 900000
+  poll_interval_ms: 10000
+
+projects:
+  - id: platform-web
+    name: Platform Web
+    workflow: /srv/repos/platform-web/WORKFLOW.md
+    enabled: true
+  - id: infra-tools
+    name: Infra Tools
+    workflow: /srv/repos/infra-tools/WORKFLOW.md
+    enabled: true
+
+# Optional: team-level CI defaults; per-project ci can override
+ci:
+  enabled: true
+  on_failure: ai-rework        # or human-review
+  wait_for_pipeline: true
+
+# Optional: team-level workspace retention defaults
+retention:
+  successful_run_days: 7
+  failed_run_days: 30
+  max_workspace_gb: 50
+  cleanup_interval_ms: 3600000
+```
+
+Constraints (violations fail startup and surface the exact dotted path):
+
+- `version` is fixed to `1`.
+- `scheduler.max_concurrent_runs`: 1..5; anything higher refuses to start.
+- `scheduler.lease_ttl_ms`: at least `60_000`.
+- `projects[].id`: lowercase letters, digits, hyphens; must be unique within
+  the file.
+- Relative `workflow` paths resolve against the directory containing the
+  config file.
+
+Each `projects[].workflow` must point at a valid `WORKFLOW.md`. The team
+config **does not** copy GitLab labels / prompt / hooks from any workflow;
+those still come from each project's own `WORKFLOW.md`.
+
+### 13.3 Validate and Start
+
+```bash
+# Validate before launching (no GitLab calls, no daemon start)
+issuepilot validate --config /path/to/issuepilot.team.yaml
+
+# Start the team daemon
+issuepilot run --config /path/to/issuepilot.team.yaml
+```
+
+`validate --config` runs the same `loadTeamConfig` pipeline as daemon
+startup; YAML and zod errors are reported by dotted path (for example
+`scheduler.lease_ttl_ms`).
+
+The dashboard starts the same way as in V1; point it at the same
+`--api-url`:
+
+```bash
+issuepilot dashboard --api-url http://127.0.0.1:4738
+```
+
+In V2 mode the dashboard shows a top-level `Projects` section listing each
+project in team-config order. Disabled projects (`enabled: false`) show a
+neutral `disabled` badge; projects whose workflow failed to load show a red
+`load error` badge with a short summary.
+
+### 13.4 Phase 2: Dashboard Retry / Stop / Archive
+
+The dashboard exposes three buttons on the runs list and detail page. Every
+action writes an `operator_action_*` event to the event store, visible in
+the detail timeline and via `/api/events?runId=<runId>`.
+
+| Action | Allowed run states | Behaviour | Notes |
+| --- | --- | --- | --- |
+| Retry | `ai-failed`, `ai-blocked`, `ai-rework`, archived failed run | Flips the issue label back to `ai-rework`; the dashboard run goes back to `claimed` | The V2 team daemon does not wire this yet — the route returns `503 actions_unavailable`. Use the V1 entrypoint to exercise retry today |
+| Stop | active `ai-running` run | Cancels the Codex turn via `turn/interrupt`; after a 5s timeout the run flips to the `stopping` middle state and eventually converges through `turnTimeoutMs` | Does not touch GitLab labels directly; failures emit `operator_action_failed { code: cancel_timeout / cancel_threw / not_registered }` |
+| Archive | terminal run (`completed` / `failed` / `blocked`) | Stamps `archivedAt` on the run record so the dashboard hides it from the default list | A `Show archived` toggle reveals history |
+
+Operator identity defaults to the server-side fallback `"system"`; the HTTP
+`x-issuepilot-operator` header is reserved for the V3 RBAC integration.
+
+### 13.5 Phase 3: CI Status Flip-Back
+
+Set `ci.enabled` in `WORKFLOW.md` or in the team config and the orchestrator
+will poll the MR pipeline status on each `poll_interval_ms` tick while the
+run is in `human-review`:
+
+```yaml
+ci:
+  enabled: true
+  on_failure: ai-rework         # or human-review
+  wait_for_pipeline: true
+```
+
+Status matrix:
+
+| Pipeline | `on_failure` | Behaviour |
+| --- | --- | --- |
+| `success` | — | Stays in `human-review`; dashboard marks ready for review |
+| `failed` | `ai-rework` | Flips label to `ai-rework` and writes a note tagged `<!-- issuepilot:ci-feedback:<runId> -->` |
+| `failed` | `human-review` | Keeps labels; only writes a marker note and emits `ci_status_observed { action: "noop" }` |
+| `running` / `pending` / `unknown` | — | Stays in `human-review`, waits for the next poll, does not write a note |
+| `canceled` / `skipped` | — | Writes a marker note prompting human review and emits `ci_status_observed { action: "manual" }` |
+
+Constraints:
+
+- The scanner is wired into the main loop only at daemon start;
+  **changing `ci.enabled` requires restarting `issuepilot run`** for the
+  change to take effect.
+- Precedence: `projects[].ci` > team `ci` > workflow `ci`. Override must
+  set all three keys together — partial overrides are not supported.
+- Automatic merging remains out of V2 scope.
+
+### 13.6 Phase 4: Review Feedback Sweep
+
+On each poll while the issue is in `human-review`, the orchestrator scans
+the MR for human comments (auto-skipping GitLab system notes and its own
+marker notes), structures them into a `ReviewFeedbackSummary`, and writes
+that back onto the run record.
+
+- The dashboard run detail view adds a `Latest review feedback` panel
+  showing the MR link, last sweep time, each comment's author / time /
+  resolved badge / truncated body, plus deep links back to the MR note.
+- When a human flips the issue to `ai-rework`, the next dispatch prepends
+  a standardised `## Review feedback` markdown block to the prompt; each
+  reviewer body is wrapped in
+  `<<<REVIEWER_BODY id=N>>> ... <<<END_REVIEWER_BODY>>>` envelopes to
+  defang prompt injection.
+- Always on; runs without an MR or comments are no-ops and need no
+  workflow toggle.
+- Does not trigger auto-merge and does not replace Phase 3 CI flip-back.
+
+### 13.7 Phase 5: Workspace Retention with Auto Cleanup
+
+Default retention policy (overridable under the workflow or team config
+top-level `retention` block):
+
+| Run state | Default retention |
+| --- | --- |
+| active / running / stopping / claimed / retrying | Never auto-cleaned |
+| successful / closed | 7 days |
+| failed / blocked | 30 days |
+| archived terminal | Counts by the original terminal-state retention |
+
+Constraints:
+
+- When total workspace exceeds `max_workspace_gb` (default 50) **only**
+  already-expired terminal runs may be cleaned; capacity pressure cannot
+  delete active runs or unexpired failure scenes.
+- Failed worktrees keep their `.issuepilot/failed-at-*` markers; markers
+  are kept by default.
+- Cleanup is a three-stage event sequence:
+  `workspace_cleanup_planned` → `workspace_cleanup_completed`
+  / `workspace_cleanup_failed`, scoped to the sentinel
+  `runId=workspace-cleanup`. Inspect via
+  `/api/events?runId=workspace-cleanup` or the dashboard timeline.
+- **Limitation: the V2 team daemon parses the `retention` schema but does
+  not run the cleanup loop yet.** To get auto cleanup in team-machine
+  scenarios today, launch each project through the V1 entrypoint
+  (`issuepilot run --workflow ...`); the team-mode wiring is tracked as a
+  Phase 5 follow-up.
+
+#### Dry-run preview
+
+You can preview what would be cleaned without starting a daemon:
+
+```bash
+issuepilot doctor --workspace --workflow /path/to/target-project/WORKFLOW.md
+```
+
+Example output (without a daemon the run state is unreadable, so all
+directories default to `unknown` and the planner refuses to delete; real
+previews should tail `workspace_cleanup_planned` events):
+
+```text
+Workspace cleanup dry-run
+  workspace root: ~/.issuepilot/workspaces
+  entries: 14
+  total usage: 2.471 GB (cap 50 GB)
+  will delete: 0
+  keep failure markers: 3
+```
+
+#### Runbook
+
+For incident scenarios (accidental delete, cleanup failure triage,
+temporary cleanup disable), see:
+[`docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`](./superpowers/runbooks/2026-05-15-workspace-cleanup.md).
+
+### 13.8 V2 Boundaries
+
+The V2 trunk is done, but the following items are **explicitly out of
+V2 scope** and live in V3 / V4:
+
+- Multi-user RBAC, token / budget / quota policy.
+- Remote workers, Docker / K8s sandboxes.
+- Auto-merge, cross-issue dependency planning, auto-decomposition.
+- Postgres / SQLite as a hard dependency for long-term run history.
+- Pluggable trackers; non-GitLab issue trackers.
+- Remote `ai/*` branch cleanup and automatic MR archival.

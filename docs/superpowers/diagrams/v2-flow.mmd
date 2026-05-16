@@ -1,0 +1,100 @@
+%% IssuePilot V2 端到端生命周期流程图
+%% Source of truth: docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md
+%% Render: see docs/superpowers/diagrams/README.md (mmdc -i v2-flow.mmd -o v2-flow.svg)
+flowchart TD
+    classDef state fill:#e0e7ff,stroke:#4338ca,color:#1f2937;
+    classDef action fill:#dcfce7,stroke:#15803d,color:#1f2937;
+    classDef phase fill:#fde68a,stroke:#92400e,color:#1f2937;
+    classDef terminal fill:#f1f5f9,stroke:#475569,color:#1f2937;
+    classDef warn fill:#fee2e2,stroke:#b91c1c,color:#1f2937;
+    classDef human fill:#fce7f3,stroke:#be185d,color:#1f2937;
+    classDef cleanup fill:#cffafe,stroke:#0e7490,color:#1f2937;
+
+    START(["Issue 创建"]):::state
+    READY["label = ai-ready"]:::state
+    LEASE_TRY{"scheduler 申请 lease<br/>满足全局 + per-project 并发上限?"}:::action
+    LEASE_DENY["skip 本轮 poll<br/>下一轮再试"]:::action
+    LEASE_OK["lease acquired"]:::action
+
+    CLAIM["transitionLabels<br/>ai-ready/ai-rework → ai-running"]:::action
+    CLAIM_FAIL{"401 / 403 / claim_conflict?"}:::action
+    BLOCKED["label = ai-blocked<br/>+ structured note"]:::warn
+
+    RUNNING["label = ai-running"]:::state
+    DISPATCH["Dispatcher<br/>workspace + worktree + hooks + Codex"]:::phase
+
+    RUN_OUTCOME{"run outcome"}:::action
+    RETRY["retry: 写 retry_scheduled<br/>main loop 到点重新 dispatch"]:::action
+    FAILED["label = ai-failed<br/>+ structured failure note"]:::warn
+    HANDOFF["push branch + create/update MR<br/>workpad note + handoff note<br/>label = human-review"]:::state
+
+    REVIEW{"Reviewer 在 GitLab 上做什么?"}:::human
+    HUMAN_MERGE["人工合并 MR"]:::human
+    HUMAN_REWORK["reviewer 评论 / label 改为 ai-rework"]:::human
+    HUMAN_CLOSE["reviewer 关闭 MR 不合并"]:::human
+    HUMAN_NONE["暂无动作 / 等 CI"]:::human
+
+    CI_SCAN["Phase 3: ci-feedback scanner<br/>每轮 poll 读 MR pipeline"]:::phase
+    CI_RESULT{"pipeline status?"}:::action
+    CI_FAIL_REWORK["on_failure: ai-rework<br/>label 翻 ai-rework + marker note"]:::action
+    CI_FAIL_KEEP["on_failure: human-review<br/>仅写 marker note + emit observed"]:::action
+    CI_OK["success / running / pending<br/>保持 human-review"]:::state
+
+    REVIEW_SWEEP["Phase 4: review-feedback sweep<br/>读 MR notes → ReviewFeedbackSummary"]:::phase
+    REWORK_LABEL["label = ai-rework"]:::state
+    REWORK_PROMPT["下一轮 dispatch 把<br/>## Review feedback 块注入 prompt"]:::action
+
+    CLOSE_NOTE["orchestrator 写 closing note<br/>移除 human-review + close issue"]:::action
+    CLOSED["label = closed"]:::terminal
+
+    OPS_ACTIONS["Phase 2: dashboard 操作<br/>retry / stop / archive<br/>触发 operator_action_* 事件"]:::phase
+
+    CLEANUP_LOOP["Phase 5: workspace retention<br/>每 cleanup_interval_ms 一次 sweep"]:::cleanup
+    CLEANUP_PLAN["planner: 输入 retention + entries<br/>active 永不删 / successful 7d / failed-blocked 30d"]:::cleanup
+    CLEANUP_EXEC["executor: rm 过期 worktree<br/>emit workspace_cleanup_*"]:::cleanup
+
+    %% ---- happy / error path ----
+    START --> READY
+    READY --> LEASE_TRY
+    LEASE_TRY -- 否 --> LEASE_DENY --> READY
+    LEASE_TRY -- 是 --> LEASE_OK --> CLAIM
+    CLAIM --> CLAIM_FAIL
+    CLAIM_FAIL -- 是 --> BLOCKED
+    CLAIM_FAIL -- 否 --> RUNNING
+    RUNNING --> DISPATCH --> RUN_OUTCOME
+
+    RUN_OUTCOME -- retryable --> RETRY --> RUNNING
+    RUN_OUTCOME -- failed --> FAILED
+    RUN_OUTCOME -- blocked --> BLOCKED
+    RUN_OUTCOME -- completed --> HANDOFF
+
+    %% ---- review path ----
+    HANDOFF --> CI_SCAN
+    HANDOFF --> REVIEW_SWEEP
+    HANDOFF --> REVIEW
+
+    CI_SCAN --> CI_RESULT
+    CI_RESULT -- success / pending --> CI_OK --> REVIEW
+    CI_RESULT -- "failed + ai-rework" --> CI_FAIL_REWORK --> REWORK_LABEL
+    CI_RESULT -- "failed + human-review" --> CI_FAIL_KEEP --> REVIEW
+
+    REVIEW_SWEEP -. "写 ReviewFeedbackSummary" .-> HANDOFF
+    REVIEW -- 合并 --> HUMAN_MERGE --> CLOSE_NOTE --> CLOSED
+    REVIEW -- 关闭未合并 --> HUMAN_CLOSE --> REWORK_LABEL
+    REVIEW -- 改 label --> HUMAN_REWORK --> REWORK_LABEL
+    REVIEW -- 等 CI --> HUMAN_NONE --> CI_SCAN
+
+    REWORK_LABEL --> REWORK_PROMPT --> READY
+
+    %% ---- ops & cleanup ----
+    OPS_ACTIONS -. retry .-> READY
+    OPS_ACTIONS -. stop .-> FAILED
+    OPS_ACTIONS -. archive .-> CLOSED
+
+    CLEANUP_LOOP --> CLEANUP_PLAN --> CLEANUP_EXEC
+    CLEANUP_EXEC -. "永远不删 active run" .-> RUNNING
+    CLEANUP_EXEC -. "successful 7 天后 rm" .-> CLOSED
+    CLEANUP_EXEC -. "failed/blocked 30 天后 rm" .-> FAILED
+
+    BLOCKED -. "修复后人工改回 ai-ready" .-> READY
+    FAILED -. "dashboard retry" .-> READY

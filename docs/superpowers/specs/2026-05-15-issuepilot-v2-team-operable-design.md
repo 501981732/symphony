@@ -1,7 +1,7 @@
 # IssuePilot V2 团队可运营版本设计
 
-日期：2026-05-15
-状态：已确认；Phase 1-4 已合入，下一步 Phase 5
+日期：2026-05-15（最近一次状态更新：2026-05-16）
+状态：已确认；**Phase 1–5 全部合入 `main`，V2 团队可运营版本主体功能已落地**
 关联文档：
 
 - `docs/superpowers/specs/2026-05-11-issuepilot-design.md`
@@ -13,14 +13,18 @@
 - `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase3-ci-feedback-design.md`
 - `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md`
 - `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md`
+- `docs/superpowers/diagrams/v2-architecture.mmd`（V2 架构图源）
+- `docs/superpowers/diagrams/v2-flow.mmd`（V2 端到端生命周期流程图源）
+- `docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`（Phase 5 操作 runbook）
 
 ## 0. 文档入口和当前进度
 
 本文件是 V2 的总设计 spec，也是 V2 文档导航入口。每个 V2 实施计划必须有一个对应的
 补充 spec；补充 spec 只锁定该 Phase 的细节，不替代本总 spec。
 
-当前 V2 进度：**Phase 1、Phase 2、Phase 3、Phase 4 已合入 `main`；下一步是
-Phase 5 Workspace Retention。**
+当前 V2 进度：**Phase 1、Phase 2、Phase 3、Phase 4、Phase 5 全部已合入 `main`。**
+V2 团队可运营版本的功能交付已经完成；剩余条目集中在「真实试点验证」与「team-mode
+workspace cleanup wiring」两个面向（详见 §16 Phase 5 与 §17 完成标准）。
 
 | 顺序 | Phase | 状态 | 对应 spec | 对应 plan |
 | --- | --- | --- | --- | --- |
@@ -28,7 +32,12 @@ Phase 5 Workspace Retention。**
 | 2 | Dashboard Operations | 已完成 | `2026-05-15-issuepilot-v2-phase2-dashboard-operations-design.md` | `2026-05-15-issuepilot-v2-dashboard-operations.md` |
 | 3 | CI Feedback | 已完成 | `2026-05-16-issuepilot-v2-phase3-ci-feedback-design.md` | `2026-05-15-issuepilot-v2-ci-feedback.md` |
 | 4 | Review Feedback Sweep | 已完成 | `2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md` | `2026-05-15-issuepilot-v2-review-feedback-sweep.md` |
-| 5 | Workspace Retention | 下一步，待实施 | `2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md` | `2026-05-15-issuepilot-v2-workspace-retention.md` |
+| 5 | Workspace Retention | 已完成（V1 入口已激活；team daemon wiring 列为后续 follow-up） | `2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md` | `2026-05-15-issuepilot-v2-workspace-retention.md` |
+
+> **可视化入口**：`docs/superpowers/diagrams/v2-architecture.mmd` 给出 V2 五个 Phase
+> 共同构成的运行时层级图；`docs/superpowers/diagrams/v2-flow.mmd` 给出 GitLab issue
+> 在 V2 下从 `ai-ready` 走到关闭/失败/打回的完整生命周期流程图。两份文件都附带渲染好
+> 的 SVG 产物，README 与使用手册直接引用。
 
 阅读顺序：
 
@@ -445,12 +454,30 @@ V2 实现需要覆盖：
 
 ### Phase 5：Workspace Retention
 
-状态：下一步，待实施。
+状态：已完成。
 
-- retention config。
-- cleanup planner。
-- cleanup events。
-- runbook 和 rollback 文档。
+- `RetentionConfig` 进入 `@issuepilot/shared-contracts`，`retention.successful_run_days` /
+  `retention.failed_run_days` / `retention.max_workspace_gb` /
+  `retention.cleanup_interval_ms` 同时被 V1 workflow 和 V2 team config 解析。
+- 纯函数 planner `packages/workspace/src/retention.ts`：active run 永不删除、
+  successful 7 天、failed/blocked 30 天、超容量只清已过期 terminal run、
+  失败现场 marker 默认保留。
+- executor `apps/orchestrator/src/maintenance/workspace-cleanup.ts`：plan →
+  rm → 事件审计三段式，单条失败 fail-soft，emit
+  `workspace_cleanup_planned` / `workspace_cleanup_completed` / `workspace_cleanup_failed`。
+- V1 单项目入口（`issuepilot run --workflow ...`）按 `cleanup_interval_ms`
+  自动跑 cleanup；dashboard service header 展示 `workspace usage GB` 与
+  `next cleanup ETA`。
+- CLI `issuepilot doctor --workspace --workflow <path>` 提供 dry-run 预览。
+- Runbook：`docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`，
+  覆盖准备清理 vs 强制清理决策、`workspace_cleanup_failed` 诊断、误删 rollback。
+
+后续 follow-up（不阻塞 V2 主体）：
+
+- V2 team daemon 启动时打 warn 提示 `retention` 节被解析但 cleanup loop
+  未自动启动；多项目场景下需要在 V1 入口逐 workflow 启用 cleanup，或等待
+  team-mode wiring 后续 release。
+- 远端 GitLab `ai/*` 分支清理仍归后续 release 管理任务，本 Phase 不做。
 
 补充设计：
 
