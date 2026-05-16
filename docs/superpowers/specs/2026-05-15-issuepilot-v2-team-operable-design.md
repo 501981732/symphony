@@ -1,7 +1,7 @@
 # IssuePilot V2 团队可运营版本设计
 
 日期：2026-05-15
-状态：已确认；Phase 1-3 已合入，下一步 Phase 4
+状态：已确认；Phase 1-4 已合入，下一步 Phase 5
 关联文档：
 
 - `docs/superpowers/specs/2026-05-11-issuepilot-design.md`
@@ -19,16 +19,16 @@
 本文件是 V2 的总设计 spec，也是 V2 文档导航入口。每个 V2 实施计划必须有一个对应的
 补充 spec；补充 spec 只锁定该 Phase 的细节，不替代本总 spec。
 
-当前 V2 进度：**Phase 1、Phase 2、Phase 3 已合入 `main`；下一步是 Phase 4
-Review Feedback Sweep；Phase 5 Workspace Retention 仍待实施。**
+当前 V2 进度：**Phase 1、Phase 2、Phase 3、Phase 4 已合入 `main`；下一步是
+Phase 5 Workspace Retention。**
 
 | 顺序 | Phase | 状态 | 对应 spec | 对应 plan |
 | --- | --- | --- | --- | --- |
 | 1 | Team Runtime Foundation | 已完成 | `2026-05-16-issuepilot-v2-phase1-team-runtime-foundation-design.md` | `2026-05-15-issuepilot-v2-team-runtime-foundation.md` |
 | 2 | Dashboard Operations | 已完成 | `2026-05-15-issuepilot-v2-phase2-dashboard-operations-design.md` | `2026-05-15-issuepilot-v2-dashboard-operations.md` |
 | 3 | CI Feedback | 已完成 | `2026-05-16-issuepilot-v2-phase3-ci-feedback-design.md` | `2026-05-15-issuepilot-v2-ci-feedback.md` |
-| 4 | Review Feedback Sweep | 下一步，待实施 | `2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md` | `2026-05-15-issuepilot-v2-review-feedback-sweep.md` |
-| 5 | Workspace Retention | 待实施 | `2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md` | `2026-05-15-issuepilot-v2-workspace-retention.md` |
+| 4 | Review Feedback Sweep | 已完成 | `2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md` | `2026-05-15-issuepilot-v2-review-feedback-sweep.md` |
+| 5 | Workspace Retention | 下一步，待实施 | `2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md` | `2026-05-15-issuepilot-v2-workspace-retention.md` |
 
 阅读顺序：
 
@@ -428,7 +428,7 @@ V2 实现需要覆盖：
 
 ### Phase 4：Review Feedback Sweep
 
-状态：下一步，待实施。
+状态：已完成。
 
 - MR discussion cursor。
 - feedback summary event。
@@ -445,7 +445,7 @@ V2 实现需要覆盖：
 
 ### Phase 5：Workspace Retention
 
-状态：待实施。
+状态：下一步，待实施。
 
 - retention config。
 - cleanup planner。

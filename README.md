@@ -427,8 +427,13 @@ run IssuePilot on its day-to-day work.
   scanner is wired into the orchestrator loop only at daemon startup —
   toggling `ci.enabled` requires restarting `issuepilot run` for the change
   to take effect.
-- MR / PR review feedback sweep (feed human review comments back into the
-  next agent turn).
+- ✅ Review feedback sweep (V2 Phase 4): the orchestrator polls human
+  comments on the human-review MR, persists them as a `ReviewFeedbackSummary`
+  on the run record, and — when the issue is recycled to `ai-rework` — the
+  carried-forward summary is prepended to the next agent prompt as a
+  standardised `## Review feedback` block. Always-on; no workflow toggle.
+  The dashboard run detail view shows a `Latest review feedback` panel
+  with deep-links back to each MR note.
 - Review workflow polish: surface the structured handoff / failure / closing
   note fields directly in the dashboard and generated reports.
 - Optional automated merge policy after CI/approval checks. The P0 default

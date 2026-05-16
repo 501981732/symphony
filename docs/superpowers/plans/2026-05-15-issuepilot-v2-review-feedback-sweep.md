@@ -1,7 +1,7 @@
 # IssuePilot V2 Review Feedback Sweep 实施计划
 
 Phase：V2 Phase 4
-状态：下一步，待实施
+状态：已实施
 对应 spec：`docs/superpowers/specs/2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md`
 上级 spec：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
 上一步：V2 Phase 3 CI Feedback

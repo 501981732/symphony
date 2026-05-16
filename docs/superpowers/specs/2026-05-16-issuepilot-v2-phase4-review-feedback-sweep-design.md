@@ -1,7 +1,7 @@
 # IssuePilot V2 Phase 4 - Review Feedback Sweep 补充设计
 
 日期：2026-05-16
-状态：待实施
+状态：已实施
 对应计划：`docs/superpowers/plans/2026-05-15-issuepilot-v2-review-feedback-sweep.md`
 上级设计：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
 

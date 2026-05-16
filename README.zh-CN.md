@@ -404,7 +404,12 @@ Request，不替代代码审查。
 - ✅ CI 状态读取 + CI 失败自动回流到 `ai-rework`（V2 Phase 3；通过 `WORKFLOW.md`
   的 `ci.enabled: true` 显式开启）。注意：scanner 只在 daemon 启动时按 `ci.enabled`
   决定是否注入 loop，运行中修改 `ci.enabled` 需要重启 `issuepilot run` 才会生效。
-- PR / MR review feedback sweep（把人工 review 评论喂回下一轮 agent）。
+- ✅ Review feedback sweep（V2 Phase 4）：orchestrator 持续轮询 `human-review`
+  MR 上的人工评论，将其结构化为 `ReviewFeedbackSummary` 写入 run 记录；当
+  issue 被打回 `ai-rework` 时，新一轮 run 会自动继承上一轮的 summary，并以
+  统一的 `## Review feedback` markdown 区段拼接到 agent prompt 之前。该 sweep
+  始终开启，无需 workflow 开关。dashboard 的 run 详情页面新增 `Latest review
+feedback` 面板，可直接跳转到 MR 上的每条评论。
 - review 工作流打磨：在 dashboard 和生成报告中直接展示结构化 handoff /
   failure / closing note 字段。
 - 可选自动 merge 策略（满足 CI / approval 后）。P0 默认仍由人类控制 merge。

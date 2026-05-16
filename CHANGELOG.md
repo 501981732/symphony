@@ -4,6 +4,66 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-16 — **V2 Phase 4 Review Feedback Sweep 落地：MR 上的人工评论会被
+  orchestrator 周期性扫描，结构化为 `ReviewFeedbackSummary` 写回 run 记录，并
+  在 issue 被打回 `ai-rework` 时自动继承到新一轮 run 的 prompt 中。** 新增
+  `apps/orchestrator/src/orchestrator/review-feedback.ts` 的
+  `sweepReviewFeedbackOnce`：扫 `RunRecord.status === "completed"` 且未
+  `endedAt`/`archivedAt` 的 review-stage run，按 `branch` 找开放 MR，调
+  `listMergeRequestNotes`，过滤 GitLab 系统 note、`<!-- issuepilot:` marker
+  开头的自写 note 与可选的 `tracker.botAccountName` bot；游标 `cursorIso`
+  控制"新评论"判定，但持久化的 summary 始终包含完整人工评论历史
+  （`allHumanComments`），保证 reviewer 在两次 ai-rework 之间留下的多条评论
+  不会被新一轮 sweep 覆盖丢失。每次 tick emit
+  `review_feedback_sweep_started` / `review_feedback_summary_generated`
+  /（lookup 失败时）`review_feedback_sweep_failed`，event payload 仅含本
+  tick 新增 delta；audit 日志因此既能查到 sweep 在跑、又不重复输出整段历史。
+  `apps/orchestrator/src/orchestrator/loop.ts` 在 `reconcileRunning` →
+  `scanCiFeedback` 之后调用 `sweepReviewFeedback`，daemon 在
+  `apps/orchestrator/src/daemon.ts` 中无条件装配（sweep 自身对无 MR /
+  无新评论的 run 是 no-op，不需要 workflow 开关）。dispatch 端
+  `apps/orchestrator/src/orchestrator/dispatch.ts` 在生成 prompt 前把
+  `latestReviewFeedback` 注入 `vars.reviewFeedback`（供模板访问），当
+  `latestReviewFeedback` 存在时再把标准化的 `## Review feedback` markdown
+  区段拼接到 prompt 之前；不再依赖 `attempt > 1`，因为 sweep 只在收集到
+  fresh 评论时才落盘 summary，summary 存在本身就证明在 rework 闭环里。
+  claim 端 `apps/orchestrator/src/orchestrator/claim.ts` 新增
+  `findPriorReviewState`：每次 claim 时按 `issue.iid` 查最近一次旧 run，
+  把 `latestReviewFeedback` 与 `lastDiscussionCursor` 复制到新 runId，
+  解决"ai-rework 重新 claim 后 runId 变化 / sweep 状态丢失"的接缝。
+  共享契约 `packages/shared-contracts/src/events.ts` 追加
+  `review_feedback_sweep_started` / `review_feedback_summary_generated`
+  / `review_feedback_sweep_failed` 事件类型；`run.ts` 给 `RunRecord` 加
+  可选 `lastDiscussionCursor` 与 `latestReviewFeedback`；新增 `review.ts`
+  导出 `ReviewComment` / `ReviewFeedbackSummary`。`@issuepilot/workflow`
+  的 `PromptContext` 增加 `reviewFeedback?: ReviewFeedbackSummary`，
+  `render.ts` 把 camelCase 字段同时挂成 snake_case `review_feedback` 别名，
+  方便 Liquid 模板 `{{ review_feedback.comments }}` 直接遍历。
+  `apps/dashboard/components/detail/run-detail-page.tsx` 在 detail 页底部
+  新增 `Latest review feedback` 面板：展示 MR 链接、generatedAt、cursor、
+  每条评论 author + createdAt + resolved badge + 截断 body + 跳回 MR
+  note 的深链接。daemon 事件 bridge `apps/orchestrator/src/daemon.ts` 的
+  eventBus subscriber 把 `review_feedback_*` 与 `operator_action_*` /
+  `ci_status_*` 一同 append 到 eventStore，让 `/api/events?runId=...` 与
+  dashboard 审计日志能查到 sweep 事件。e2e 新增
+  `tests/e2e/review-feedback-sweep.test.ts` 两条场景：(a) seed reviewer
+  评论 → 等 sweep emit `review_feedback_summary_generated` →
+  人工 ai-rework reclaim → 抓 fake-codex `IPILOT_FAKE_DEBUG_LOG` 截到第二轮
+  `turn/start` 的 prompt 真的包含 `## Review feedback` + 历史评论文本；
+  (b) MR 不存在时 sweep emit `no_mr` summary 不动 labels。e2e helpers
+  `tests/e2e/fixtures/workflow.fake.md.tpl` 接入 `__ACTIVE_LABELS__`
+  占位符（默认 `["ai-ready"]` 保持 happy/CI 套件语义，sweep 测试覆盖
+  `["ai-ready", "ai-rework"]` 验证完整 reclaim 链路）。验证：`pnpm lint`
+  / `pnpm typecheck` / `pnpm --filter @issuepilot/orchestrator test`（243
+  单测，含新增 1 个 carry-forward claim 测试 + 1 个 accumulator sweep
+  测试 + 1 个 carry-forward dispatch 测试）/ `pnpm --filter
+  @issuepilot/tests-e2e test`（48 e2e，含新增 2 个 review feedback 场景）
+  全绿。
+  - **故意 out of scope**：摘要 LLM（V4 范围）、跨 MR / 跨 issue 评论聚合、
+    review 评论触发自动 merge、替代 Phase 3 CI 回流。
+
 ### Fixed
 
 - 2026-05-15 — **V2 Phase 3 CI Feedback：`unknown` 状态归入 wait，避免 race condition 时 marker note 被 unknown 占坐**。`apps/orchestrator/src/orchestrator/ci-feedback.ts`：原来 `unknown` 与 `canceled` 一起走 manual prompt 路径（写 marker note + emit `ci_status_observed{action:"manual"}`）。但 dispatch 完成 issue 进入 `human-review` 后 fake / 真实 GitLab pipeline 可能还没生成（pipelines 表为空 → `getPipelineStatus` 返回 `unknown`），scanner 在同一个 tick 内已经能看到 MR 但还没看到 pipeline，结果先用 marker note 写了"unusual CI status: `unknown`"提示文案。下一轮 pipeline 真正变为 `failed` 时，C1 dedup 命中已有 marker note 直接跳过 `createIssueNote`，rework "failing CI pipeline" note 永远写不进去。把 `unknown` 改成与 `running`/`pending` 同组走 wait 路径（不写 note，emit `ci_status_observed{action:"wait"}`），保住 marker note 槽位给后续真正需要 prompt 的状态。`canceled`（含 gitbeaker 的 `skipped → canceled` 映射）保持 manual prompt 行为不变。新增 2 个单测：(a) `unknown` 与 `running`/`pending` 同走 wait，无 note；(b) regression 单测复现 e2e race —— 先 `unknown` 一轮，再 `failed`，期望第二轮能正常写 rework note。e2e `ci-feedback.test.ts` 5/5 全绿、orchestrator 单测 227/227 全绿。

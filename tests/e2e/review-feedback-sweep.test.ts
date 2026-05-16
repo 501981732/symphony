@@ -225,158 +225,157 @@ describe("review feedback sweep E2E", () => {
     }
   });
 
-  it(
-    "captures reviewer comments, advances the cursor, and injects them into the ai-rework prompt",
-    async () => {
-      const ISSUE_IID = 91;
-      ws = await createE2EWorkspace({
-        codexScriptFixture: "codex.happy.json",
-        activeLabels: ["ai-ready", "ai-rework"],
-        issues: [
-          {
-            iid: ISSUE_IID,
-            title: "Review feedback loop",
-            description:
-              "Verify that human review comments come back to the agent on the next cycle.",
-            labels: ["ai-ready"],
-          },
-        ],
-      });
-
-      const port = await pickFreePort();
-      daemon = await startDaemon(
-        { workflowPath: ws.workflowPath, port },
-        { startLoop: withFastPoll },
-      );
-
-      // 1. First cycle: run goes ai-ready → ai-running → completed, label
-      //    parked at human-review.
-      await ws.gitlabServer.waitFor(
-        (s) => {
-          const issue = s.issues.get(ISSUE_IID);
-          return !!issue && issue.labels.includes("human-review");
+  it("captures reviewer comments, advances the cursor, and injects them into the ai-rework prompt", async () => {
+    const ISSUE_IID = 91;
+    ws = await createE2EWorkspace({
+      codexScriptFixture: "codex.happy.json",
+      activeLabels: ["ai-ready", "ai-rework"],
+      issues: [
+        {
+          iid: ISSUE_IID,
+          title: "Review feedback loop",
+          description:
+            "Verify that human review comments come back to the agent on the next cycle.",
+          labels: ["ai-ready"],
         },
-        { timeoutMs: 20_000, intervalMs: 50 },
-      );
-      const firstRun = await waitForRun(
-        daemon.url,
-        (r) => r.status === "completed",
-      );
-      expect(firstRun.branch).toMatch(/^ai\//);
+      ],
+    });
 
-      const mr = ws.gitlabState.mergeRequests.get(firstRun.branch);
-      expect(mr, "expected dispatch to open an MR for the AI branch").toBeDefined();
-      const mrIid = mr!.iid;
+    const port = await pickFreePort();
+    daemon = await startDaemon(
+      { workflowPath: ws.workflowPath, port },
+      { startLoop: withFastPoll },
+    );
 
-      // 2. Reviewer posts the first comment. Sweep should pick it up,
-      //    set `latestReviewFeedback`, and advance the cursor to its
-      //    `created_at`. The marker-prefix filter must NOT match
-      //    because this body is plain-text reviewer feedback.
-      const firstNoteAt = new Date(Date.now() - 1000).toISOString();
-      seedReviewerNote(ws, mrIid, {
-        author: "alice",
-        body: "Please add error handling around the empty branch path.",
-        createdAt: firstNoteAt,
-      });
+    // 1. First cycle: run goes ai-ready → ai-running → completed, label
+    //    parked at human-review.
+    await ws.gitlabServer.waitFor(
+      (s) => {
+        const issue = s.issues.get(ISSUE_IID);
+        return !!issue && issue.labels.includes("human-review");
+      },
+      { timeoutMs: 20_000, intervalMs: 50 },
+    );
+    const firstRun = await waitForRun(
+      daemon.url,
+      (r) => r.status === "completed",
+    );
+    expect(firstRun.branch).toMatch(/^ai\//);
 
-      const firstSummary = await waitForEvent(
-        daemon.url,
-        firstRun.runId,
-        (e) => {
-          if (e.type !== "review_feedback_summary_generated") return false;
-          const d = (e.data ?? {}) as { commentCount?: number };
-          return d.commentCount === 1;
-        },
-        { timeoutMs: 30_000 },
-      );
-      const firstSummaryData = (firstSummary.data ?? {}) as {
-        cursor: string;
-        comments: Array<{ author: string; body: string }>;
-        mrIid: number;
-      };
-      expect(firstSummaryData.cursor).toBe(firstNoteAt);
-      expect(firstSummaryData.mrIid).toBe(mrIid);
-      expect(firstSummaryData.comments[0]?.author).toBe("alice");
-      expect(firstSummaryData.comments[0]?.body).toContain(
-        "Please add error handling",
-      );
+    const mr = ws.gitlabState.mergeRequests.get(firstRun.branch);
+    expect(
+      mr,
+      "expected dispatch to open an MR for the AI branch",
+    ).toBeDefined();
+    const mrIid = mr!.iid;
 
-      // Sanity check the API surface too — the dashboard reads from
-      // /api/runs, so a regression in the run-record persistence would
-      // hide the carry-forward path even if events look right.
-      const runsAfterFirstSweep = await fetchRuns(daemon.url);
-      const recordedFirst = runsAfterFirstSweep.find(
-        (r) => r.runId === firstRun.runId,
-      );
-      expect(recordedFirst?.latestReviewFeedback?.cursor).toBe(firstNoteAt);
-      expect(recordedFirst?.latestReviewFeedback?.comments).toHaveLength(1);
+    // 2. Reviewer posts the first comment. Sweep should pick it up,
+    //    set `latestReviewFeedback`, and advance the cursor to its
+    //    `created_at`. The marker-prefix filter must NOT match
+    //    because this body is plain-text reviewer feedback.
+    const firstNoteAt = new Date(Date.now() - 1000).toISOString();
+    seedReviewerNote(ws, mrIid, {
+      author: "alice",
+      body: "Please add error handling around the empty branch path.",
+      createdAt: firstNoteAt,
+    });
 
-      // 3. Reviewer posts a second comment. The next sweep tick must
-      //    only emit the newer note (cursor advances; old comment is
-      //    not re-injected) but the persisted summary should still
-      //    reflect the most recent sweep.
-      const secondNoteAt = new Date(Date.now() + 50).toISOString();
-      seedReviewerNote(ws, mrIid, {
-        author: "bob",
-        body: "Also add a unit test for the timeout branch please.",
-        createdAt: secondNoteAt,
-      });
+    const firstSummary = await waitForEvent(
+      daemon.url,
+      firstRun.runId,
+      (e) => {
+        if (e.type !== "review_feedback_summary_generated") return false;
+        const d = (e.data ?? {}) as { commentCount?: number };
+        return d.commentCount === 1;
+      },
+      { timeoutMs: 30_000 },
+    );
+    const firstSummaryData = (firstSummary.data ?? {}) as {
+      cursor: string;
+      comments: Array<{ author: string; body: string }>;
+      mrIid: number;
+    };
+    expect(firstSummaryData.cursor).toBe(firstNoteAt);
+    expect(firstSummaryData.mrIid).toBe(mrIid);
+    expect(firstSummaryData.comments[0]?.author).toBe("alice");
+    expect(firstSummaryData.comments[0]?.body).toContain(
+      "Please add error handling",
+    );
 
-      await waitForEvent(
-        daemon.url,
-        firstRun.runId,
-        (e) => {
-          if (e.type !== "review_feedback_summary_generated") return false;
-          const d = (e.data ?? {}) as {
-            commentCount?: number;
-            cursor?: string;
-          };
-          return d.commentCount === 1 && d.cursor === secondNoteAt;
-        },
-        { timeoutMs: 30_000 },
-      );
+    // Sanity check the API surface too — the dashboard reads from
+    // /api/runs, so a regression in the run-record persistence would
+    // hide the carry-forward path even if events look right.
+    const runsAfterFirstSweep = await fetchRuns(daemon.url);
+    const recordedFirst = runsAfterFirstSweep.find(
+      (r) => r.runId === firstRun.runId,
+    );
+    expect(recordedFirst?.latestReviewFeedback?.cursor).toBe(firstNoteAt);
+    expect(recordedFirst?.latestReviewFeedback?.comments).toHaveLength(1);
 
-      // 4. Human transitions the issue from human-review → ai-rework.
-      //    The orchestrator must claim a fresh run (new runId), carry
-      //    forward `latestReviewFeedback`, and dispatch a second codex
-      //    turn whose prompt includes the review block.
-      const issueRow = ws.gitlabState.issues.get(ISSUE_IID);
-      expect(issueRow, "issue row must exist").toBeDefined();
-      issueRow!.labels = issueRow!.labels.filter((l) => l !== "human-review");
-      issueRow!.labels.push("ai-rework");
-      issueRow!.updated_at = new Date().toISOString();
+    // 3. Reviewer posts a second comment. The next sweep tick must
+    //    only emit the newer note (cursor advances; old comment is
+    //    not re-injected) but the persisted summary should still
+    //    reflect the most recent sweep.
+    const secondNoteAt = new Date(Date.now() + 50).toISOString();
+    seedReviewerNote(ws, mrIid, {
+      author: "bob",
+      body: "Also add a unit test for the timeout branch please.",
+      createdAt: secondNoteAt,
+    });
 
-      const reworkRun = await waitForRun(
-        daemon.url,
-        (r) => r.runId !== firstRun.runId && r.status !== "completed",
-        { timeoutMs: 30_000 },
-      );
-      expect(reworkRun.runId).not.toBe(firstRun.runId);
+    await waitForEvent(
+      daemon.url,
+      firstRun.runId,
+      (e) => {
+        if (e.type !== "review_feedback_summary_generated") return false;
+        const d = (e.data ?? {}) as {
+          commentCount?: number;
+          cursor?: string;
+        };
+        return d.commentCount === 1 && d.cursor === secondNoteAt;
+      },
+      { timeoutMs: 30_000 },
+    );
 
-      // 5. Wait until the daemon has spawned the second fake-codex
-      //    process and we've recorded both `turn/start` payloads. The
-      //    second prompt must carry the standardised review block.
-      const prompts = await waitForTurnStartPromptCount(debugLogPath!, 2, {
-        timeoutMs: 30_000,
-      });
-      const reworkPrompt = prompts[1]!;
-      expect(reworkPrompt).toContain("## Review feedback");
-      expect(reworkPrompt).toContain("Please add error handling");
-      // Only the newest cursor-advancing sweep was persisted, so the
-      // older comment text from alice is *not* required — what the
-      // agent must see is whatever the most recent sweep recorded,
-      // which is bob's comment.
-      expect(reworkPrompt).toContain(
-        "Also add a unit test for the timeout branch please.",
-      );
+    // 4. Human transitions the issue from human-review → ai-rework.
+    //    The orchestrator must claim a fresh run (new runId), carry
+    //    forward `latestReviewFeedback`, and dispatch a second codex
+    //    turn whose prompt includes the review block.
+    const issueRow = ws.gitlabState.issues.get(ISSUE_IID);
+    expect(issueRow, "issue row must exist").toBeDefined();
+    issueRow!.labels = issueRow!.labels.filter((l) => l !== "human-review");
+    issueRow!.labels.push("ai-rework");
+    issueRow!.updated_at = new Date().toISOString();
 
-      // The first prompt (initial ai-ready dispatch) must NOT contain
-      // the review block — otherwise we'd be leaking stale feedback
-      // into brand-new issues that have never been reviewed.
-      expect(prompts[0]).not.toContain("## Review feedback");
-    },
-    90_000,
-  );
+    const reworkRun = await waitForRun(
+      daemon.url,
+      (r) => r.runId !== firstRun.runId && r.status !== "completed",
+      { timeoutMs: 30_000 },
+    );
+    expect(reworkRun.runId).not.toBe(firstRun.runId);
+
+    // 5. Wait until the daemon has spawned the second fake-codex
+    //    process and we've recorded both `turn/start` payloads. The
+    //    second prompt must carry the standardised review block.
+    const prompts = await waitForTurnStartPromptCount(debugLogPath!, 2, {
+      timeoutMs: 30_000,
+    });
+    const reworkPrompt = prompts[1]!;
+    expect(reworkPrompt).toContain("## Review feedback");
+    expect(reworkPrompt).toContain("Please add error handling");
+    // Only the newest cursor-advancing sweep was persisted, so the
+    // older comment text from alice is *not* required — what the
+    // agent must see is whatever the most recent sweep recorded,
+    // which is bob's comment.
+    expect(reworkPrompt).toContain(
+      "Also add a unit test for the timeout branch please.",
+    );
+
+    // The first prompt (initial ai-ready dispatch) must NOT contain
+    // the review block — otherwise we'd be leaking stale feedback
+    // into brand-new issues that have never been reviewed.
+    expect(prompts[0]).not.toContain("## Review feedback");
+  }, 90_000);
 
   it("emits review_feedback_summary_generated with no_mr when no MR has been opened", async () => {
     const ISSUE_IID = 92;
@@ -387,7 +386,8 @@ describe("review feedback sweep E2E", () => {
         {
           iid: ISSUE_IID,
           title: "Review feedback no MR path",
-          description: "Sweep must stay quiet when no MR exists for the branch.",
+          description:
+            "Sweep must stay quiet when no MR exists for the branch.",
           labels: ["ai-ready"],
         },
       ],
