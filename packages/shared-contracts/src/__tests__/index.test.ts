@@ -16,4 +16,16 @@ describe("@issuepilot/shared-contracts", () => {
     expect(typeof mod.isEventType).toBe("function");
     expect(typeof mod.isServiceStatus).toBe("function");
   });
+
+  it("re-exports review feedback types (V2 Phase 4)", () => {
+    const summary: mod.ReviewFeedbackSummary = {
+      mrIid: 1,
+      mrUrl: "https://gitlab.example.com/x/-/merge_requests/1",
+      generatedAt: "2026-05-16T00:00:00.000Z",
+      cursor: "2026-05-16T00:00:00.000Z",
+      comments: [],
+    };
+
+    expect(summary.comments).toEqual([]);
+  });
 });

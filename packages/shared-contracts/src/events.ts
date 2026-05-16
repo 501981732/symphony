@@ -99,6 +99,10 @@ export const EVENT_TYPE_VALUES = [
   "ci_status_observed",
   "ci_status_rework_triggered",
   "ci_status_lookup_failed",
+  // Review feedback sweep (V2 Phase 4)
+  "review_feedback_sweep_started",
+  "review_feedback_summary_generated",
+  "review_feedback_sweep_failed",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPE_VALUES)[number];

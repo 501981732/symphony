@@ -128,6 +128,47 @@ describe("@issuepilot/shared-contracts/run", () => {
     expect(isPipelineStatus(undefined)).toBe(false);
   });
 
+  it("allows RunRecord to carry the review feedback cursor and the latest summary (V2 Phase 4)", () => {
+    const run: RunRecord = {
+      runId: "run-1",
+      issue: {
+        id: "1",
+        iid: 1,
+        title: "Fix",
+        url: "https://gitlab.example.com/group/web/-/issues/1",
+        projectId: "group/web",
+        labels: ["human-review"],
+      },
+      status: "completed",
+      attempt: 1,
+      branch: "ai/1-fix",
+      workspacePath: "/tmp/run-1",
+      startedAt: "2026-05-15T00:00:00.000Z",
+      updatedAt: "2026-05-15T00:02:00.000Z",
+      lastDiscussionCursor: "2026-05-15T00:01:30.000Z",
+      latestReviewFeedback: {
+        mrIid: 42,
+        mrUrl: "https://gitlab.example.com/group/web/-/merge_requests/42",
+        generatedAt: "2026-05-15T00:02:00.000Z",
+        cursor: "2026-05-15T00:01:30.000Z",
+        comments: [
+          {
+            noteId: 7,
+            author: "alice",
+            body: "Please add a test for the empty branch path.",
+            url: "https://gitlab.example.com/group/web/-/merge_requests/42#note_7",
+            createdAt: "2026-05-15T00:01:30.000Z",
+            resolved: false,
+          },
+        ],
+      },
+    };
+
+    expect(run.lastDiscussionCursor).toBe("2026-05-15T00:01:30.000Z");
+    expect(run.latestReviewFeedback?.comments).toHaveLength(1);
+    expect(run.latestReviewFeedback?.cursor).toBe("2026-05-15T00:01:30.000Z");
+  });
+
   it("allows RunRecord to carry latestCiStatus + latestCiCheckedAt", () => {
     const run: RunRecord = {
       runId: "run-1",
