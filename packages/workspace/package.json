@@ -26,6 +26,7 @@
     "vitest": "^2.1.4"
   },
   "dependencies": {
+    "@issuepilot/shared-contracts": "workspace:*",
     "execa": "^9.6.1"
   }
 }
