@@ -1,5 +1,12 @@
 # IssuePilot V2 CI 回流实施计划
 
+Phase：V2 Phase 3
+状态：已完成，已合入 `main`
+对应 spec：`docs/superpowers/specs/2026-05-16-issuepilot-v2-phase3-ci-feedback-design.md`
+上级 spec：`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
+上一步：V2 Phase 2 Dashboard Operations
+下一步：V2 Phase 4 Review Feedback Sweep
+
 > **给执行 agent：** 执行本计划时必须使用子技能 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`。步骤使用 checkbox（`- [ ]`）追踪。
 
 **目标：** 在 `human-review` 状态下读取该 issue 关联 MR 的 pipeline 状态：success 保持 review，failed 默认回流到 `ai-rework` 并写 structured note，其他状态保持 review 并提示人工。

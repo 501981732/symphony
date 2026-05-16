@@ -999,7 +999,10 @@ README 只保留摘要；本节是 roadmap 的产品源头。
 
 V2 的详细设计以
 `docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`
-为准。本节只保留产品路线摘要。
+为准；该文件顶部维护 Phase 顺序、当前进度、补充 spec 和 plan 的对应矩阵。本节只保留产品路线摘要。
+
+当前 V2 进度：Phase 1 Team Runtime Foundation、Phase 2 Dashboard Operations、
+Phase 3 CI Feedback 已合入；下一步是 Phase 4 Review Feedback Sweep。
 
 目标：从“个人单机”升级为“团队共享”，可以在内网或团队机器上承载日常工作。
 

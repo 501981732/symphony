@@ -1,7 +1,7 @@
 # IssuePilot V2 Phase 2 — Dashboard Operations 补充设计
 
 日期：2026-05-15
-状态：待用户评审
+状态：已落地
 关联文档：
 
 - `docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`（V2 总 spec，本补充覆盖其 §8 实现层）
@@ -27,8 +27,8 @@ Phase 2 完成时应满足：
 2. `Stop` 按钮发起后，daemon 通过 Codex app-server `turn/interrupt` 请求中断当前 turn；request 在 ≤5s 内成功 resolve 时表示 cancel 信号已被 Codex 受理，turn 后续以 `turn/completed { status: "interrupted" }` notification 收敛并走现有 cancelled 完成路径（latency 由 Codex 决定，不在 stopRun 控制范围）；request 超时或被 reject 时按 V2 §8「best-effort」标 run 为 `stopping` 并依赖 `turnTimeoutMs` 兜底收敛。
 3. 三个操作都写入 `operator_action_requested` / `operator_action_succeeded` / `operator_action_failed` 事件，事件包含 `runId`、`action`、`operator`、`createdAt`、`code`/`transitions`/`message` 字段。
 4. archived run 默认在 `/api/runs` 和 dashboard 列表中隐藏，`?includeArchived=true` 和 dashboard `Show archived` toggle 可恢复显示。
-5. V1（单 workflow）和 V2（team config）daemon 都装配 operator actions，三个路由在两种模式下行为一致。
-6. focused e2e：retry（failed → ai-rework → re-claim）和 stop（running → turn/interrupt → cancelled → failed）至少各一条稳定通过。
+5. V1（单 workflow）daemon 装配 operator actions；V2 team daemon 在 Phase 2 暂不装配，因为 Phase 1 只有 claim foundation，没有真实 runAgent dispatch。V2 team mode 下三个路由返回 HTTP 503 `actions_unavailable`，等 V2 dispatch 落地后再补装配。
+6. focused e2e：retry action path（failed → claimed / `ai-rework` label）和 stop（running → `turn/interrupt` → cancelled → failed）至少各一条稳定通过。retry 后重新 dispatch 的完整闭环仍是后续 follow-up。
 
 ## 3. 非目标
 
@@ -128,12 +128,12 @@ export interface RunCancelResult {
 
 ### 5.4 daemon 装配
 
-`apps/orchestrator/src/daemon.ts` 和 `apps/orchestrator/src/team/daemon.ts` 都新建 `runCancelRegistry = createRunCancelRegistry()`，并：
+`apps/orchestrator/src/daemon.ts` 新建 `runCancelRegistry = createRunCancelRegistry()`，并：
 
 1. 把 registry 传入 `OperatorActionDeps`。
 2. 在 `runAgent` 内部把 `onTurnActive: (cancel) => registry.register(runId, cancel)` 传给 `driveLifecycle`，并在 finally 里 `registry.unregister(runId)`。
 
-V1 / V2 daemon 共享同一 registry 抽象，避免分叉。
+`apps/orchestrator/src/team/daemon.ts` 在 Phase 2 明确不传 `operatorActions`。server 层在缺少 `operatorActions` 时返回 HTTP 503 `{ ok: false, code: "actions_unavailable" }`，让 dashboard 操作有明确失败语义，而不是隐藏按钮或暴露黑盒 5xx。V2 dispatch/runAgent 落地后再复用同一 registry 抽象补装配。
 
 **对 dispatch 路径的假设**：本 spec 假定 `apps/orchestrator/src/daemon.ts` 的 dispatch 收敛逻辑已经处理 `driveLifecycle` 返回 `cancelled` outcome 的情况（release lease、写 GitLab failure/stop note、transition labels 到 `failedLabel`、state.status 转 `failed`）。writing-plans 阶段必须先 grep `runAgent` 返回值消费路径验证这一条；如果 dispatch 当前只识别 `failed` / `completed` / `blocked` 三种 outcome，plan 需要在新增任务里把 `cancelled` 分支补上，并新增对应单测，再进入 actions service 实现。
 
@@ -243,7 +243,7 @@ E2E（原 plan 任务 7）相对原 plan 的增量：
 执行 writing-plans 时按下面的 diff 更新原 plan（`docs/superpowers/plans/2026-05-15-issuepilot-v2-dashboard-operations.md`）：
 
 - **任务 2（actions service）**：扩展 deps 引入 `runCancelRegistry`，替换原 `runnerCancel: (runId) => Promise<void>` 占位。stopRun 调用 registry 而非直调 cancel 函数。
-- **任务 4（daemon 装配）**：新增「构造 `runCancelRegistry`、在 runAgent 路径里 register/unregister、注入到 operatorActions」三步。删除原 plan 中 `runnerCancel: () => Promise.reject("not_implemented")` 占位。
+- **任务 4（daemon 装配）**：V1 daemon 新增「构造 `runCancelRegistry`、在 runAgent 路径里 register/unregister、注入到 operatorActions」三步。V2 team daemon 暂不装配 operatorActions，server 返回 `actions_unavailable`。删除原 plan 中 `runnerCancel: () => Promise.reject("not_implemented")` 占位。
 - **任务 5（dashboard client）**：删除 `NEXT_PUBLIC_OPERATOR_DISPLAY_NAME` 读取，dashboard client 不再 attach `X-IssuePilot-Operator` header。
 - **新增任务 X（runner cancel API）**：在原 plan 任务 1（contracts）和任务 2（actions）之间插入「runner-codex-app-server 增加 `onTurnActive` + `turn/interrupt` 处理 + `turn/completed { status: "interrupted" }` 识别」。包含 runner 包单元测试。
 - **新增任务 Y（run-cancel-registry）**：紧跟新任务 X 之后，实现 `apps/orchestrator/src/runtime/run-cancel-registry.ts` + 单元测试。
@@ -252,7 +252,7 @@ E2E（原 plan 任务 7）相对原 plan 的增量：
 
 ## 12. 兼容性
 
-- V1 单 workflow daemon 也装配 actions + cancel registry，三个路由在 V1 / V2 两种模式下行为一致。
+- V1 单 workflow daemon 装配 actions + cancel registry；V2 team daemon 暂不装配 operatorActions，三个路由返回 `actions_unavailable`。
 - 旧 RunRecord 无 `archivedAt` 时按未 archived 处理。
 - 三个新事件类型对老 dashboard 客户端是 forward-compat（未知事件按 unknown 显示，不破坏渲染）。
 - Codex app-server 的 `turn/interrupt` 协议未变，本次实现是对协议的 strict consumer，未来 Codex 协议演进时只需更新 runner 包。
@@ -262,7 +262,7 @@ E2E（原 plan 任务 7）相对原 plan 的增量：
 
 Phase 2 完成时应满足：
 
-1. `POST /api/runs/:runId/{retry|stop|archive}` 三个路由在 V1 / V2 daemon 下都可用。
+1. `POST /api/runs/:runId/{retry|stop|archive}` 三个路由在 V1 daemon 下可用；V2 team daemon 下返回 HTTP 503 `actions_unavailable`。
 2. dashboard 按 run 状态显示对应按钮；`Show archived` toggle 工作。
 3. stop 按钮在 fake codex 响应 `turn/interrupt` request 时让 cancel 信号在 ≤5s 内被受理（HTTP 返回 200），fake codex 随后 emit `turn/completed { status: "interrupted" }` 让 run 在 dispatch 收敛路径下走入 `failed`；fake codex 不响应 interrupt request 时 HTTP 返回 409 `cancel_failed`，run 标 `stopping`，最终由 `turnTimeoutMs` 兜底进入 `failed`。
 4. 三个 operator action 事件都进入 event store，可在 dashboard timeline 查看。

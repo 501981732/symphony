@@ -476,6 +476,7 @@ processes.
 - [使用指南（中文）](docs/getting-started.zh-CN.md) — Chinese getting-started guide.
 - [IssuePilot real GitLab smoke runbook](docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md) — Real GitLab + Codex end-to-end acceptance checklist.
 - [IssuePilot design spec](docs/superpowers/specs/2026-05-11-issuepilot-design.md) — Architecture, protocols, state machine.
+- [IssuePilot V2 roadmap and document map](docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md) — Current V2 phase order, progress, and spec/plan mapping.
 - [IssuePilot implementation plan](docs/superpowers/plans/2026-05-11-issuepilot-implementation-plan.md) — The 8-phase implementation plan and task breakdown.
 - [Original Symphony spec](SPEC.md)
 - [Elixir reference implementation](elixir/README.md)
