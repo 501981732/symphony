@@ -48,6 +48,7 @@ import {
   type OperatorActionInput,
 } from "./operations/actions.js";
 import { scanCiFeedbackOnce } from "./orchestrator/ci-feedback.js";
+import { sweepReviewFeedbackOnce } from "./orchestrator/review-feedback.js";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
 import { dispatch } from "./orchestrator/dispatch.js";
@@ -986,6 +987,29 @@ export async function startDaemon(
           });
         }
       : undefined,
+    // V2 Phase 4: always-on review feedback sweep. The plan deliberately
+    // does not introduce a `reviewSweep.enabled` toggle yet; sweeping a
+    // run that has no MR is a no-op (emits `no_mr` and moves on), so
+    // there is no downside to running it on every tick. If a future
+    // deployment needs to disable it (e.g. a self-hosted GitLab with a
+    // notes-list outage), we can introduce the toggle without breaking
+    // existing workflow files.
+    sweepReviewFeedback: async () => {
+      await sweepReviewFeedbackOnce({
+        state,
+        eventBus,
+        gitlab: {
+          findMergeRequestBySourceBranch:
+            gitlab.findMergeRequestBySourceBranch,
+          listMergeRequestNotes: gitlab.listMergeRequestNotes,
+        },
+        workflow: {
+          tracker: {
+            handoffLabel: workflow.tracker.handoffLabel,
+          },
+        },
+      });
+    },
     reconcileRunning: async () => {
       const runningLabel = workflow.tracker.runningLabel;
       const failedLabel = workflow.tracker.failedLabel;
