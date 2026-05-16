@@ -111,6 +111,9 @@ GitLab + TypeScript 路线、并打算在内部团队范围内试运行，那么
   Issue，MR closed 但未 merge 时回流到配置的 rework label。
 - 只读 dashboard：overview、run detail、SSE 刷新、timeline、tool calls 和 log tail
   展示。
+- V2.5 Command Center：Linear 风格的 List / Board 首页，运行详情页的 Review
+  Packet（handoff + checks + merge readiness），以及 `/reports` 聚合页用
+  来呈现本地报告产物。
 - 端到端测试 harness（`tests/e2e`）：内置带状态的 fake GitLab + 可脚本化的 fake
   Codex app-server，覆盖 happy path、retry 路径（`turn/timeout` → ai-failed
   耗尽 `max_attempts`）、failure 路径（`turn/failed` → ai-failed + 结构化
@@ -439,10 +442,30 @@ CI 回流、review feedback 与 workspace 清理。视觉版本：
 
 延后到 V2 之后处理（不阻塞 V2）：
 
-- review 工作流打磨：在 dashboard 和生成报告中直接展示结构化 handoff /
-  failure / closing note 字段。
 - 可选自动 merge 策略（满足 CI / approval 后）。P0 默认仍由人类控制 merge。
-- 更完整的运行报告：diff summary、测试结果、风险点、耗时分解。
+
+### V2.5 — Command Center
+
+目标：把"概览页 + 运行详情页"合并成 Linear 风格的 Command Center，让运维人员
+在一个屏幕里完成 triage、review 和质量观察；GitLab notes 与 dashboard
+共用同一份事实。
+
+- ✅ `RunReportArtifact` 持久化在 `~/.issuepilot/.../reports/<runId>.json`，
+  与 JSONL 事件存储并排，claim 时初始化，并在 reconcile、CI 扫描、review
+  扫描、failure 路径上更新。
+- ✅ Command Center 首页支持 **List 视图** 与 **Board 视图**（按 workflow
+  label 分栏），并提供内联 Review Packet 检查器。
+- ✅ 运行详情页的 **Review Packet** 直接从报告渲染结构化 handoff summary、
+  validation、risks、follow-ups、checks（CI / approvals / review
+  feedback / risks）以及 merge-readiness 判定结果。
+- ✅ **Reports 页面** (`/reports`) 聚合本地报告产物的质量与耗时指标
+  （ready-to-merge / blocked / failed 计数器，以及 report summary 列表）。
+- ✅ **Merge readiness 仅做 dry-run**：评估 CI、approval、review feedback
+  和 risks 是否就绪，**不会调用** GitLab 的 merge API；真正的自动 merge
+  仍在范围之外。
+- ✅ Handoff / failure / closing 等 GitLab notes 都从同一个
+  `RunReportArtifact` 渲染，保证 dashboard、notes 以及未来的 Markdown
+  导出保持一致。
 
 ### V3 — 生产化执行平台
 

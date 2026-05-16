@@ -4,6 +4,51 @@
 
 ## [Unreleased]
 
+### Added
+
+- 2026-05-16 — **V2.5 Command Center：单屏 Linear 风格 dashboard +
+  RunReportArtifact**。本次同时落 8 个 task，落地 V2.5 设计：
+  - **共享契约**：`packages/shared-contracts/src/report.ts` 新增
+    `RunReportArtifact`（version 1）、`RunReportSummary`、merge readiness
+    枚举、`isMergeReadinessStatus` 类型守卫与 `buildRunReportSummary`
+    派生函数；`api.ts` 在 `/api/runs`、`/api/runs/:runId` 响应里新增可选
+    `report` / `reports` 字段，并新增 `ReportsListResponse`。
+  - **orchestrator 报告流水线**：`apps/orchestrator/src/reports/` 下新增
+    `lifecycle.ts`（`createInitialReport` / `updateReportHandoff` /
+    `markReportFailed`）、`store.ts`（in-memory + JSON 文件双写，落盘到
+    `~/.issuepilot/.../reports/<runId>.json`，写盘前过 `redact`）、
+    `render.ts`（handoff / failure / closing GitLab note 从同一报告渲染）、
+    `merge-readiness.ts`（dry-run 评估器，覆盖 CI / approvals / review
+    feedback / risks），每个文件都有配套 vitest 测试。
+  - **生命周期接入**：`daemon.ts` 在 claim 时调 `createInitialReport`
+    并存盘，reconcile 拿 `reportStore.get(runId)` 注入 `ReconcileInput`
+    并把 MR / handoff note id / agent handoff 字段回写到报告，failure
+    路径调 `markReportFailed`；`reconcile` 改为返回 `ReconcileResult`，
+    `dispatch` 的 `reconcile` 签名同步放宽到 `Promise<void | ReconcileResult>`；
+    `ci-feedback.ts` / `review-feedback.ts` 接受 `reports?` 依赖，落盘
+    最新 CI / review 状态并重新评估 merge readiness。
+  - **API**：`apps/orchestrator/src/server/index.ts` 接受
+    `reports?: ReportStore`，`/api/runs` 给每条记录加 `report`
+    summary，`/api/runs/:runId` 返回完整 `RunReportArtifact`，新增
+    `/api/reports` 端点；`server.test.ts` 新增 “run reports” 子套件。
+  - **dashboard**：`apps/dashboard/lib/api.ts` 导出 `RunWithReport` 与
+    `listReports`；首页 `app/page.tsx` 替换为
+    `components/command-center/command-center-page.tsx`（List ↔ Board
+    切换 + Review Packet inspector），并补 list / board / page 三套
+    vitest；运行详情页顶部新增
+    `components/detail/review-packet.tsx`；新增 `/reports` 聚合页
+    （`app/reports/page.tsx` + `components/reports/reports-page.tsx`），
+    汇总 ready-to-merge / blocked / failed 计数与逐 run 摘要表。
+  - **文档**：`README.md` / `README.zh-CN.md` 在 Roadmap 新增 “V2.5 —
+    Command Center” 章节，并把 Linear 风格 List / Board、Review Packet
+    与 `/reports` 页加入 Current Status；`USAGE.md` / `USAGE.zh-CN.md`
+    在 §4.1 dashboard 启动后说明 Command Center / Review Packet /
+    `/reports` 的用法，并强调 merge readiness 仅做 dry-run。
+  - **验证**：`pnpm --filter @issuepilot/shared-contracts test`、
+    `pnpm --filter @issuepilot/orchestrator test`（274 个 case 全过）、
+    `pnpm --filter @issuepilot/dashboard test`、三个包的 `typecheck`
+    全部通过；`git diff --check` 清洁。
+
 ### Changed
 
 - 2026-05-16 — **使用文档从 `docs/getting-started.*` 提升为根目录 `USAGE.*`

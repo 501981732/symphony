@@ -132,6 +132,9 @@ Implemented in this repository:
   issue, and closed-unmerged MRs return to the configured rework label.
 - Read-only dashboard with overview and run detail views, SSE refresh, timeline,
   tool calls, and log tail rendering.
+- V2.5 Command Center: Linear-style List / Board home page, Review Packet
+  (handoff + checks + merge readiness) on each run detail, and a `/reports`
+  page summarising local report artifacts.
 - End-to-end test harness (`tests/e2e`) with a stateful fake GitLab + scriptable
   fake Codex app-server, covering the happy path, retry path
   (`turn/timeout` → ai-failed after `max_attempts`), failure path
@@ -465,12 +468,33 @@ workspace cleanup. Visual versions:
 
 Items deferred beyond V2 (not blocking V2):
 
-- Review workflow polish: surface the structured handoff / failure / closing
-  note fields directly in the dashboard and generated reports.
 - Optional automated merge policy after CI/approval checks. The P0 default
   remains human-controlled merge.
-- Richer run reports: diff summary, test results, risk callouts, timing
-  breakdown.
+
+### V2.5 — Command Center
+
+Goal: collapse "Overview + Run detail" into a Linear-style Command Center so
+operators get a single screen for triage, review, and quality metrics, while
+GitLab notes and dashboard share one fact source.
+
+- ✅ `RunReportArtifact` is persisted under `~/.issuepilot/.../reports/<runId>.json`
+  alongside the JSONL event store, captured at claim time and updated through
+  reconcile, CI scan, review sweep, and failure paths.
+- ✅ Command Center home page supports **List view** and **Board view**
+  (grouped by workflow label) with an inline Review Packet inspector.
+- ✅ **Review Packet** on the run detail page surfaces the structured handoff
+  summary, validation, risks, follow-ups, checks (CI / approvals / review
+  feedback / risks), and merge-readiness verdict directly from the report.
+- ✅ **Reports page** (`/reports`) aggregates per-run quality and timing
+  metrics (ready-to-merge / blocked / failed counters, list of report
+  summaries) from the local report artifacts.
+- ✅ **Merge readiness** is a **dry-run** evaluator only: it reports whether
+  CI, approvals, review feedback, and risks suggest the MR is ready to
+  merge. IssuePilot still does not call any GitLab merge API; true
+  auto-merge remains out of scope.
+- ✅ Handoff / failure / closing GitLab notes render from the same
+  `RunReportArtifact`, so dashboard, notes, and any future Markdown export
+  stay aligned.
 
 ### V3 — Productionized execution platform
 

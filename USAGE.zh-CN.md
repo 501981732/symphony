@@ -416,6 +416,18 @@ issuepilot dashboard --api-url http://127.0.0.1:4839
 如果页面显示 `IssuePilot orchestrator unreachable` / `fetch failed`：
 先确认终端 A 的 orchestrator 还在跑，且 dashboard 连的是同一端口。
 
+首页就是 **V2.5 Command Center**：单屏内提供 **List 视图** 与 **Board
+视图**（右上角切换），点 run 行即可打开内联的 Review Packet 检查器；点击
+run ID 进入完整的运行详情页，开头是 **Review Packet** 区块，按运行报告
+统一展示 handoff summary、validation、risks、follow-ups 以及 merge
+readiness 判定结果。聚合页地址是
+`http://127.0.0.1:3000/reports`，会用本地报告产物汇总 ready-to-merge /
+blocked / failed 计数器，并列出每个 run 的报告摘要。
+
+> **Merge readiness 仅做 dry-run**：只是告诉你 CI、approval、review
+> feedback 和 risks 是否看起来已经就绪，IssuePilot 不会调用任何 GitLab
+> merge API；真正的 merge 决策仍由人类掌握。
+
 ### 4.2 跑第一个 Issue
 
 在目标 GitLab 项目里：
