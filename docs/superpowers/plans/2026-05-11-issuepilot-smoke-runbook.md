@@ -180,7 +180,7 @@ WORKFLOW_PATH="$HOME/issuepilot-smoke/WORKFLOW.md"
 终端 A：
 
 ```bash
-# 选择一种方式提供 GitLab 凭据（详见 docs/getting-started.zh-CN.md §5）：
+# 选择一种方式提供 GitLab 凭据（详见 ../../../USAGE.zh-CN.md §3.4）：
 #   A) export GITLAB_TOKEN="<token>"            # PAT/Group Token
 #   B) issuepilot auth login --hostname <host>  # OAuth Device Flow
 issuepilot run --workflow "$WORKFLOW_PATH"

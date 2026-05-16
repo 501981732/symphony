@@ -426,7 +426,7 @@ workspace cleanup. Visual versions:
 - Architecture: [`docs/superpowers/diagrams/v2-architecture.svg`](docs/superpowers/diagrams/v2-architecture.svg)
 - End-to-end lifecycle: [`docs/superpowers/diagrams/v2-flow.svg`](docs/superpowers/diagrams/v2-flow.svg)
 - V2 master spec + per-phase progress: [`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`](docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md)
-- Team-mode walkthrough: [`docs/getting-started.md#13-v2-team-mode-multiple-projects-on-one-shared-machine`](docs/getting-started.md#13-v2-team-mode-multiple-projects-on-one-shared-machine)
+- Team-mode walkthrough: [`USAGE.md` — Part 5](USAGE.md#part-5--v2-team-mode-shared-machine--multiple-projects)
 
 - ✅ Phase 1 — Team Runtime Foundation: `issuepilot run --config
   /path/to/issuepilot.team.yaml` team mode for multi-project loading,
@@ -507,8 +507,8 @@ processes.
 
 ## Documentation
 
-- **[Getting Started (English)](docs/getting-started.md)** — First time running IssuePilot? Start here. Walks you from clone to your first end-to-end run in ~30 minutes. §13 covers V2 team mode.
-- [使用指南（中文）](docs/getting-started.zh-CN.md) — Chinese getting-started guide.
+- **[User Guide — English](USAGE.md)** — First time running IssuePilot? Start here. Walks you from install to first end-to-end run in ~30 minutes. Part 5 covers V2 team mode.
+- [使用指南（中文）](USAGE.zh-CN.md) — Chinese user guide (mirrors `USAGE.md`).
 - **[V2 architecture diagram](docs/superpowers/diagrams/v2-architecture.svg)** — Visual map of the V2 team-operable runtime (config → registry → scheduler → loop → adapters → events → dashboard).
 - **[V2 end-to-end flow diagram](docs/superpowers/diagrams/v2-flow.svg)** — Issue lifecycle from `ai-ready` through CI flip-back / review feedback / workspace cleanup.
 - [Diagram source files](docs/superpowers/diagrams/) — Mermaid sources and render instructions.

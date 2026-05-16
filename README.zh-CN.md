@@ -184,7 +184,7 @@ SPEC.md                          原 Symphony 语言无关 spec
 
 ## 快速开始
 
-> 详细步骤见 **[使用指南（中文）](docs/getting-started.zh-CN.md)**，以下是最短路径。
+> 详细步骤见 **[使用指南（中文）](USAGE.zh-CN.md)**，以下是最短路径。
 
 **第一步：构建并安装本地 V1 包**
 
@@ -404,7 +404,7 @@ CI 回流、review feedback 与 workspace 清理。视觉版本：
 - 架构图：[`docs/superpowers/diagrams/v2-architecture.svg`](docs/superpowers/diagrams/v2-architecture.svg)
 - 端到端流程图：[`docs/superpowers/diagrams/v2-flow.svg`](docs/superpowers/diagrams/v2-flow.svg)
 - V2 总设计与逐 Phase 进度：[`docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md`](docs/superpowers/specs/2026-05-15-issuepilot-v2-team-operable-design.md)
-- 团队模式上手：[`docs/getting-started.zh-CN.md#13-v2-团队模式在一台共享机器上管多个项目`](docs/getting-started.zh-CN.md#13-v2-团队模式在一台共享机器上管多个项目)
+- 团队模式上手：[`USAGE.zh-CN.md` — Part 5](USAGE.zh-CN.md#part-5--v2-团队模式共享机器--多项目)
 
 - ✅ Phase 1 — Team Runtime Foundation：`issuepilot run --config
   /path/to/issuepilot.team.yaml` team mode，用于多项目加载、lease-backed
@@ -474,8 +474,8 @@ CI 回流、review feedback 与 workspace 清理。视觉版本：
 
 ## 文档
 
-- **[使用指南（中文）](docs/getting-started.zh-CN.md)** — 第一次跑 IssuePilot？从这里开始。30 分钟内跑通你第一个 ai-ready Issue 的端到端流程；§13 是 V2 团队模式。
-- [Getting Started (English)](docs/getting-started.md) — 英文版使用指南。
+- **[使用指南（中文）](USAGE.zh-CN.md)** — 第一次跑 IssuePilot？从这里开始。30 分钟内跑通你第一个 ai-ready Issue 的端到端流程；Part 5 是 V2 团队模式。
+- [User Guide — English](USAGE.md) — 英文版使用手册（与 `USAGE.zh-CN.md` 同步）。
 - **[V2 架构图](docs/superpowers/diagrams/v2-architecture.svg)** — V2 团队可运营 runtime 的可视化（config → registry → scheduler → loop → adapters → events → dashboard）。
 - **[V2 端到端流程图](docs/superpowers/diagrams/v2-flow.svg)** — Issue 从 `ai-ready` 走到关闭/失败/打回的完整生命周期，覆盖 CI 回流 / review feedback / workspace cleanup。
 - [图源文件](docs/superpowers/diagrams/) — Mermaid 源与渲染命令说明。

@@ -4,12 +4,50 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 2026-05-16 — **使用文档从 `docs/getting-started.*` 提升为根目录 `USAGE.*`
+  并按 7 个 Part 重写**。目的是修「文档藏在 `docs/` 子目录里、13 个数字小节
+  扁平、V2 团队模式被挤在 §13 当附录读不到」三个问题。
+  - 文件迁移：`git mv docs/getting-started.md USAGE.md` + `git mv
+    docs/getting-started.zh-CN.md USAGE.zh-CN.md`（git rename detection
+    识别为重命名，历史保留）。两份文档现在与 `README.md` / `CHANGELOG.md`
+    / `LICENSE` 同级，遵循根目录 `USAGE` 的业界约定。
+  - 重写结构：把原扁平的 13 节合并成 7 个 Part，并在顶部加 TOC：
+    - Part 1 总览（V1 vs V2 对比表 + 仓库与目录角色）
+    - Part 2 快速跑通（环境要求 / 安装 / 第一次跑通核对清单）
+    - Part 3 准备目标 GitLab 项目（labels / SSH / WORKFLOW.md / 凭据 /
+      validate）
+    - Part 4 V1 单项目模式（个人开发机；启动 + 第一个 Issue + 6 个 label
+      状态对应动作）
+    - Part 5 V2 团队模式（入口对比 / team config / 校验 / Phase 2-5 + V2
+      当前边界）—— **V2 团队模式从附录提升为与 V1 平级的主章节**
+    - Part 6 日常运维与排障（"在哪里看什么"表 + 失败 run 取证 + FAQ）
+    - Part 7 参考（CLI 速查表 + HTTP API 端点 + 文档导航）
+  - 链接同步：`AGENTS.md` 文档语言 §「公开双语入口」规则从
+    `docs/getting-started.*` 改为 `USAGE.*`；`README.md` /
+    `README.zh-CN.md` 中所有使用手册链接（顶部 V1 快速通道、Roadmap §V2
+    团队模式 walkthrough、Documentation 区第一条）全部指向根目录
+    `USAGE.{md,zh-CN.md}`；`docs/superpowers/plans/2026-05-11-issuepilot-smoke-runbook.md`
+    第 183 行凭据章节引用从 `docs/getting-started.zh-CN.md §5` 改为
+    `../../../USAGE.zh-CN.md §3.4`。
+  - 不更新的引用：`docs/superpowers/specs/2026-05-1{1,4,5}-*.md` /
+    `docs/superpowers/plans/2026-05-1{4,5}-*.md` 中提及的
+    `docs/getting-started.*` 路径是带日期戳的历史档案（写 plan / spec
+    那一刻的真实路径），保留以维护档案历史一致性；同理本 CHANGELOG
+    的旧条目（`## 2026-05-14 ...` / `## 2026-05-15 ...` 等）也不改路径。
+  - 此条与下面 5-16 那条「V2 文档收口」是同一天的两次提交：先把 V2 完成
+    状态、架构图 / 流程图、§13 V2 团队模式章节写到 `docs/getting-started.*`
+    并合入 `main`；本次再做结构与位置重排。
+
 ### Added
 
 - 2026-05-16 — **V2 文档收口 + 架构图/流程图 + 中英文使用手册新增 V2 团队
   模式章节**。本次只动文档，不动代码；目的是把"V2 Phase 1–5 已全部合入
   `main`"这件事在仓库的所有面向用户的入口同步出来，并补齐之前缺的视觉
-  化文档。
+  化文档。注：本条提到的 `docs/getting-started.md` / `docs/getting-started.zh-CN.md`
+  在 2026-05-16 已经被 rename 为根目录 `USAGE.md` / `USAGE.zh-CN.md`，
+  详见上面 Changed 节那条；行文保留写入时的原路径作为历史档案。
   - `docs/superpowers/diagrams/v2-architecture.mmd` + `.svg`（新）：V2 团队
     可运营 runtime 架构图，覆盖 team config / workflow loader / project
     registry / scheduler + lease store / main loop / Phase 2–5 周期任务 /
