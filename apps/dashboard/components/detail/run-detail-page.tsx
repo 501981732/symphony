@@ -3,6 +3,7 @@
 import type {
   IssuePilotEvent,
   PipelineStatus,
+  ReviewFeedbackSummary,
   RunRecord,
 } from "@issuepilot/shared-contracts";
 import { useRouter } from "next/navigation";
@@ -255,7 +256,117 @@ export function RunDetailPage({
         </h2>
         <LogTail lines={logsTail} />
       </section>
+
+      {run.latestReviewFeedback ? (
+        <ReviewFeedbackPanel summary={run.latestReviewFeedback} />
+      ) : null}
     </main>
+  );
+}
+
+const REVIEW_BODY_TRUNCATE_LIMIT = 200;
+
+function truncateBody(body: string): string {
+  if (body.length <= REVIEW_BODY_TRUNCATE_LIMIT) return body;
+  return `${body.slice(0, REVIEW_BODY_TRUNCATE_LIMIT)}…`;
+}
+
+function ReviewFeedbackPanel({
+  summary,
+}: {
+  summary: ReviewFeedbackSummary;
+}) {
+  return (
+    <section
+      className="flex flex-col gap-3"
+      aria-labelledby="review-feedback-heading"
+    >
+      <h2
+        id="review-feedback-heading"
+        className="text-sm font-semibold uppercase tracking-wide text-slate-500"
+      >
+        Latest review feedback
+      </h2>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <CardTitle className="text-sm">
+            MR !{summary.mrIid}{" "}
+            <a
+              href={summary.mrUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="font-mono text-xs text-sky-700 hover:underline"
+            >
+              open
+            </a>
+          </CardTitle>
+          <div className="flex flex-col items-end gap-1 text-xs text-slate-500">
+            <span>
+              swept at{" "}
+              <time dateTime={summary.generatedAt} className="font-mono">
+                {summary.generatedAt}
+              </time>
+            </span>
+            <span>
+              cursor{" "}
+              <time dateTime={summary.cursor} className="font-mono">
+                {summary.cursor}
+              </time>
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 text-sm">
+          {summary.comments.length === 0 ? (
+            <p className="text-slate-500">
+              No new reviewer comments since the last sweep.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {summary.comments.map((comment) => (
+                <li
+                  key={comment.noteId}
+                  className="flex flex-col gap-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-700">
+                        @{comment.author}
+                      </span>
+                      <time
+                        dateTime={comment.createdAt}
+                        className="font-mono text-slate-500"
+                      >
+                        {comment.createdAt}
+                      </time>
+                      {comment.resolved ? (
+                        <Badge
+                          tone="success"
+                          aria-label={`note ${comment.noteId} resolved`}
+                        >
+                          resolved
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <a
+                      href={comment.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-xs text-sky-700 hover:underline"
+                      aria-label={`open note ${comment.noteId} on GitLab`}
+                    >
+                      view
+                    </a>
+                  </div>
+                  <p className="whitespace-pre-wrap break-words text-slate-800">
+                    {truncateBody(comment.body)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 
