@@ -371,6 +371,82 @@ describe("startLoop", () => {
     await loop.stop();
   });
 
+  it("runs workspace cleanup after sweepReviewFeedback when the interval is due (V2 Phase 5)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-16T00:00:00.000Z"));
+    const sequence: string[] = [];
+    const runCleanup = vi.fn(async () => {
+      sequence.push("cleanup");
+    });
+    const deps = createFakeLoopDeps({
+      reconcileRunning: vi.fn(async () => {
+        sequence.push("reconcileRunning");
+      }),
+      scanCiFeedback: vi.fn(async () => {
+        sequence.push("scanCiFeedback");
+      }),
+      sweepReviewFeedback: vi.fn(async () => {
+        sequence.push("sweepReviewFeedback");
+      }),
+      claim: vi.fn(async () => {
+        sequence.push("claim");
+        return [];
+      }),
+      cleanup: { runOnce: runCleanup, intervalMs: 60_000 },
+    });
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect(runCleanup).toHaveBeenCalledTimes(1);
+    expect(sequence).toEqual([
+      "reconcileRunning",
+      "scanCiFeedback",
+      "sweepReviewFeedback",
+      "cleanup",
+      "claim",
+    ]);
+
+    // Second tick before the interval should not call cleanup again.
+    await vi.advanceTimersByTimeAsync(30_000);
+    await loop.tick();
+    expect(runCleanup).toHaveBeenCalledTimes(1);
+
+    // Once the interval has elapsed, cleanup runs again.
+    await vi.advanceTimersByTimeAsync(31_000);
+    await loop.tick();
+    expect(runCleanup).toHaveBeenCalledTimes(2);
+
+    await loop.stop();
+  });
+
+  it("does not invoke cleanup when omitted (V2 Phase 5)", async () => {
+    const deps = createFakeLoopDeps();
+    const loop = startLoop(deps);
+
+    await loop.tick();
+
+    expect((deps as { cleanup?: unknown }).cleanup).toBeUndefined();
+    await loop.stop();
+  });
+
+  it("logs cleanup errors and continues the tick (V2 Phase 5)", async () => {
+    const runCleanup = vi.fn(async () => {
+      throw new Error("rm: permission denied");
+    });
+    const deps = createFakeLoopDeps({
+      cleanup: { runOnce: runCleanup, intervalMs: 1_000 },
+    });
+    const loop = startLoop(deps);
+    await loop.tick();
+
+    expect(deps.logError).toHaveBeenCalled();
+    expect(deps.claim).toHaveBeenCalled();
+    expect(deps.dispatch).toHaveBeenCalledTimes(2);
+
+    await loop.stop();
+  });
+
   it("stop waits for inflight dispatches", async () => {
     let dispatchResolved = false;
     const deps = createFakeLoopDeps({

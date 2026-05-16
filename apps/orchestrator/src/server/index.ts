@@ -39,6 +39,18 @@ export interface ServerDeps {
   /** V2 team project rollups; same value-or-getter semantics as `runtime`. */
   projects?: ProjectSummary[] | (() => ProjectSummary[]);
   /**
+   * V2 Phase 5 workspace usage (gibibytes). Same value-or-getter
+   * semantics as `runtime` so the dashboard can re-read the most
+   * recent cleanup plan summary on every `/api/state` poll without
+   * coupling the server to the maintenance executor.
+   */
+  workspaceUsageGb?: number | (() => number | undefined);
+  /**
+   * V2 Phase 5 ISO-8601 timestamp of the next planned workspace
+   * cleanup window. Same value-or-getter semantics as `runtime`.
+   */
+  nextCleanupAt?: string | (() => string | undefined);
+  /**
    * Operator-initiated retry / stop / archive entry points. When absent the
    * POST routes respond with HTTP 503 `actions_unavailable` so dashboards
    * see a deterministic error instead of a 5xx black box. V2 team daemon
@@ -193,6 +205,8 @@ export async function createServer(
   app.get("/api/state", async () => {
     const runtime = resolveSnapshotField(deps.runtime);
     const projects = resolveSnapshotField(deps.projects);
+    const workspaceUsageGb = resolveSnapshotField(deps.workspaceUsageGb);
+    const nextCleanupAt = resolveSnapshotField(deps.nextCleanupAt);
     return {
       service: {
         status: "ready",
@@ -202,6 +216,8 @@ export async function createServer(
         concurrency: deps.concurrency,
         lastConfigReloadAt: deps.state.lastConfigReloadAt,
         lastPollAt: deps.state.lastPollAt,
+        ...(typeof workspaceUsageGb === "number" ? { workspaceUsageGb } : {}),
+        ...(typeof nextCleanupAt === "string" ? { nextCleanupAt } : {}),
       },
       summary: buildDashboardSummary(
         deps.state.allRuns(),

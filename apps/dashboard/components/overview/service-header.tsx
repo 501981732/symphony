@@ -56,9 +56,26 @@ export function ServiceHeader({ snapshot }: ServiceHeaderProps) {
           {formatTimestamp(service.lastConfigReloadAt)}
         </Field>
         <Field label="Last poll">{formatTimestamp(service.lastPollAt)}</Field>
+        {typeof service.workspaceUsageGb === "number" ? (
+          <Field label="Workspace usage">
+            {`${formatGb(service.workspaceUsageGb)} GB`}
+          </Field>
+        ) : null}
+        {typeof service.nextCleanupAt === "string" ? (
+          <Field label="Next cleanup">
+            {formatTimestamp(service.nextCleanupAt)}
+          </Field>
+        ) : null}
       </CardContent>
     </Card>
   );
+}
+
+function formatGb(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  if (value >= 100) return value.toFixed(0);
+  if (value >= 10) return value.toFixed(1);
+  return value.toFixed(2);
 }
 
 function Field({

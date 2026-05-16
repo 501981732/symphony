@@ -44,6 +44,32 @@ describe("ServiceHeader", () => {
     expect(screen.getByText("2026-05-12 05:00:30Z")).toBeInTheDocument();
   });
 
+  it("renders V2 Phase 5 workspace usage + next cleanup when provided", () => {
+    render(
+      <ServiceHeader
+        snapshot={{
+          ...snapshot,
+          service: {
+            ...snapshot.service,
+            workspaceUsageGb: 12.4,
+            nextCleanupAt: "2026-05-12T06:00:00.000Z",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/Workspace usage/i)).toBeInTheDocument();
+    expect(screen.getByText(/12\.4\s*GB/i)).toBeInTheDocument();
+    expect(screen.getByText(/Next cleanup/i)).toBeInTheDocument();
+    expect(screen.getByText("2026-05-12 06:00:00Z")).toBeInTheDocument();
+  });
+
+  it("omits workspace usage / next cleanup when unset", () => {
+    render(<ServiceHeader snapshot={snapshot} />);
+    expect(screen.queryByText(/Workspace usage/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Next cleanup/i)).not.toBeInTheDocument();
+  });
+
   it("falls back to em-dash when no last reload yet", () => {
     render(
       <ServiceHeader

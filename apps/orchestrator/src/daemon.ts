@@ -47,6 +47,7 @@ import {
   type OperatorActionDeps,
   type OperatorActionInput,
 } from "./operations/actions.js";
+import { runWorkspaceCleanupOnce } from "./maintenance/workspace-cleanup.js";
 import { scanCiFeedbackOnce } from "./orchestrator/ci-feedback.js";
 import { claimCandidates } from "./orchestrator/claim.js";
 import { classifyError, type Classification } from "./orchestrator/classify.js";
@@ -613,6 +614,18 @@ export async function startDaemon(
     },
   });
 
+  // V2 Phase 5: latest cleanup plan summary, refreshed by the
+  // maintenance executor each time the loop runs cleanup. Both fields
+  // start as `undefined` so the dashboard knows "cleanup hasn't run
+  // yet" (distinct from a literal 0GB usage).
+  let lastWorkspaceUsageGb: number | undefined;
+  let nextWorkspaceCleanupAt: string | undefined =
+    workflow.retention.cleanupIntervalMs > 0
+      ? new Date(
+          Date.now() + workflow.retention.cleanupIntervalMs,
+        ).toISOString()
+      : undefined;
+
   const serverFactory = deps.createServer ?? createServer;
   const app = await serverFactory(
     {
@@ -623,6 +636,8 @@ export async function startDaemon(
       handoffLabel: workflow.tracker.handoffLabel,
       pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
       concurrency: workflow.agent.maxConcurrentAgents,
+      workspaceUsageGb: () => lastWorkspaceUsageGb,
+      nextCleanupAt: () => nextWorkspaceCleanupAt,
       readEvents: async (runId, readOpts) => {
         const key = runIndex.get(runId);
         if (!key) return [];
@@ -988,6 +1003,31 @@ export async function startDaemon(
           });
         }
       : undefined,
+    // V2 Phase 5: workspace retention sweep. Each tick we honour the
+    // workflow `retention.cleanup_interval_ms` (defaults to one hour);
+    // when the interval has elapsed since the last sweep, the executor
+    // walks `workflow.workspace.root`, builds a `CleanupPlan` from
+    // RuntimeState + retention policy, and rm's expired terminal
+    // workspaces. Per-entry failures stay confined to a single
+    // `workspace_cleanup_failed` event so the rest of the loop is
+    // unaffected. Result usage / next-ETA is stashed on the closures
+    // above so `/api/state` and the dashboard service header can show
+    // them without polling the filesystem.
+    cleanup: {
+      runOnce: async () => {
+        const plan = await runWorkspaceCleanupOnce({
+          workspaceRoot: workflow.workspace.root,
+          state,
+          retention: workflow.retention,
+          eventBus,
+        });
+        lastWorkspaceUsageGb = plan.totalBytes / 1024 ** 3;
+        nextWorkspaceCleanupAt = new Date(
+          Date.now() + workflow.retention.cleanupIntervalMs,
+        ).toISOString();
+      },
+      intervalMs: workflow.retention.cleanupIntervalMs,
+    },
     // V2 Phase 4: always-on review feedback sweep. The plan deliberately
     // does not introduce a `reviewSweep.enabled` toggle yet; sweeping a
     // run that has no MR is a no-op (emits `no_mr` and moves on), so

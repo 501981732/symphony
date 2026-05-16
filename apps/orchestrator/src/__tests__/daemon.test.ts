@@ -62,6 +62,12 @@ function createWorkflow(root: string): WorkflowConfig {
       onFailure: "ai-rework",
       waitForPipeline: true,
     },
+    retention: {
+      successfulRunDays: 7,
+      failedRunDays: 30,
+      maxWorkspaceGb: 50,
+      cleanupIntervalMs: 3_600_000,
+    },
     pollIntervalMs: 10_000,
     promptTemplate: "Fix issue {{issue.iid}}",
     source: {
