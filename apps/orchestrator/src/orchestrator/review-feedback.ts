@@ -5,8 +5,11 @@ import type {
   IssuePilotInternalEvent,
   ReviewComment,
   ReviewFeedbackSummary,
+  RunReportArtifact,
 } from "@issuepilot/shared-contracts";
 
+import { evaluateMergeReadiness } from "../reports/merge-readiness.js";
+import type { ReportStore } from "../reports/store.js";
 import type { RuntimeState } from "../runtime/state.js";
 
 /**
@@ -78,6 +81,13 @@ export interface SweepReviewFeedbackInput {
   gitlab: ReviewFeedbackGitLabSlice;
   workflow: ReviewFeedbackWorkflowSlice;
   eventBus: EventBus<IssuePilotInternalEvent>;
+  /**
+   * V2.5 Command Center: when present, every sweep that observes a new
+   * batch of human comments updates the run report's `reviewFeedback`
+   * and recomputes merge readiness. Tests that do not exercise the
+   * report subsystem can leave it undefined.
+   */
+  reports?: ReportStore;
   /** Injectable clock so tests can pin `generatedAt`. */
   now?: () => Date;
 }
@@ -391,6 +401,33 @@ export async function sweepReviewFeedbackOnce(
         latestReviewFeedback: summary,
         lastDiscussionCursor: newCursor,
       });
+    }
+
+    if (input.reports) {
+      const current = await input.reports.get(run.runId);
+      if (current) {
+        const unresolved = allHumanComments.filter((c) => !c.resolved).length;
+        const next: RunReportArtifact = {
+          ...current,
+          reviewFeedback: {
+            latestCursor: newCursor,
+            unresolvedCount: unresolved,
+            comments: allHumanComments.map((c) => ({
+              author: c.author,
+              body: c.body,
+              url: c.url,
+              resolved: c.resolved,
+              createdAt: c.createdAt,
+            })),
+          },
+        };
+        await input.reports.save({
+          ...next,
+          mergeReadiness: evaluateMergeReadiness(next, {
+            evaluatedAt: generatedAt,
+          }),
+        });
+      }
     }
 
     emit(input, run, "review_feedback_summary_generated", {

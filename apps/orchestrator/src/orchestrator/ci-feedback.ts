@@ -4,8 +4,11 @@ import { redact, type EventBus } from "@issuepilot/observability";
 import type {
   IssuePilotInternalEvent,
   PipelineStatus,
+  RunReportArtifact,
 } from "@issuepilot/shared-contracts";
 
+import { evaluateMergeReadiness } from "../reports/merge-readiness.js";
+import type { ReportStore } from "../reports/store.js";
 import type { RuntimeState } from "../runtime/state.js";
 
 /**
@@ -66,6 +69,12 @@ export interface ScanCiFeedbackDeps {
   gitlab: CiFeedbackGitLabSlice;
   workflow: CiFeedbackWorkflowSlice;
   eventBus: EventBus<IssuePilotInternalEvent>;
+  /**
+   * V2.5 Command Center: when present, every CI poll updates the run
+   * report `ci` field and recomputes merge readiness. Tests that do not
+   * exercise the report subsystem can leave it undefined.
+   */
+  reports?: ReportStore;
   now?: () => Date;
 }
 
@@ -246,6 +255,27 @@ function setLatestCi(
   });
 }
 
+async function updateReportCi(
+  deps: ScanCiFeedbackDeps,
+  run: ReviewRun,
+  status: PipelineStatus,
+): Promise<void> {
+  if (!deps.reports) return;
+  const current = await deps.reports.get(run.runId);
+  if (!current) return;
+  const checkedAt = nowIso(deps);
+  const nextReport: RunReportArtifact = {
+    ...current,
+    ci: { status, checkedAt },
+  };
+  await deps.reports.save({
+    ...nextReport,
+    mergeReadiness: evaluateMergeReadiness(nextReport, {
+      evaluatedAt: checkedAt,
+    }),
+  });
+}
+
 /**
  * Run statuses considered "parked at human-review" for the purpose of
  * CI feedback scanning. `RunRecord.issue.labels` is captured at claim
@@ -340,6 +370,7 @@ export async function scanCiFeedbackOnce(
     }
 
     setLatestCi(deps, run, status);
+    await updateReportCi(deps, run, status);
 
     if (status === "success") {
       emit(deps, run, "ci_status_observed", {
