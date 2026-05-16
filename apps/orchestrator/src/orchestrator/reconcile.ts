@@ -161,21 +161,82 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/**
+ * Slice of {@link ReconcileInput} that {@link mergeAgentHandoffIntoReport}
+ * actually reads. We expose a narrow slice so the daemon writeback path
+ * does not have to synthesise an entire `ReconcileInput` (with git/gitlab
+ * stubs) just to merge a few fields.
+ */
+export interface ReportHandoffMergeInput {
+  agentSummary?: string | undefined;
+  agentValidation?: string | undefined;
+  agentRisks?: string | undefined;
+  noCodeChangeReason?: string | undefined;
+  reworkLabel: string;
+}
+
+/**
+ * Merge the freshest agent / no-code-change fields onto the seed
+ * `RunReportArtifact` before we render the handoff note. The seed written
+ * at claim time only has placeholder strings — without this merge the
+ * note posted to GitLab would render "not reported" even when the agent
+ * produced a real summary, validation, or no-code-change explanation
+ * (see V2.5 review C1/C2). The function is intentionally pure so the
+ * same merged report can be reused by daemon code when it later writes
+ * the artifact back to the report store.
+ */
+export function mergeAgentHandoffIntoReport(
+  report: RunReportArtifact,
+  input: ReportHandoffMergeInput,
+  mr: { iid: number; webUrl?: string } | null,
+): RunReportArtifact {
+  const noCodeChangeReason = input.noCodeChangeReason?.trim();
+  const summary = fallbackText(
+    input.agentSummary,
+    noCodeChangeReason
+      ? `No code changes: ${noCodeChangeReason}`
+      : report.handoff.summary,
+  );
+  const validation = input.agentValidation?.trim()
+    ? [input.agentValidation.trim()]
+    : noCodeChangeReason && report.handoff.validation.length === 0
+      ? ["No validation command was reported for this no-code-change run."]
+      : report.handoff.validation;
+  const risks = input.agentRisks?.trim()
+    ? [{ level: "medium" as const, text: input.agentRisks.trim() }]
+    : report.handoff.risks;
+  const nextAction =
+    report.handoff.nextAction && report.handoff.nextAction !== "not reported"
+      ? report.handoff.nextAction
+      : `Review and merge the MR, or move this Issue to \`${input.reworkLabel}\` if changes are required.`;
+
+  return {
+    ...report,
+    handoff: {
+      ...report.handoff,
+      summary,
+      validation,
+      risks,
+      nextAction,
+    },
+    ...(mr
+      ? {
+          mergeRequest: {
+            iid: mr.iid,
+            url: mr.webUrl ?? "",
+            state: "opened" as const,
+          },
+        }
+      : {}),
+  };
+}
+
 function renderNoteBody(
   input: ReconcileInput,
   mr: { iid: number; webUrl?: string } | null,
 ): string {
   if (input.report) {
-    const reportForNote: RunReportArtifact = mr
-      ? {
-          ...input.report,
-          mergeRequest: {
-            iid: mr.iid,
-            url: mr.webUrl ?? "",
-            state: "opened",
-          },
-        }
-      : input.report;
+    const reportForNote = mergeAgentHandoffIntoReport(input.report, input, mr);
     return renderHandoffNote(reportForNote, {
       handoffLabel: input.handoffLabel,
     });

@@ -45,9 +45,31 @@
     在 §4.1 dashboard 启动后说明 Command Center / Review Packet /
     `/reports` 的用法，并强调 merge readiness 仅做 dry-run。
   - **验证**：`pnpm --filter @issuepilot/shared-contracts test`、
-    `pnpm --filter @issuepilot/orchestrator test`（274 个 case 全过）、
+    `pnpm --filter @issuepilot/orchestrator test`（278 个 case 全过）、
     `pnpm --filter @issuepilot/dashboard test`、三个包的 `typecheck`
     全部通过；`git diff --check` 清洁。
+
+### Fixed
+
+- 2026-05-16 — **V2.5 Command Center code review 跟进修复**：
+  - **C1/C2/I2 (Critical/Important)**：`apps/orchestrator/src/orchestrator/reconcile.ts`
+    抽出可复用的 `mergeAgentHandoffIntoReport`，在调用 `renderHandoffNote`
+    前用 `agentSummary` / `agentValidation` / `agentRisks` /
+    `noCodeChangeReason` 覆盖 seed report 的占位字段，并把 `mergeRequest`
+    一并 patch 上去。`apps/orchestrator/src/daemon.ts` 的 reconcile 回写
+    复用同一个 helper，确保 store 里也是合并后的字段；handoff note 与
+    Review Packet 不再渲染 "not reported" 占位符，`noCodeChangeReason`
+    也会进入 What changed / Validation。
+  - **I1 (Important)**：`onFailure` 现在优先调用
+    `renderFailureNote(failedReport, ...)`，仅在报告缺失时回退到 legacy
+    `createFailureNote`；plan 中要求的"render failure note from report"
+    在 daemon 路径上得到落实。
+  - **I3 (Important)**：新增 4 个集成测试覆盖 V2.5 关键路径：
+    `reconcile.test.ts` 增加 seed report 合并 / noCodeChangeReason 兜底
+    两条；`ci-feedback.test.ts` 验证 sweep 把 latest CI status 写回报告
+    并重新计算 `mergeReadiness.evaluatedAt`；`review-feedback.test.ts`
+    验证 unresolved 计数和 comments 被写回 `reviewFeedback`。回归测试
+    总数从 274 → 278。
 
 ### Changed
 

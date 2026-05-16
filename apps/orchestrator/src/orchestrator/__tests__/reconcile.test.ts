@@ -1,4 +1,6 @@
+import { createInitialReport } from "../../reports/lifecycle.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
 import { reconcile, type ReconcileInput } from "../reconcile.js";
 
 function createMocks() {
@@ -237,5 +239,83 @@ describe("reconcile", () => {
       "gitlab_mr_created",
       "gitlab_labels_transitioned",
     ]);
+  });
+
+  // V2.5 review regression (C1/C2): when the daemon hands a freshly-seeded
+  // RunReportArtifact to reconcile, the handoff note must still pick up
+  // the agent summary / validation / risks / noCodeChangeReason from the
+  // ReconcileInput. If we ever revert and pass the seed verbatim, the
+  // GitLab note ends up rendering "not reported" placeholders.
+  it("merges the agent summary and noCodeChangeReason into the seed report when rendering the handoff note", async () => {
+    mocks.git.hasNewCommits.mockResolvedValue(false);
+    const input = baseInput(mocks);
+    const seedReport = createInitialReport({
+      runId: "run-1",
+      issue: {
+        iid: 42,
+        title: "Fix bug",
+        url: "https://gitlab.example.com/issues/42",
+        projectId: "group/project",
+        labels: ["ai-running"],
+      },
+      status: "running",
+      attempt: 1,
+      branch: "ai/42-fix-bug",
+      workspacePath: "/tmp/ws",
+      startedAt: "2026-05-16T00:00:00.000Z",
+    });
+    input.report = seedReport;
+    input.agentSummary = "Existing config already matches the request.";
+    input.agentValidation = "Inspected config; no edits required.";
+    input.agentRisks = "No runtime risk.";
+    input.noCodeChangeReason =
+      "Existing implementation already satisfies the issue.";
+
+    await reconcile(input);
+
+    const note = mocks.gitlab.createNote.mock.calls[0]![1];
+    expect(note).toContain("## IssuePilot handoff");
+    expect(note).toContain(
+      "### What changed\nExisting config already matches the request.",
+    );
+    expect(note).toContain(
+      "### Validation\n- Inspected config; no edits required.",
+    );
+    expect(note).toContain("medium: No runtime risk.");
+    expect(note).toContain("move this Issue to `ai-rework`");
+    expect(note).not.toContain("not reported");
+  });
+
+  it("falls back to the noCodeChangeReason summary when agentSummary is empty and a report is provided", async () => {
+    mocks.git.hasNewCommits.mockResolvedValue(false);
+    const input = baseInput(mocks);
+    const seedReport = createInitialReport({
+      runId: "run-1",
+      issue: {
+        iid: 42,
+        title: "Fix bug",
+        url: "https://gitlab.example.com/issues/42",
+        projectId: "group/project",
+        labels: ["ai-running"],
+      },
+      status: "running",
+      attempt: 1,
+      branch: "ai/42-fix-bug",
+      workspacePath: "/tmp/ws",
+      startedAt: "2026-05-16T00:00:00.000Z",
+    });
+    input.report = seedReport;
+    input.noCodeChangeReason =
+      "Existing implementation already satisfies the issue.";
+
+    await reconcile(input);
+
+    const note = mocks.gitlab.createNote.mock.calls[0]![1];
+    expect(note).toContain(
+      "### What changed\nNo code changes: Existing implementation already satisfies the issue.",
+    );
+    expect(note).toContain(
+      "### Validation\n- No validation command was reported for this no-code-change run.",
+    );
   });
 });

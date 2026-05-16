@@ -57,12 +57,16 @@ import {
   type HumanReviewEvent,
 } from "./orchestrator/human-review.js";
 import { startLoop } from "./orchestrator/loop.js";
-import { reconcile } from "./orchestrator/reconcile.js";
+import {
+  mergeAgentHandoffIntoReport,
+  reconcile,
+} from "./orchestrator/reconcile.js";
 import { sweepReviewFeedbackOnce } from "./orchestrator/review-feedback.js";
 import {
   createInitialReport,
   markReportFailed,
 } from "./reports/lifecycle.js";
+import { renderFailureNote } from "./reports/render.js";
 import { createReportStore } from "./reports/store.js";
 import { createRunCancelRegistry } from "./runtime/run-cancel-registry.js";
 import { createConcurrencySlots } from "./runtime/slots.js";
@@ -1031,27 +1035,50 @@ export async function startDaemon(
               onEvent: publishEvent,
             });
             if (report) {
-              const nextReport = {
-                ...report,
-                handoff: {
-                  ...report.handoff,
-                  summary:
-                    opts.agentSummary?.trim() || report.handoff.summary,
-                  ...(opts.agentValidation
-                    ? { validation: [opts.agentValidation] }
+              // V2.5 review C1/C2/I2: persist the merged report so the
+              // dashboard, future renders, and Markdown exports all see
+              // the same agentSummary / agentValidation / agentRisks /
+              // noCodeChangeReason / nextAction that we just wrote into
+              // the handoff note. Without this writeback the seed
+              // "not reported" placeholders would stick in the store
+              // even after the note was rendered correctly.
+              const merged = mergeAgentHandoffIntoReport(
+                report,
+                {
+                  reworkLabel: opts.reworkLabel,
+                  ...(opts.agentSummary !== undefined
+                    ? { agentSummary: opts.agentSummary }
+                    : {}),
+                  ...(opts.agentValidation !== undefined
+                    ? { agentValidation: opts.agentValidation }
+                    : {}),
+                  ...(opts.agentRisks !== undefined
+                    ? { agentRisks: opts.agentRisks }
+                    : {}),
+                  ...(opts.noCodeChangeReason !== undefined
+                    ? { noCodeChangeReason: opts.noCodeChangeReason }
                     : {}),
                 },
-                ...(result.mergeRequest
+                result.mergeRequest
                   ? {
-                      mergeRequest: {
-                        iid: result.mergeRequest.iid,
-                        url: result.mergeRequest.webUrl ?? "",
-                        state: "opened" as const,
-                      },
+                      iid: result.mergeRequest.iid,
+                      ...(result.mergeRequest.webUrl
+                        ? { webUrl: result.mergeRequest.webUrl }
+                        : {}),
                     }
-                  : {}),
+                  : null,
+              );
+              const nextReport = {
+                ...merged,
+                run: {
+                  ...merged.run,
+                  ...(opts.workspacePath &&
+                  opts.workspacePath !== merged.run.workspacePath
+                    ? { workspacePath: opts.workspacePath }
+                    : {}),
+                },
                 notes: {
-                  ...report.notes,
+                  ...merged.notes,
                   ...(result.handoffNoteId !== undefined
                     ? { handoffNoteId: result.handoffNoteId }
                     : {}),
@@ -1072,12 +1099,16 @@ export async function startDaemon(
               remove: [workflow.tracker.runningLabel],
             });
             // V2.5 Command Center: refresh the report artifact with the final
-            // failure status before posting the GitLab note so the dashboard
-            // and the rendered note agree on the same Classification.
+            // failure status, persist it, and prefer the report-driven
+            // failure note so dashboard + GitLab + future Markdown exports
+            // share the same wording. Falls back to the legacy
+            // createFailureNote path if the report could not be loaded
+            // (e.g. an older run that pre-dates V2.5).
+            let failedReport: Awaited<ReturnType<typeof reportStore.get>>;
             try {
               const report = await reportStore.get(_failedRunId);
               if (report) {
-                const failedReport = markReportFailed(report, {
+                failedReport = markReportFailed(report, {
                   status:
                     classification.kind === "blocked" ? "blocked" : "failed",
                   endedAt: new Date().toISOString(),
@@ -1104,14 +1135,24 @@ export async function startDaemon(
                 },
               });
             }
-            await createFailureNote(gitlab, issue.iid, {
-              runId: _failedRunId,
-              branch,
-              classification,
-              attempt,
-              statusLabel: label,
-              readyLabel: readyLabel(workflow),
-            });
+            if (failedReport) {
+              await gitlab.createIssueNote(
+                issue.iid,
+                renderFailureNote(failedReport, {
+                  statusLabel: label,
+                  readyLabel: readyLabel(workflow),
+                }),
+              );
+            } else {
+              await createFailureNote(gitlab, issue.iid, {
+                runId: _failedRunId,
+                branch,
+                classification,
+                attempt,
+                statusLabel: label,
+                readyLabel: readyLabel(workflow),
+              });
+            }
           },
         },
       );
