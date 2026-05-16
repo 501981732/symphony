@@ -47,6 +47,25 @@ export interface MergeRequestNote {
   body: string;
   /** Resolved username; falls back to display name and finally `"unknown"`. */
   author: string;
+  /**
+   * `true` when GitLab generated the note (label change, milestone, etc.).
+   * Always present so the V2 Phase 4 review sweep can drop system noise
+   * with a simple boolean filter rather than a heuristic on the body.
+   * Defaults to `false` when GitLab omits the field on older payloads.
+   */
+  system: boolean;
+  /**
+   * ISO-8601 timestamp from GitLab. Set whenever the API returns it
+   * (every modern notes payload), absent only for legacy mocks that
+   * predate the V2 Phase 4 contract.
+   */
+  createdAt?: string;
+  /** Mirror of `updated_at` for the rare edit case. */
+  updatedAt?: string;
+  /** True only for MR discussion notes that GitLab marks resolvable. */
+  resolvable?: boolean;
+  /** True only for resolved discussions; meaningless when `resolvable` is false. */
+  resolved?: boolean;
 }
 
 /**
@@ -173,15 +192,23 @@ export async function listMergeRequestNotes(
     const rows = await api.MergeRequestNotes.all(client.projectId, mrIid, {
       perPage: 100,
     });
-    return rows.map((n) => ({
-      id: n.id,
-      body: typeof n.body === "string" ? n.body : "",
-      author:
-        n.author?.username && n.author.username.length > 0
-          ? n.author.username
-          : n.author?.name && n.author.name.length > 0
-            ? n.author.name
-            : "unknown",
-    }));
+    return rows.map((n) => {
+      const note: MergeRequestNote = {
+        id: n.id,
+        body: typeof n.body === "string" ? n.body : "",
+        author:
+          n.author?.username && n.author.username.length > 0
+            ? n.author.username
+            : n.author?.name && n.author.name.length > 0
+              ? n.author.name
+              : "unknown",
+        system: n.system === true,
+      };
+      if (typeof n.created_at === "string") note.createdAt = n.created_at;
+      if (typeof n.updated_at === "string") note.updatedAt = n.updated_at;
+      if (typeof n.resolvable === "boolean") note.resolvable = n.resolvable;
+      if (typeof n.resolved === "boolean") note.resolved = n.resolved;
+      return note;
+    });
   });
 }
