@@ -13,9 +13,14 @@ interface PageProps {
 export default async function RunDetail({ params }: PageProps) {
   const { runId } = params;
   try {
-    const { run, events, logsTail } = await getRunDetail(runId);
+    const { run, events, logsTail, report } = await getRunDetail(runId);
     return (
-      <RunDetailPage run={run} initialEvents={events} logsTail={logsTail} />
+      <RunDetailPage
+        run={run}
+        initialEvents={events}
+        logsTail={logsTail}
+        {...(report ? { report } : {})}
+      />
     );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {

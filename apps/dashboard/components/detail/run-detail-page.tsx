@@ -5,6 +5,7 @@ import type {
   PipelineStatus,
   ReviewFeedbackSummary,
   RunRecord,
+  RunReportArtifact,
 } from "@issuepilot/shared-contracts";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
@@ -17,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 
 import { EventTimeline } from "./event-timeline";
 import { LogTail } from "./log-tail";
+import { ReviewPacket } from "./review-packet";
 import { ToolCallList } from "./tool-call-list";
 
 const STATUS_TONES: Record<RunRecord["status"], BadgeTone> = {
@@ -43,6 +45,13 @@ interface RunDetailPageProps {
   initialEvents: IssuePilotEvent[];
   logsTail: string[];
   /**
+   * V2.5 Command Center: when present, the page promotes the Review
+   * Packet (handoff summary, validation, risks, merge readiness) above
+   * the Timeline. Legacy runs without a stored report fall back to the
+   * Timeline-first layout.
+   */
+  report?: RunReportArtifact;
+  /**
    * Optional operator-action callbacks. When supplied, RunActions surfaces
    * Retry / Stop / Archive in the page header. The parent owns the API call
    * + refresh, keeping this component declarative.
@@ -58,6 +67,7 @@ export function RunDetailPage({
   run,
   initialEvents,
   logsTail,
+  report,
   onRetry,
   onStop,
   onArchive,
@@ -235,6 +245,20 @@ export function RunDetailPage({
           ) : null}
         </CardContent>
       </Card>
+
+      {report ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Review Packet
+          </h2>
+          <ReviewPacket report={report} />
+        </section>
+      ) : (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          This is a legacy run without a generated report. Timeline and logs
+          remain available below.
+        </p>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
