@@ -11,7 +11,7 @@
 ## 文档语言
 
 - 仓库内 repo-facing 文档默认使用中文，包括 `AGENTS.md`、`docs/superpowers/specs/`、`docs/superpowers/plans/`、runbook、实施计划和验收材料。
-- 公开双语入口继续保持中英文同步：修改 `README.md` 时同步 `README.zh-CN.md`，修改 `docs/getting-started.md` 时同步 `docs/getting-started.zh-CN.md`。
+- 公开双语入口继续保持中英文同步：修改 `README.md` 时同步 `README.zh-CN.md`，修改 `USAGE.md` 时同步 `USAGE.zh-CN.md`（使用手册已从 `docs/getting-started.*` 提升到根目录）。
 - 文档正文使用中文；代码块、命令、配置键、API 路径、日志字段、类型名、函数名、package 名称和文件路径保持原文。
 
 ## 事实来源
