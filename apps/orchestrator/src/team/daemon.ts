@@ -3,7 +3,6 @@ import * as path from "node:path";
 
 import { createEventBus, type EventBus } from "@issuepilot/observability";
 import type { IssuePilotInternalEvent } from "@issuepilot/shared-contracts";
-import { createWorkflowLoader } from "@issuepilot/workflow";
 
 import {
   createLeaseStore as defaultCreateLeaseStore,
@@ -21,8 +20,8 @@ import {
 } from "./config.js";
 import {
   createProjectRegistry as defaultCreateProjectRegistry,
+  type CentralWorkflowCompilerLike,
   type ProjectRegistry,
-  type WorkflowLoaderLike,
 } from "./registry.js";
 
 /**
@@ -50,8 +49,17 @@ export interface StartTeamDaemonDeps {
   createProjectRegistry?:
     | ((
         config: TeamConfig,
-        workflowLoader: WorkflowLoaderLike,
+        deps?: CentralWorkflowCompilerLike,
       ) => Promise<ProjectRegistry>)
+    | undefined;
+  /**
+   * Injectable central workflow compiler — defaults to the real
+   * `compileCentralWorkflowProject` from `@issuepilot/workflow`. Tests
+   * pass a fake so they don't have to materialise project / profile
+   * files on disk just to spin up a fake team daemon.
+   */
+  compileCentralWorkflowProject?:
+    | CentralWorkflowCompilerLike["compileCentralWorkflowProject"]
     | undefined;
   createServer?: typeof createServer | undefined;
   createLeaseStore?:
@@ -99,8 +107,12 @@ export async function startTeamDaemon(
     deps.createLeaseStore ?? defaultCreateLeaseStore;
 
   const config = await loadConfig(configPath);
-  const workflowLoader = createWorkflowLoader();
-  const registry = await createRegistry(config, workflowLoader);
+  const registry = await createRegistry(
+    config,
+    deps.compileCentralWorkflowProject
+      ? { compileCentralWorkflowProject: deps.compileCentralWorkflowProject }
+      : undefined,
+  );
 
   // V2 Phase 5 scope acknowledgement: `retention` is parsed for forward
   // compatibility (team config and V1 workflow front matter share the

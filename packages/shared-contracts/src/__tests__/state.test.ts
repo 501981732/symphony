@@ -100,7 +100,7 @@ describe("@issuepilot/shared-contracts/state", () => {
     const snapshot: OrchestratorStateSnapshot = {
       service: {
         status: "ready",
-        workflowPath: "/srv/issuepilot/team.yaml",
+        workflowPath: "/srv/issuepilot-config/issuepilot.team.yaml",
         gitlabProject: "team",
         pollIntervalMs: 10000,
         concurrency: 2,
@@ -124,7 +124,10 @@ describe("@issuepilot/shared-contracts/state", () => {
         {
           id: "platform-web",
           name: "Platform Web",
-          workflowPath: "/srv/platform-web/WORKFLOW.md",
+          projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+          profilePath: "/srv/issuepilot-config/workflows/default-web.md",
+          effectiveWorkflowPath:
+            "/srv/issuepilot-config/.generated/platform-web.workflow.md",
           gitlabProject: "group/platform-web",
           enabled: true,
           activeRuns: 1,
@@ -133,7 +136,10 @@ describe("@issuepilot/shared-contracts/state", () => {
         {
           id: "infra-tools",
           name: "Infra Tools",
-          workflowPath: "/srv/infra-tools/WORKFLOW.md",
+          projectPath: "/srv/issuepilot-config/projects/infra-tools.yaml",
+          profilePath: "/srv/issuepilot-config/workflows/default-node-lib.md",
+          effectiveWorkflowPath:
+            "/srv/issuepilot-config/.generated/infra-tools.workflow.md",
           gitlabProject: "group/infra-tools",
           enabled: true,
           activeRuns: 0,
@@ -147,5 +153,14 @@ describe("@issuepilot/shared-contracts/state", () => {
       "platform-web",
       "infra-tools",
     ]);
+    expect(snapshot.projects?.[0]?.projectPath).toBe(
+      "/srv/issuepilot-config/projects/platform-web.yaml",
+    );
+    expect(snapshot.projects?.[0]?.profilePath).toBe(
+      "/srv/issuepilot-config/workflows/default-web.md",
+    );
+    expect(snapshot.projects?.[0]?.effectiveWorkflowPath).toBe(
+      "/srv/issuepilot-config/.generated/platform-web.workflow.md",
+    );
   });
 });

@@ -1,5 +1,12 @@
+import * as path from "node:path";
+
 import type { ProjectSummary } from "@issuepilot/shared-contracts";
-import type { CiConfig, WorkflowConfig } from "@issuepilot/workflow";
+import {
+  compileCentralWorkflowProject as defaultCompileCentralWorkflowProject,
+  type CiConfig,
+  type CompileCentralWorkflowProjectInput,
+  type WorkflowConfig,
+} from "@issuepilot/workflow";
 
 import type {
   TeamCiConfig,
@@ -12,14 +19,15 @@ import type {
  * project. Precedence (lowest to highest), each layer fully replaces
  * the previous when set:
  *
- *   1. `workflow.ci` (from the project's WORKFLOW.md; always present)
+ *   1. `workflow.ci` (compiled from the central workflow profile +
+ *      project file; always present)
  *   2. `teamCi` (top-level `ci` block in `issuepilot.team.yaml`)
  *   3. `projectCi` (`projects[].ci` in `issuepilot.team.yaml`)
  *
  * Each override replaces all three keys atomically — partial merges
  * are intentionally out of scope (see {@link TeamProjectConfig.ci}).
  * This keeps the precedence story simple and avoids "I set
- * `enabled: true` at team level but the project's workflow defaults
+ * `enabled: true` at team level but the project's profile defaults
  * silently disabled it" surprises.
  */
 export function resolveEffectiveCi(
@@ -40,7 +48,15 @@ export function resolveEffectiveCi(
 export interface RegisteredProject {
   id: string;
   name: string;
-  workflowPath: string;
+  projectPath: string;
+  workflowProfilePath: string;
+  /**
+   * Virtual `.generated/<id>.workflow.md` path used as `workflow.source.path`.
+   * Computed deterministically from the team config directory so dashboard
+   * / render-workflow output is reproducible without persisting the
+   * compiled workflow on disk.
+   */
+  effectiveWorkflowPath: string;
   enabled: true;
   workflow: WorkflowConfig;
   lastPollAt: string | null;
@@ -49,11 +65,13 @@ export interface RegisteredProject {
 
 /**
  * Minimal interface registered with the daemon shell so test doubles can
- * stub the workflow loader without depending on the full
- * `@issuepilot/workflow` loader facade.
+ * stub the central workflow compiler without depending on the full
+ * `@issuepilot/workflow` surface.
  */
-export interface WorkflowLoaderLike {
-  loadOnce(workflowPath: string): Promise<WorkflowConfig>;
+export interface CentralWorkflowCompilerLike {
+  compileCentralWorkflowProject(
+    input: CompileCentralWorkflowProjectInput,
+  ): Promise<WorkflowConfig>;
 }
 
 export interface ProjectRegistry {
@@ -66,6 +84,7 @@ export interface ProjectRegistry {
 
 interface RegistryEntry {
   config: TeamProjectConfig;
+  effectiveWorkflowPath: string;
   state:
     | {
         kind: "enabled";
@@ -78,25 +97,48 @@ interface RegistryEntry {
       };
 }
 
+function effectiveWorkflowPathFor(
+  config: TeamConfig,
+  projectId: string,
+): string {
+  return path.join(
+    path.dirname(config.source.path),
+    ".generated",
+    `${projectId}.workflow.md`,
+  );
+}
+
 export async function createProjectRegistry(
   config: TeamConfig,
-  workflowLoader: WorkflowLoaderLike,
+  deps: CentralWorkflowCompilerLike = {
+    compileCentralWorkflowProject: defaultCompileCentralWorkflowProject,
+  },
 ): Promise<ProjectRegistry> {
   const entries: RegistryEntry[] = [];
 
   for (const projectConfig of config.projects) {
+    const effectiveWorkflowPath = effectiveWorkflowPathFor(
+      config,
+      projectConfig.id,
+    );
+
     if (!projectConfig.enabled) {
       entries.push({
         config: projectConfig,
+        effectiveWorkflowPath,
         state: { kind: "disabled", reason: "config" },
       });
       continue;
     }
 
     try {
-      const loadedWorkflow = await workflowLoader.loadOnce(
-        projectConfig.workflowPath,
-      );
+      const loadedWorkflow = await deps.compileCentralWorkflowProject({
+        projectId: projectConfig.id,
+        projectPath: projectConfig.projectPath,
+        workflowProfilePath: projectConfig.workflowProfilePath,
+        defaults: config.defaults,
+        generatedSourcePath: effectiveWorkflowPath,
+      });
       const effectiveCi = resolveEffectiveCi(
         loadedWorkflow.ci,
         config.ci,
@@ -112,12 +154,15 @@ export async function createProjectRegistry(
       };
       entries.push({
         config: projectConfig,
+        effectiveWorkflowPath,
         state: {
           kind: "enabled",
           project: {
             id: projectConfig.id,
             name: projectConfig.name,
-            workflowPath: projectConfig.workflowPath,
+            projectPath: projectConfig.projectPath,
+            workflowProfilePath: projectConfig.workflowProfilePath,
+            effectiveWorkflowPath,
             enabled: true,
             workflow,
             lastPollAt: null,
@@ -128,6 +173,7 @@ export async function createProjectRegistry(
     } catch (err) {
       entries.push({
         config: projectConfig,
+        effectiveWorkflowPath,
         state: {
           kind: "disabled",
           reason: "load-error",
@@ -143,7 +189,9 @@ export async function createProjectRegistry(
       return {
         id: project.id,
         name: project.name,
-        workflowPath: project.workflowPath,
+        projectPath: project.projectPath,
+        profilePath: project.workflowProfilePath,
+        effectiveWorkflowPath: project.effectiveWorkflowPath,
         gitlabProject: project.workflow.tracker.projectId,
         enabled: true,
         activeRuns: project.activeRuns,
@@ -153,7 +201,12 @@ export async function createProjectRegistry(
     const base: ProjectSummary = {
       id: entry.config.id,
       name: entry.config.name,
-      workflowPath: entry.config.workflowPath,
+      projectPath: entry.config.projectPath,
+      profilePath: entry.config.workflowProfilePath,
+      // Empty string for disabled / load-error: nothing was compiled, so
+      // there is no effective workflow yet. The dashboard uses `enabled`
+      // to decide whether to show the column at all.
+      effectiveWorkflowPath: "",
       gitlabProject: "",
       enabled: false,
       activeRuns: 0,

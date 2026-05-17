@@ -24,27 +24,41 @@ const baseConfig = (): TeamConfig => ({
     leaseTtlMs: 900_000,
     pollIntervalMs: 10_000,
   },
+  defaults: {
+    labelsPath: null,
+    codexPath: null,
+    workspaceRoot: "~/.issuepilot/workspaces",
+    repoCacheRoot: "~/.issuepilot/repos",
+  },
   projects: [
     {
       id: "platform-web",
       name: "Platform Web",
-      workflowPath: "/srv/platform-web/WORKFLOW.md",
+      projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+      workflowProfilePath:
+        "/srv/issuepilot-config/workflows/default-web.md",
       enabled: true,
+      ci: null,
     },
     {
       id: "infra-tools",
       name: "Infra Tools",
-      workflowPath: "/srv/infra-tools/WORKFLOW.md",
+      projectPath: "/srv/issuepilot-config/projects/infra-tools.yaml",
+      workflowProfilePath:
+        "/srv/issuepilot-config/workflows/default-node-lib.md",
       enabled: false,
+      ci: null,
     },
   ],
   retention: {
     successfulRunDays: 7,
     failedRunDays: 14,
     maxWorkspaceGb: 20,
+    cleanupIntervalMs: 3_600_000,
   },
+  ci: null,
   source: {
-    path: "/srv/issuepilot/issuepilot.team.yaml",
+    path: "/srv/issuepilot-config/issuepilot.team.yaml",
     sha256: "sha",
     loadedAt: new Date(0).toISOString(),
   },
@@ -54,7 +68,10 @@ const summaries = [
   {
     id: "platform-web",
     name: "Platform Web",
-    workflowPath: "/srv/platform-web/WORKFLOW.md",
+    projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+    profilePath: "/srv/issuepilot-config/workflows/default-web.md",
+    effectiveWorkflowPath:
+      "/srv/issuepilot-config/.generated/platform-web.workflow.md",
     gitlabProject: "group/platform-web",
     enabled: true as const,
     activeRuns: 0,
@@ -63,7 +80,9 @@ const summaries = [
   {
     id: "infra-tools",
     name: "Infra Tools",
-    workflowPath: "/srv/infra-tools/WORKFLOW.md",
+    projectPath: "/srv/issuepilot-config/projects/infra-tools.yaml",
+    profilePath: "/srv/issuepilot-config/workflows/default-node-lib.md",
+    effectiveWorkflowPath: "",
     gitlabProject: "",
     enabled: false as const,
     activeRuns: 0,
@@ -129,7 +148,7 @@ describe("startTeamDaemon", () => {
     expect(handle.url).toBe("http://127.0.0.1:4738");
     expect(createdDeps).not.toBeNull();
     expect(createdDeps).toMatchObject({
-      workflowPath: "/srv/issuepilot/issuepilot.team.yaml",
+      workflowPath: "/srv/issuepilot-config/issuepilot.team.yaml",
       gitlabProject: "team",
       concurrency: 2,
     });

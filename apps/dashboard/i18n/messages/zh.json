@@ -238,6 +238,8 @@
     "loadError": "加载失败",
     "disabled": "已禁用",
     "lastPoll": "最近轮询：{value}",
-    "notPolled": "未轮询"
+    "notPolled": "未轮询",
+    "project": "项目文件",
+    "profile": "工作流模板"
   }
 }

@@ -254,7 +254,7 @@ describe("CLI", () => {
     }
   });
 
-  it("validate --config reports enabled/disabled projects from team config", async () => {
+  it("validate --config reports project/profile paths for each team project", async () => {
     const cfgPath = path.join(tmpDir, "issuepilot.team.yaml");
     fs.writeFileSync(cfgPath, "version: 1\n");
     const loadTeamConfig = vi.fn(async () => ({
@@ -266,25 +266,39 @@ describe("CLI", () => {
         leaseTtlMs: 600_000,
         pollIntervalMs: 5_000,
       },
+      defaults: {
+        labelsPath: null,
+        codexPath: null,
+        workspaceRoot: "~/.issuepilot/workspaces",
+        repoCacheRoot: "~/.issuepilot/repos",
+      },
       projects: [
         {
           id: "platform-web",
           name: "Platform Web",
-          workflowPath: "/srv/issuepilot/platform-web/WORKFLOW.md",
+          projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+          workflowProfilePath:
+            "/srv/issuepilot-config/workflows/default-web.md",
           enabled: true,
+          ci: null,
         },
         {
           id: "platform-api",
           name: "Platform API",
-          workflowPath: "/srv/issuepilot/platform-api/WORKFLOW.md",
+          projectPath: "/srv/issuepilot-config/projects/platform-api.yaml",
+          workflowProfilePath:
+            "/srv/issuepilot-config/workflows/default-node-lib.md",
           enabled: false,
+          ci: null,
         },
       ],
       retention: {
         successfulRunDays: 7,
         failedRunDays: 30,
         maxWorkspaceGb: 50,
+        cleanupIntervalMs: 3_600_000,
       },
+      ci: null,
       source: { path: cfgPath, sha256: "deadbeef", loadedAt: "" },
     }));
     const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -296,8 +310,218 @@ describe("CLI", () => {
     const output = mockLog.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("Team config loaded");
     expect(output).toContain("2 (1 enabled, 1 disabled)");
+    expect(output).toContain(
+      "project=/srv/issuepilot-config/projects/platform-web.yaml",
+    );
+    expect(output).toContain(
+      "profile=/srv/issuepilot-config/workflows/default-web.md",
+    );
     expect(output).toContain("Team validation passed.");
     mockLog.mockRestore();
+  });
+
+  it("render-workflow prints the effective workflow for one team project", async () => {
+    const cfgPath = path.join(tmpDir, "issuepilot.team.yaml");
+    fs.writeFileSync(cfgPath, "version: 1\n");
+    const loadTeamConfig = vi.fn(async () => ({
+      version: 1 as const,
+      server: { host: "127.0.0.1", port: 4738 },
+      scheduler: {
+        maxConcurrentRuns: 3,
+        maxConcurrentRunsPerProject: 1,
+        leaseTtlMs: 600_000,
+        pollIntervalMs: 5_000,
+      },
+      defaults: {
+        labelsPath: null,
+        codexPath: null,
+        workspaceRoot: "~/.issuepilot/workspaces",
+        repoCacheRoot: "~/.issuepilot/repos",
+      },
+      projects: [
+        {
+          id: "platform-web",
+          name: "Platform Web",
+          projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+          workflowProfilePath:
+            "/srv/issuepilot-config/workflows/default-web.md",
+          enabled: true,
+          ci: null,
+        },
+      ],
+      retention: {
+        successfulRunDays: 7,
+        failedRunDays: 30,
+        maxWorkspaceGb: 50,
+        cleanupIntervalMs: 3_600_000,
+      },
+      ci: null,
+      source: { path: cfgPath, sha256: "deadbeef", loadedAt: "" },
+    }));
+    const compileCentralWorkflowProject = vi.fn(async () => ({
+      tracker: {
+        kind: "gitlab" as const,
+        baseUrl: "https://gitlab.example.com",
+        projectId: "group/platform-web",
+        tokenEnv: "GITLAB_TOKEN",
+        activeLabels: ["ai-ready"],
+        runningLabel: "ai-running",
+        handoffLabel: "human-review",
+        failedLabel: "ai-failed",
+        blockedLabel: "ai-blocked",
+        reworkLabel: "ai-rework",
+        mergingLabel: "ai-merging",
+      },
+      workspace: {
+        root: "~/.issuepilot/workspaces",
+        strategy: "worktree" as const,
+        repoCacheRoot: "~/.issuepilot/repos",
+      },
+      git: {
+        repoUrl: "git@gitlab.example.com:group/platform-web.git",
+        baseBranch: "main",
+        branchPrefix: "ai",
+      },
+      agent: {
+        runner: "codex-app-server" as const,
+        maxConcurrentAgents: 1,
+        maxTurns: 12,
+        maxAttempts: 3,
+        retryBackoffMs: 30_000,
+      },
+      codex: {
+        command: "codex app-server",
+        approvalPolicy: "never" as const,
+        threadSandbox: "workspace-write" as const,
+        turnTimeoutMs: 3_600_000,
+        turnSandboxPolicy: { type: "workspaceWrite" as const },
+      },
+      hooks: {
+        afterCreate: "pnpm install --frozen-lockfile",
+        beforeRun: "pnpm typecheck",
+        afterRun: "pnpm test",
+      },
+      ci: { enabled: false, onFailure: "ai-rework" as const, waitForPipeline: true },
+      retention: {
+        successfulRunDays: 7,
+        failedRunDays: 30,
+        maxWorkspaceGb: 50,
+        cleanupIntervalMs: 3_600_000,
+      },
+      pollIntervalMs: 10_000,
+      promptTemplate: [
+        "Issue: {{ issue.identifier }}",
+        "Title: {{ issue.title }}",
+        "",
+        "Please resolve the issue end-to-end.",
+      ].join("\n"),
+      source: {
+        path: "/srv/issuepilot-config/.generated/platform-web.workflow.md",
+        sha256: "abc",
+        loadedAt: new Date(0).toISOString(),
+      },
+    }));
+    const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cli = buildCli({ loadTeamConfig, compileCentralWorkflowProject });
+
+    await cli.parseAsync(
+      [
+        "render-workflow",
+        "--config",
+        cfgPath,
+        "--project",
+        "platform-web",
+      ],
+      { from: "user" },
+    );
+
+    expect(compileCentralWorkflowProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "platform-web",
+        projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+        workflowProfilePath:
+          "/srv/issuepilot-config/workflows/default-web.md",
+      }),
+    );
+    const output = mockLog.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("tracker:");
+    expect(output).toContain("project_id: group/platform-web");
+    // Operators reviewing a compiled workflow specifically need to see
+    // shell commands and the prompt — assert they aren't silently dropped.
+    expect(output).toContain("hooks:");
+    expect(output).toContain("after_create: pnpm install --frozen-lockfile");
+    expect(output).toContain("before_run: pnpm typecheck");
+    expect(output).toContain("after_run: pnpm test");
+    expect(output).toContain("retention:");
+    expect(output).toContain("successful_run_days: 7");
+    expect(output).toContain("max_workspace_gb: 50");
+    // Multi-line prompts must use YAML literal block scalars (`|` or `|-`)
+    // so newlines / Liquid tags survive a copy/diff round-trip.
+    expect(output).toMatch(/prompt_template: \|/);
+    expect(output).toContain("Issue: {{ issue.identifier }}");
+    expect(output).toContain("Please resolve the issue end-to-end.");
+    // Secrets / runtime metadata must still be scrubbed.
+    expect(output).not.toMatch(/token_env/);
+    expect(output).not.toMatch(/GITLAB_TOKEN/);
+    expect(output).not.toMatch(/sha256/);
+    expect(output).not.toMatch(/loaded_at|loadedAt/);
+    mockLog.mockRestore();
+  });
+
+  it("render-workflow exits with code 1 when the project id is unknown", async () => {
+    const cfgPath = path.join(tmpDir, "issuepilot.team.yaml");
+    fs.writeFileSync(cfgPath, "version: 1\n");
+    const loadTeamConfig = vi.fn(async () => ({
+      version: 1 as const,
+      server: { host: "127.0.0.1", port: 4738 },
+      scheduler: {
+        maxConcurrentRuns: 3,
+        maxConcurrentRunsPerProject: 1,
+        leaseTtlMs: 600_000,
+        pollIntervalMs: 5_000,
+      },
+      defaults: {
+        labelsPath: null,
+        codexPath: null,
+        workspaceRoot: "~/.issuepilot/workspaces",
+        repoCacheRoot: "~/.issuepilot/repos",
+      },
+      projects: [
+        {
+          id: "platform-web",
+          name: "Platform Web",
+          projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+          workflowProfilePath:
+            "/srv/issuepilot-config/workflows/default-web.md",
+          enabled: true,
+          ci: null,
+        },
+      ],
+      retention: {
+        successfulRunDays: 7,
+        failedRunDays: 30,
+        maxWorkspaceGb: 50,
+        cleanupIntervalMs: 3_600_000,
+      },
+      ci: null,
+      source: { path: cfgPath, sha256: "deadbeef", loadedAt: "" },
+    }));
+    const compileCentralWorkflowProject = vi.fn();
+    const mockError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cli = buildCli({ loadTeamConfig, compileCentralWorkflowProject });
+
+    await cli.parseAsync(
+      ["render-workflow", "--config", cfgPath, "--project", "unknown"],
+      { from: "user" },
+    );
+
+    expect(process.exitCode).toBe(1);
+    expect(compileCentralWorkflowProject).not.toHaveBeenCalled();
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining("project not found"),
+    );
+    mockError.mockRestore();
+    process.exitCode = 0;
   });
 
   it("validate --config surfaces parser errors with exit code 1", async () => {
@@ -560,7 +784,8 @@ describe("CLI", () => {
         "projects:",
         "  - id: platform-web",
         "    name: Platform Web",
-        "    workflow: ./WORKFLOW.md",
+        "    project: ./projects/platform-web.yaml",
+        "    workflow_profile: ./workflows/default-web.md",
       ].join("\n"),
     );
     const wait = vi.fn(async () => {});
@@ -595,7 +820,8 @@ describe("CLI", () => {
         "projects:",
         "  - id: platform-web",
         "    name: Platform Web",
-        "    workflow: ./WORKFLOW.md",
+        "    project: ./projects/platform-web.yaml",
+        "    workflow_profile: ./workflows/default-web.md",
       ].join("\n"),
     );
     const wait = vi.fn(async () => {});

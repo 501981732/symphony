@@ -3,11 +3,17 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
+  compileCentralWorkflowProject as defaultCompileCentralWorkflowProject,
+  type CompileCentralWorkflowProjectInput,
+  type WorkflowConfig,
+} from "@issuepilot/workflow";
+import {
   enumerateWorkspaceEntries,
   planWorkspaceCleanup,
 } from "@issuepilot/workspace";
 import { Command } from "commander";
 import { execaCommand } from "execa";
+import * as YAML from "yaml";
 
 import {
   authLogin,
@@ -48,6 +54,9 @@ export interface CliDeps {
     | undefined;
   validateWorkflow?: typeof validateWorkflow | undefined;
   loadTeamConfig?: ((path: string) => Promise<TeamConfig>) | undefined;
+  compileCentralWorkflowProject?:
+    | ((input: CompileCentralWorkflowProjectInput) => Promise<WorkflowConfig>)
+    | undefined;
   checkCodexAppServer?: typeof checkCodexAppServer | undefined;
   spawnDashboard?:
     | ((opts: DashboardOptions) => Promise<DashboardHandle>)
@@ -70,6 +79,86 @@ function parsePort(value: string): number | null {
 interface ResolvedWorkflowPath {
   path: string;
   warning?: string;
+}
+
+/**
+ * Render a compiled {@link WorkflowConfig} as YAML for `render-workflow`.
+ *
+ * Drops anything sensitive (`tracker.tokenEnv`, `source.sha256`, runtime
+ * timestamps) so the rendered text is safe to paste into review tickets
+ * or diff against a previous render. Includes `hooks`, `retention`, and
+ * the full `prompt_template` block — operators reviewing a compiled
+ * workflow specifically need to see the shell commands and Codex prompt
+ * that will execute. Field naming mirrors the YAML keys an operator
+ * would write in `workflows/*.md`.
+ */
+function renderWorkflowYaml(workflow: WorkflowConfig): string {
+  // Strip undefined hook keys so YAML output stays compact for workflows
+  // that don't define every hook stage.
+  const hooks: Record<string, string> = {};
+  if (workflow.hooks.afterCreate)
+    hooks.after_create = workflow.hooks.afterCreate;
+  if (workflow.hooks.beforeRun) hooks.before_run = workflow.hooks.beforeRun;
+  if (workflow.hooks.afterRun) hooks.after_run = workflow.hooks.afterRun;
+
+  return YAML.stringify(
+    {
+      tracker: {
+        kind: workflow.tracker.kind,
+        base_url: workflow.tracker.baseUrl,
+        project_id: workflow.tracker.projectId,
+        active_labels: workflow.tracker.activeLabels,
+        running_label: workflow.tracker.runningLabel,
+        handoff_label: workflow.tracker.handoffLabel,
+        failed_label: workflow.tracker.failedLabel,
+        blocked_label: workflow.tracker.blockedLabel,
+        rework_label: workflow.tracker.reworkLabel,
+        merging_label: workflow.tracker.mergingLabel,
+      },
+      workspace: {
+        root: workflow.workspace.root,
+        strategy: workflow.workspace.strategy,
+        repo_cache_root: workflow.workspace.repoCacheRoot,
+      },
+      git: {
+        repo_url: workflow.git.repoUrl,
+        base_branch: workflow.git.baseBranch,
+        branch_prefix: workflow.git.branchPrefix,
+      },
+      agent: {
+        runner: workflow.agent.runner,
+        max_concurrent_agents: workflow.agent.maxConcurrentAgents,
+        max_turns: workflow.agent.maxTurns,
+        max_attempts: workflow.agent.maxAttempts,
+        retry_backoff_ms: workflow.agent.retryBackoffMs,
+      },
+      codex: {
+        command: workflow.codex.command,
+        approval_policy: workflow.codex.approvalPolicy,
+        thread_sandbox: workflow.codex.threadSandbox,
+        turn_timeout_ms: workflow.codex.turnTimeoutMs,
+        turn_sandbox_policy: workflow.codex.turnSandboxPolicy,
+      },
+      ci: {
+        enabled: workflow.ci.enabled,
+        on_failure: workflow.ci.onFailure,
+        wait_for_pipeline: workflow.ci.waitForPipeline,
+      },
+      retention: {
+        successful_run_days: workflow.retention.successfulRunDays,
+        failed_run_days: workflow.retention.failedRunDays,
+        max_workspace_gb: workflow.retention.maxWorkspaceGb,
+        cleanup_interval_ms: workflow.retention.cleanupIntervalMs,
+      },
+      hooks,
+      poll_interval_ms: workflow.pollIntervalMs,
+      prompt_template: workflow.promptTemplate,
+    },
+    // `blockScalar: "literal"` keeps the prompt template as a `|` block
+    // so newlines / Liquid `{% %}` blocks render as written; `lineWidth: 0`
+    // disables auto-wrapping so we never split a prompt line mid-token.
+    { blockQuote: "literal", lineWidth: 0 },
+  );
 }
 
 function resolveWorkflowPath(
@@ -287,7 +376,9 @@ export function buildCli(deps: CliDeps = {}): Command {
           );
           for (const p of cfg.projects) {
             const flag = p.enabled ? "enabled " : "disabled";
-            console.log(`  - [${flag}] ${p.id}  workflow=${p.workflowPath}`);
+            console.log(`  - [${flag}] ${p.id}`);
+            console.log(`    project=${p.projectPath}`);
+            console.log(`    profile=${p.workflowProfilePath}`);
           }
           console.log("Team validation passed.");
         } catch (err) {
@@ -315,6 +406,67 @@ export function buildCli(deps: CliDeps = {}): Command {
         console.error(`Validation failed: ${message}`);
         process.exitCode = 1;
       }
+    });
+
+  program
+    .command("render-workflow")
+    .description(
+      "Render one effective workflow from issuepilot.team.yaml.\n" +
+        "Compiles the project file + workflow profile and prints the result " +
+        "as YAML for diffing / review. Never prints token env names or other " +
+        "secrets.",
+    )
+    .requiredOption("--config <path>", "Path to issuepilot.team.yaml")
+    .requiredOption("--project <id>", "Team project id")
+    .action(async (opts) => {
+      const configPath = path.resolve(String(opts.config));
+      if (!fs.existsSync(configPath)) {
+        console.error(`Error: team config file not found: ${configPath}`);
+        process.exitCode = 1;
+        return;
+      }
+      const loader = deps.loadTeamConfig ?? defaultLoadTeamConfig;
+      const compile =
+        deps.compileCentralWorkflowProject ??
+        defaultCompileCentralWorkflowProject;
+      let cfg: TeamConfig;
+      try {
+        cfg = await loader(configPath);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Error: failed to load team config: ${message}`);
+        process.exitCode = 1;
+        return;
+      }
+      const project = cfg.projects.find((p) => p.id === String(opts.project));
+      if (!project) {
+        console.error(
+          `Error: project not found in team config: ${String(opts.project)}`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const generatedSourcePath = path.join(
+        path.dirname(cfg.source.path),
+        ".generated",
+        `${project.id}.workflow.md`,
+      );
+      let workflow: WorkflowConfig;
+      try {
+        workflow = await compile({
+          projectId: project.id,
+          projectPath: project.projectPath,
+          workflowProfilePath: project.workflowProfilePath,
+          defaults: cfg.defaults,
+          generatedSourcePath,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Error: failed to render workflow: ${message}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(renderWorkflowYaml(workflow));
     });
 
   program

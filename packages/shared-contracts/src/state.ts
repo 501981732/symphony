@@ -88,11 +88,23 @@ export type ProjectDisabledReason = "config" | "load-error";
  * `enabled === false` means the project was declared in the team config but
  * could not be activated (disabled flag or workflow load failure); in that
  * case `lastError` carries the most recent load failure message.
+ *
+ * Source path fields surface the central workflow config layout so the
+ * dashboard / validate output can show operators which file to edit:
+ *  - `projectPath`             — central project file (project facts).
+ *  - `profilePath`             — central workflow profile (prompt + runtime
+ *                                 guardrails).
+ *  - `effectiveWorkflowPath`   — virtual `.generated/<id>.workflow.md`
+ *                                 location used as the compiled workflow's
+ *                                 `source.path`. Empty string for disabled
+ *                                 / load-error projects.
  */
 export interface ProjectSummary {
   id: string;
   name: string;
-  workflowPath: string;
+  projectPath: string;
+  profilePath: string;
+  effectiveWorkflowPath: string;
   gitlabProject: string;
   enabled: boolean;
   activeRuns: number;
