@@ -6,6 +6,35 @@
 
 ### Changed
 
+- 2026-05-17 — **USAGE 文档精简 + 中心化配置过时项修复**（中英双语同步）。
+  - **§5 重构、节省 ~7 行**：合并 §5.1 入口对比到 Part 5 引言（V1/V2 选型
+    已在 §1.2），后续 §5.2..§5.8 顺移为 §5.1..§5.7。
+  - **§5.1 中心化 team config 示例精简**：
+    - 删 `defaults.labels` / `defaults.codex`（schema 接受但 compiler 尚未
+      消费，留着误导读者）。
+    - team-wide `ci:` 和 `retention:` 改为注释示例（profile 已默认提供，
+      只有真正想 override 时才需要写）。
+    - project 文件里的 `agent.*` 改为注释示例（profile 兜底，多数情况无需
+      在 project 文件里覆盖）。
+    - 字段约束表的 `projects[].project` 与 `projects[].workflow_profile`
+      合并为同一行，去掉重复描述。
+    - 把"`projects[].workflow` 不再支持"那段精简到一段话，明确"loader 会
+      以可操作 dotted-path 错误（指向需要替换为的字段）拒绝加载"，与
+      Important #1 修复呼应。
+  - **§5.2 加入 `render-workflow`**：新增 4 步工作流（validate → render →
+    run → dashboard），明确"编译产物永远不落盘 / 敏感字段已脱敏"。
+  - **§1.2 V1/V2 对照表修复过时项**：V2 行的 "Config source of truth"
+    从 `issuepilot.team.yaml aggregating multiple WORKFLOW.md` 改为
+    `中心化 issuepilot-config/ 目录：issuepilot.team.yaml + projects/*.yaml
+    + workflows/*.md`。
+  - **§1.3 目录角色补全**：增加 `/path/to/issuepilot-config` 块（V2 入口），
+    并明确 `WORKFLOW.md` 仅 V1 单项目入口使用。
+  - **§3 Part 入口前置说明**：澄清 §3.3（`WORKFLOW.md`）和 §3.5
+    （`validate --workflow`）仅 V1 入口使用，V2 团队模式由 §5.1 中心化
+    配置接管并改用 `validate --config`。
+  - **§7.1 CLI 速查表**：新增 `render-workflow --config ... --project ...`
+    命令条目。
+
 - 2026-05-17 — **code-review 修复：中心化 workflow 配置 PR 收口**。基于
   `code-reviewer` subagent 的审查反馈修了 3 个 Important + 1 个 Minor 问题：
   - **legacy `projects[].workflow` 错误信息可操作化**（`apps/orchestrator/src/team/config.ts`）：
