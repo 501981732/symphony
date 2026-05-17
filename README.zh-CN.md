@@ -543,11 +543,39 @@ Center 减负、把信息密度调到合理区间。
   `font-mono` micro-label 风格只保留给页面级 overhead label 和 `dt`
   metadata 标签 —— 它们才是真正的 kicker，在那里读起来自然。
 
+后续执行顺序：**先做 V4 智能研发工作台，再做 V3 生产化执行平台**。这里的
+V3 / V4 是能力域编号，不表示必须按数字顺序交付；当前判断是先验证研发流程智能
+是否真正提升交付质量，再把已经验证的能力平台化。
+
+### V4 — 智能研发工作台
+
+目标：先在现有 V2.x 本地 / 团队 runtime 上，超越"单 Issue 单 run"模型，
+成为能理解、拆解、编排和改进研发流程的智能工作台。V4 不负责部署、权限、
+预算这些平台底座，而是专注研发流程智能；等能力验证清楚后，再由 V3 把这些
+能力生产化。
+
+- **大 Issue 拆解与编排**：自动把大 Issue 拆成可执行子任务，识别顺序、
+  并行度、共享上下文和回滚边界。
+- **跨 Issue 依赖分析**：发现 blocker、重复工作、上下游依赖和可合并任务，
+  在 dashboard 中形成研发工作图谱。
+- **多 agent 协作**：实现 coding agent、reviewer agent、test/evidence
+  agent 等角色分工，支持子任务级协作和汇总。
+- **智能 review 工作流**：自动总结 MR 风险、归类 review 评论、生成返工计划，
+  并把 review 反馈转成下一轮 agent 的结构化输入。
+- **验收材料自动生成**：产出截图、录屏、Playwright walkthrough video、
+  测试证据、风险清单和可直接贴到 MR / Issue 的验收报告。
+- **质量与过程分析**：分析成功率、返工率、CI 通过率、review 命中率、耗时
+  瓶颈和高风险 workflow。
+- **workflow / skills 持续改进**：根据失败模式推荐 workflow、skills、prompt
+  和项目规则调整，形成可审计的改进闭环。
+- **多执行器生态**：支持 Claude Code、内部 coding agent 或其他 runner
+  adapter，并用统一报告和审计模型管理其输出。
+
 ### V3 — 生产化执行平台
 
-目标：把 V2.x 的本地/团队机器能力升级成可正式部署、治理、审计和扩容的内部
-AI 工程执行平台。V3 不追求"更聪明"，而是先让 IssuePilot 在生产环境可控、
-可观测、可恢复。
+目标：把 V2.x 的本地/团队机器能力，以及 V4 已验证的研发流程智能，升级成可正式
+部署、治理、审计和扩容的内部 AI 工程执行平台。V3 不追求重新发明更聪明的工作流，
+而是让已经验证的能力在生产环境可控、可观测、可恢复。
 
 - **部署形态**：提供 Docker / Compose / Kubernetes 部署路径，明确 API server、
   dashboard、worker、storage 的进程边界和升级方式。
@@ -570,29 +598,6 @@ AI 工程执行平台。V3 不追求"更聪明"，而是先让 IssuePilot 在生
 - **观测与运维**：OpenTelemetry、结构化日志、metrics、trace、Grafana /
   Loki 或内部观测平台集成；提供 backup / restore、migration、升级 / 回滚
   runbook。
-
-### V4 — 智能研发工作台
-
-目标：在 V3 的生产平台底座上，超越"单 Issue 单 run"模型，成为能理解、
-拆解、编排和改进研发流程的智能工作台。V4 不再负责部署、权限、预算这些平台
-底座，而是专注研发流程智能。
-
-- **大 Issue 拆解与编排**：自动把大 Issue 拆成可执行子任务，识别顺序、
-  并行度、共享上下文和回滚边界。
-- **跨 Issue 依赖分析**：发现 blocker、重复工作、上下游依赖和可合并任务，
-  在 dashboard 中形成研发工作图谱。
-- **多 agent 协作**：实现 coding agent、reviewer agent、test/evidence
-  agent 等角色分工，支持子任务级协作和汇总。
-- **智能 review 工作流**：自动总结 MR 风险、归类 review 评论、生成返工计划，
-  并把 review 反馈转成下一轮 agent 的结构化输入。
-- **验收材料自动生成**：产出截图、录屏、Playwright walkthrough video、
-  测试证据、风险清单和可直接贴到 MR / Issue 的验收报告。
-- **质量与过程分析**：分析成功率、返工率、CI 通过率、review 命中率、耗时
-  瓶颈和高风险 workflow。
-- **workflow / skills 持续改进**：根据失败模式推荐 workflow、skills、prompt
-  和项目规则调整，形成可审计的改进闭环。
-- **多执行器生态**：支持 Claude Code、内部 coding agent 或其他 runner
-  adapter，并用统一报告和审计模型管理其输出。
 
 > Roadmap 内容会随实际进展调整，每次较大变更都会同步更新 design spec 和
 > `CHANGELOG.md`，请以 spec 为准。

@@ -580,12 +580,49 @@ Wave 1 (the original layout refresh):
   reserved for page-level overhead labels and `dt` metadata, where it
   reads as a kicker rather than visual noise.
 
+Execution order after V2.6: **build the V4 intelligent engineering workbench
+first, then productionize it through V3**. V3 / V4 are capability domains, not
+a required numeric delivery order; the current product bet is to validate
+workflow intelligence first and platformize the proven capabilities afterward.
+
+### V4 — Intelligent engineering workbench
+
+Goal: run on the existing V2.x local/shared-team runtime first and go beyond
+"one issue, one run" to become a workbench that understands, decomposes,
+orchestrates, and improves engineering work. V4 does not own deployment,
+permissions, budgets, or observability; it owns workflow intelligence. V3 later
+productionizes the capabilities that prove valuable here.
+
+- **Large-issue decomposition and orchestration**: split large issues into
+  executable sub-tasks with ordering, parallelism, shared context, and rollback
+  boundaries.
+- **Cross-issue dependency analysis**: detect blockers, duplicated work,
+  upstream/downstream dependencies, and mergeable tasks, then surface them as
+  an engineering work graph.
+- **Multi-agent collaboration**: coding agent, reviewer agent, and
+  test/evidence agent roles that can collaborate per sub-task and summarize
+  their results.
+- **Intelligent review workflow**: summarize MR risks, classify review
+  comments, generate rework plans, and turn review feedback into structured
+  input for the next run.
+- **Acceptance evidence generation**: screenshots, recordings, Playwright
+  walkthrough videos, test evidence, risk lists, and MR / Issue-ready
+  acceptance reports.
+- **Quality and process analytics**: success rate, rework rate, CI pass rate,
+  review hit rate, duration bottlenecks, and high-risk workflow detection.
+- **Workflow / skills continuous improvement**: recommend workflow, skill,
+  prompt, and project-rule changes from repeated failure patterns, with an
+  auditable improvement loop.
+- **Runner ecosystem**: Claude Code, internal coding agents, and other runner
+  adapters managed through the same report and audit model.
+
 ### V3 — Productionized execution platform
 
-Goal: turn the V2.x local/shared-machine product into an internal AI
+Goal: turn the V2.x local/shared-machine product, plus the V4 workflow
+intelligence that has been validated in practice, into an internal AI
 engineering execution platform that can be deployed, governed, audited, and
-scaled in production. V3 is not about making IssuePilot smarter first; it is
-about making it controllable, observable, and recoverable.
+scaled in production. V3 is not about reinventing smarter workflows; it is about
+making proven capabilities controllable, observable, and recoverable.
 
 - **Deployment shape**: Docker / Compose / Kubernetes paths with explicit
   process boundaries for API server, dashboard, workers, and storage.
@@ -612,36 +649,6 @@ about making it controllable, observable, and recoverable.
 - **Observability and operations**: OpenTelemetry, structured logs, metrics,
   traces, Grafana / Loki or an internal observability stack, plus backup /
   restore, migration, upgrade, and rollback runbooks.
-
-### V4 — Intelligent engineering workbench
-
-Goal: build on the V3 production platform to go beyond "one issue, one run" and
-become a workbench that understands, decomposes, orchestrates, and improves
-engineering work. V4 does not own deployment, permissions, budgets, or
-observability; it owns workflow intelligence.
-
-- **Large-issue decomposition and orchestration**: split large issues into
-  executable sub-tasks with ordering, parallelism, shared context, and rollback
-  boundaries.
-- **Cross-issue dependency analysis**: detect blockers, duplicated work,
-  upstream/downstream dependencies, and mergeable tasks, then surface them as
-  an engineering work graph.
-- **Multi-agent collaboration**: coding agent, reviewer agent, and
-  test/evidence agent roles that can collaborate per sub-task and summarize
-  their results.
-- **Intelligent review workflow**: summarize MR risks, classify review
-  comments, generate rework plans, and turn review feedback into structured
-  input for the next run.
-- **Acceptance evidence generation**: screenshots, recordings, Playwright
-  walkthrough videos, test evidence, risk lists, and MR / Issue-ready
-  acceptance reports.
-- **Quality and process analytics**: success rate, rework rate, CI pass rate,
-  review hit rate, duration bottlenecks, and high-risk workflow detection.
-- **Workflow / skills continuous improvement**: recommend workflow, skill,
-  prompt, and project-rule changes from repeated failure patterns, with an
-  auditable improvement loop.
-- **Runner ecosystem**: Claude Code, internal coding agents, and other runner
-  adapters managed through the same report and audit model.
 
 > The roadmap evolves with the project. Every meaningful change is reflected
 > in the design spec and `CHANGELOG.md` in the same PR — treat the design
