@@ -14,6 +14,7 @@
 - `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase4-review-feedback-sweep-design.md`
 - `docs/superpowers/specs/2026-05-16-issuepilot-v2-phase5-workspace-retention-design.md`
 - `docs/superpowers/specs/2026-05-17-issuepilot-central-workflow-config-design.md`
+- `docs/superpowers/plans/2026-05-17-issuepilot-central-workflow-config.md`
 - `docs/superpowers/diagrams/v2-architecture.mmd`（V2 架构图源）
 - `docs/superpowers/diagrams/v2-flow.mmd`（V2 端到端生命周期流程图源）
 - `docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`（Phase 5 操作 runbook）
