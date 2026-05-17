@@ -238,6 +238,8 @@
     "loadError": "load error",
     "disabled": "disabled",
     "lastPoll": "Last poll: {value}",
-    "notPolled": "not polled"
+    "notPolled": "not polled",
+    "project": "Project",
+    "profile": "Profile"
   }
 }

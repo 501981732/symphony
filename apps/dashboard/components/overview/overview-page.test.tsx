@@ -101,7 +101,10 @@ describe("OverviewPage", () => {
         {
           id: "platform-web",
           name: "Platform Web",
-          workflowPath: "/srv/platform-web/WORKFLOW.md",
+          projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+          profilePath: "/srv/issuepilot-config/workflows/default-web.md",
+          effectiveWorkflowPath:
+            "/srv/issuepilot-config/.generated/platform-web.workflow.md",
           gitlabProject: "group/platform-web",
           enabled: true,
           activeRuns: 0,

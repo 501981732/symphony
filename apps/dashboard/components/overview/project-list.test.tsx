@@ -13,7 +13,10 @@ describe("ProjectList", () => {
       {
         id: "platform-web",
         name: "Platform Web",
-        workflowPath: "/srv/platform-web/WORKFLOW.md",
+        projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+        profilePath: "/srv/issuepilot-config/workflows/default-web.md",
+        effectiveWorkflowPath:
+          "/srv/issuepilot-config/.generated/platform-web.workflow.md",
         gitlabProject: "group/platform-web",
         enabled: true,
         activeRuns: 1,
@@ -22,7 +25,9 @@ describe("ProjectList", () => {
       {
         id: "infra-tools",
         name: "Infra Tools",
-        workflowPath: "/srv/infra-tools/WORKFLOW.md",
+        projectPath: "/srv/issuepilot-config/projects/infra-tools.yaml",
+        profilePath: "/srv/issuepilot-config/workflows/default-node-lib.md",
+        effectiveWorkflowPath: "",
         gitlabProject: "group/infra-tools",
         enabled: false,
         activeRuns: 0,
@@ -41,6 +46,12 @@ describe("ProjectList", () => {
     expect(
       screen.getByText("workflow missing tracker.project_id"),
     ).toBeInTheDocument();
+    expect(screen.getAllByText("default-web.md").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("platform-web.yaml").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("infra-tools.yaml").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("default-node-lib.md").length,
+    ).toBeGreaterThan(0);
   });
 
   it("distinguishes manually-disabled projects from load-error projects", () => {
@@ -50,7 +61,9 @@ describe("ProjectList", () => {
           {
             id: "manual-off",
             name: "Manual Off",
-            workflowPath: "/srv/manual-off/WORKFLOW.md",
+            projectPath: "/srv/issuepilot-config/projects/manual-off.yaml",
+            profilePath: "/srv/issuepilot-config/workflows/default-web.md",
+            effectiveWorkflowPath: "",
             gitlabProject: "group/manual-off",
             enabled: false,
             activeRuns: 0,
@@ -60,13 +73,15 @@ describe("ProjectList", () => {
           {
             id: "broken-wf",
             name: "Broken WF",
-            workflowPath: "/srv/broken-wf/WORKFLOW.md",
+            projectPath: "/srv/issuepilot-config/projects/broken-wf.yaml",
+            profilePath: "/srv/issuepilot-config/workflows/default-web.md",
+            effectiveWorkflowPath: "",
             gitlabProject: "group/broken-wf",
             enabled: false,
             activeRuns: 0,
             lastPollAt: null,
             disabledReason: "load-error",
-            lastError: "ENOENT: workflow file missing",
+            lastError: "ENOENT: profile file missing",
           },
         ]}
       />,
@@ -74,9 +89,7 @@ describe("ProjectList", () => {
 
     expect(screen.getByText("disabled")).toBeInTheDocument();
     expect(screen.getByText("load error")).toBeInTheDocument();
-    expect(
-      screen.getByText("ENOENT: workflow file missing"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("ENOENT: profile file missing")).toBeInTheDocument();
   });
 
   it("renders Last poll in a stable UTC format to avoid SSR hydration mismatch", () => {
@@ -86,7 +99,10 @@ describe("ProjectList", () => {
           {
             id: "platform-web",
             name: "Platform Web",
-            workflowPath: "/srv/platform-web/WORKFLOW.md",
+            projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+            profilePath: "/srv/issuepilot-config/workflows/default-web.md",
+            effectiveWorkflowPath:
+              "/srv/issuepilot-config/.generated/platform-web.workflow.md",
             gitlabProject: "group/platform-web",
             enabled: true,
             activeRuns: 0,
