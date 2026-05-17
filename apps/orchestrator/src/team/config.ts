@@ -233,6 +233,37 @@ function errorPathForIssue(issue: z.core.$ZodIssue): string {
   return base || "(root)";
 }
 
+/**
+ * Pre-zod legacy-field guard. Once a user has migrated to the central
+ * workflow config, the only "wrong" shape we see in the wild is the V2-Phase-1
+ * `projects[].workflow: <path>` pointer that we explicitly deprecated. The
+ * strict zod schema would reject it eventually (both as an `unrecognized_keys`
+ * issue on `projects[]` *and* as `invalid_type` issues on the new required
+ * `project` / `workflow_profile`), but the user-facing error would land on
+ * "projects.0.project: expected string, received undefined" — which is the
+ * *consequence*, not the actual problem. Diagnosing it before zod lets us
+ * surface a single, actionable message that points at the real culprit and
+ * tells the operator exactly which fields to add. See USAGE §5.2 / the
+ * 2026-05-17 central workflow config design.
+ */
+function detectLegacyProjectFields(doc: unknown): void {
+  if (!doc || typeof doc !== "object") return;
+  const projects = (doc as { projects?: unknown }).projects;
+  if (!Array.isArray(projects)) return;
+  projects.forEach((p, idx) => {
+    if (p && typeof p === "object" && "workflow" in p) {
+      const issuePath = `projects.${idx}.workflow`;
+      throw new TeamConfigError(
+        `${issuePath}: \`projects[].workflow\` is no longer supported in team mode; ` +
+          `replace it with \`project: ./<project>.yaml\` and ` +
+          `\`workflow_profile: ./<profile>.md\` ` +
+          `(see USAGE §5.2 / central workflow config design).`,
+        issuePath,
+      );
+    }
+  });
+}
+
 function ensureNoDuplicateProjectIds(
   projects: ReadonlyArray<{ id: string }>,
 ): void {
@@ -269,6 +300,8 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
       { cause: err },
     );
   }
+
+  detectLegacyProjectFields(doc);
 
   let parsed: z.infer<typeof rawConfigSchema>;
   try {

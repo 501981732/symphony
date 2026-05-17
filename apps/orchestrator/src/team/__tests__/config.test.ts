@@ -75,8 +75,9 @@ describe("team config", () => {
     expect(config.defaults.repoCacheRoot).toBe("~/.issuepilot/repos");
   });
 
-  it("rejects legacy projects[].workflow in team mode", () => {
-    expect(() =>
+  it("rejects legacy projects[].workflow in team mode with an actionable message", () => {
+    let caught: unknown;
+    try {
       parseTeamConfig(
         [
           "version: 1",
@@ -86,8 +87,16 @@ describe("team config", () => {
           "    workflow: /srv/repos/platform-web/WORKFLOW.md",
         ].join("\n"),
         "/srv/issuepilot-config/issuepilot.team.yaml",
-      ),
-    ).toThrow(/projects\.0/);
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(TeamConfigError);
+    const err = caught as TeamConfigError;
+    expect(err.path).toBe("projects.0.workflow");
+    expect(err.message).toMatch(/projects\.0\.workflow/);
+    expect(err.message).toMatch(/no longer supported/);
+    expect(err.message).toMatch(/workflow_profile/);
   });
 
   it("rejects duplicate project ids", () => {

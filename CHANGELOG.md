@@ -6,6 +6,35 @@
 
 ### Changed
 
+- 2026-05-17 — **code-review 修复：中心化 workflow 配置 PR 收口**。基于
+  `code-reviewer` subagent 的审查反馈修了 3 个 Important + 1 个 Minor 问题：
+  - **legacy `projects[].workflow` 错误信息可操作化**（`apps/orchestrator/src/team/config.ts`）：
+    新增 `detectLegacyProjectFields` 前置检查，遇到 `workflow:` 字段时
+    直接抛出 `projects.0.workflow: \`projects[].workflow\` is no longer
+    supported in team mode; replace it with \`project: ./<project>.yaml\`
+    and \`workflow_profile: ./<profile>.md\` ...`，避免被 zod 的"required
+    field missing"误导到 `project` 字段上。测试断言收紧为
+    `path === "projects.0.workflow"` + 消息匹配 `no longer supported` /
+    `workflow_profile`，把契约绑死。
+  - **`render-workflow` 输出 hooks / retention / prompt_template**
+    （`apps/orchestrator/src/cli.ts`）：之前 `renderWorkflowYaml` 默默
+    丢弃了 `hooks` / `retention` / `promptTemplate`——operators 审计
+    workflow 时恰恰需要看到 shell 命令和完整的 Codex 提示词。现在补齐
+    这三块，prompt 用 YAML literal block scalar（`|`）保留 newline 和
+    Liquid 标签；CLI 测试新增对 `after_create` / `before_run` / `after_run`
+    / `retention.successful_run_days` / `prompt_template: |` 多行块的
+    断言，仍 assert `token_env` / `GITLAB_TOKEN` / `sha256` 等敏感字段不
+    出现。
+  - **`scheduler.test.ts` fixture 更新**：之前的 `project()` helper
+    仍引用已删除的 `workflowPath` 字段，因为 orchestrator tsconfig
+    排除了 `**/*.test.ts`，`tsc --noEmit` 不会报错——一颗静默漂移
+    地雷。改用新的 `projectPath` / `workflowProfilePath` /
+    `effectiveWorkflowPath` 三字段。
+  - **`cli.test.ts` 两个 team-daemon fixture** 仍写 `workflow:
+    ./WORKFLOW.md`（被 mock 跳过解析所以通过），同步迁移到 `project:` +
+    `workflow_profile:` 以免误导后人。
+  - 全部 4 个包测试和 typecheck 仍然全绿。
+
 - 2026-05-17 — **IssuePilot 中心化 workflow 配置（破坏式替换 team mode 输入模型）**。
   按 `docs/superpowers/plans/2026-05-17-issuepilot-central-workflow-config.md` 全量落地
   `docs/superpowers/specs/2026-05-17-issuepilot-central-workflow-config-design.md`：

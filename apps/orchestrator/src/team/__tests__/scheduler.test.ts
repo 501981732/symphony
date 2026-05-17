@@ -62,7 +62,10 @@ function project(): RegisteredProject {
   return {
     id: "platform-web",
     name: "Platform Web",
-    workflowPath: "/srv/platform-web/WORKFLOW.md",
+    projectPath: "/srv/issuepilot-config/projects/platform-web.yaml",
+    workflowProfilePath: "/srv/issuepilot-config/workflows/default-web.md",
+    effectiveWorkflowPath:
+      "/srv/issuepilot-config/.generated/platform-web.workflow.md",
     enabled: true,
     workflow: workflow(),
     lastPollAt: null,

@@ -396,7 +396,11 @@ describe("CLI", () => {
         turnTimeoutMs: 3_600_000,
         turnSandboxPolicy: { type: "workspaceWrite" as const },
       },
-      hooks: {},
+      hooks: {
+        afterCreate: "pnpm install --frozen-lockfile",
+        beforeRun: "pnpm typecheck",
+        afterRun: "pnpm test",
+      },
       ci: { enabled: false, onFailure: "ai-rework" as const, waitForPipeline: true },
       retention: {
         successfulRunDays: 7,
@@ -405,7 +409,12 @@ describe("CLI", () => {
         cleanupIntervalMs: 3_600_000,
       },
       pollIntervalMs: 10_000,
-      promptTemplate: "Handle issue {{ issue.identifier }}",
+      promptTemplate: [
+        "Issue: {{ issue.identifier }}",
+        "Title: {{ issue.title }}",
+        "",
+        "Please resolve the issue end-to-end.",
+      ].join("\n"),
       source: {
         path: "/srv/issuepilot-config/.generated/platform-web.workflow.md",
         sha256: "abc",
@@ -437,8 +446,25 @@ describe("CLI", () => {
     const output = mockLog.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("tracker:");
     expect(output).toContain("project_id: group/platform-web");
+    // Operators reviewing a compiled workflow specifically need to see
+    // shell commands and the prompt — assert they aren't silently dropped.
+    expect(output).toContain("hooks:");
+    expect(output).toContain("after_create: pnpm install --frozen-lockfile");
+    expect(output).toContain("before_run: pnpm typecheck");
+    expect(output).toContain("after_run: pnpm test");
+    expect(output).toContain("retention:");
+    expect(output).toContain("successful_run_days: 7");
+    expect(output).toContain("max_workspace_gb: 50");
+    // Multi-line prompts must use YAML literal block scalars (`|` or `|-`)
+    // so newlines / Liquid tags survive a copy/diff round-trip.
+    expect(output).toMatch(/prompt_template: \|/);
+    expect(output).toContain("Issue: {{ issue.identifier }}");
+    expect(output).toContain("Please resolve the issue end-to-end.");
+    // Secrets / runtime metadata must still be scrubbed.
     expect(output).not.toMatch(/token_env/);
     expect(output).not.toMatch(/GITLAB_TOKEN/);
+    expect(output).not.toMatch(/sha256/);
+    expect(output).not.toMatch(/loaded_at|loadedAt/);
     mockLog.mockRestore();
   });
 
@@ -758,7 +784,8 @@ describe("CLI", () => {
         "projects:",
         "  - id: platform-web",
         "    name: Platform Web",
-        "    workflow: ./WORKFLOW.md",
+        "    project: ./projects/platform-web.yaml",
+        "    workflow_profile: ./workflows/default-web.md",
       ].join("\n"),
     );
     const wait = vi.fn(async () => {});
@@ -793,7 +820,8 @@ describe("CLI", () => {
         "projects:",
         "  - id: platform-web",
         "    name: Platform Web",
-        "    workflow: ./WORKFLOW.md",
+        "    project: ./projects/platform-web.yaml",
+        "    workflow_profile: ./workflows/default-web.md",
       ].join("\n"),
     );
     const wait = vi.fn(async () => {});

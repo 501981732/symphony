@@ -86,54 +86,79 @@ interface ResolvedWorkflowPath {
  *
  * Drops anything sensitive (`tracker.tokenEnv`, `source.sha256`, runtime
  * timestamps) so the rendered text is safe to paste into review tickets
- * or diff against a previous render. Field naming mirrors the YAML keys
- * an operator would write in `workflows/*.md`.
+ * or diff against a previous render. Includes `hooks`, `retention`, and
+ * the full `prompt_template` block — operators reviewing a compiled
+ * workflow specifically need to see the shell commands and Codex prompt
+ * that will execute. Field naming mirrors the YAML keys an operator
+ * would write in `workflows/*.md`.
  */
 function renderWorkflowYaml(workflow: WorkflowConfig): string {
-  return YAML.stringify({
-    tracker: {
-      kind: workflow.tracker.kind,
-      base_url: workflow.tracker.baseUrl,
-      project_id: workflow.tracker.projectId,
-      active_labels: workflow.tracker.activeLabels,
-      running_label: workflow.tracker.runningLabel,
-      handoff_label: workflow.tracker.handoffLabel,
-      failed_label: workflow.tracker.failedLabel,
-      blocked_label: workflow.tracker.blockedLabel,
-      rework_label: workflow.tracker.reworkLabel,
-      merging_label: workflow.tracker.mergingLabel,
+  // Strip undefined hook keys so YAML output stays compact for workflows
+  // that don't define every hook stage.
+  const hooks: Record<string, string> = {};
+  if (workflow.hooks.afterCreate)
+    hooks.after_create = workflow.hooks.afterCreate;
+  if (workflow.hooks.beforeRun) hooks.before_run = workflow.hooks.beforeRun;
+  if (workflow.hooks.afterRun) hooks.after_run = workflow.hooks.afterRun;
+
+  return YAML.stringify(
+    {
+      tracker: {
+        kind: workflow.tracker.kind,
+        base_url: workflow.tracker.baseUrl,
+        project_id: workflow.tracker.projectId,
+        active_labels: workflow.tracker.activeLabels,
+        running_label: workflow.tracker.runningLabel,
+        handoff_label: workflow.tracker.handoffLabel,
+        failed_label: workflow.tracker.failedLabel,
+        blocked_label: workflow.tracker.blockedLabel,
+        rework_label: workflow.tracker.reworkLabel,
+        merging_label: workflow.tracker.mergingLabel,
+      },
+      workspace: {
+        root: workflow.workspace.root,
+        strategy: workflow.workspace.strategy,
+        repo_cache_root: workflow.workspace.repoCacheRoot,
+      },
+      git: {
+        repo_url: workflow.git.repoUrl,
+        base_branch: workflow.git.baseBranch,
+        branch_prefix: workflow.git.branchPrefix,
+      },
+      agent: {
+        runner: workflow.agent.runner,
+        max_concurrent_agents: workflow.agent.maxConcurrentAgents,
+        max_turns: workflow.agent.maxTurns,
+        max_attempts: workflow.agent.maxAttempts,
+        retry_backoff_ms: workflow.agent.retryBackoffMs,
+      },
+      codex: {
+        command: workflow.codex.command,
+        approval_policy: workflow.codex.approvalPolicy,
+        thread_sandbox: workflow.codex.threadSandbox,
+        turn_timeout_ms: workflow.codex.turnTimeoutMs,
+        turn_sandbox_policy: workflow.codex.turnSandboxPolicy,
+      },
+      ci: {
+        enabled: workflow.ci.enabled,
+        on_failure: workflow.ci.onFailure,
+        wait_for_pipeline: workflow.ci.waitForPipeline,
+      },
+      retention: {
+        successful_run_days: workflow.retention.successfulRunDays,
+        failed_run_days: workflow.retention.failedRunDays,
+        max_workspace_gb: workflow.retention.maxWorkspaceGb,
+        cleanup_interval_ms: workflow.retention.cleanupIntervalMs,
+      },
+      hooks,
+      poll_interval_ms: workflow.pollIntervalMs,
+      prompt_template: workflow.promptTemplate,
     },
-    workspace: {
-      root: workflow.workspace.root,
-      strategy: workflow.workspace.strategy,
-      repo_cache_root: workflow.workspace.repoCacheRoot,
-    },
-    git: {
-      repo_url: workflow.git.repoUrl,
-      base_branch: workflow.git.baseBranch,
-      branch_prefix: workflow.git.branchPrefix,
-    },
-    agent: {
-      runner: workflow.agent.runner,
-      max_concurrent_agents: workflow.agent.maxConcurrentAgents,
-      max_turns: workflow.agent.maxTurns,
-      max_attempts: workflow.agent.maxAttempts,
-      retry_backoff_ms: workflow.agent.retryBackoffMs,
-    },
-    codex: {
-      command: workflow.codex.command,
-      approval_policy: workflow.codex.approvalPolicy,
-      thread_sandbox: workflow.codex.threadSandbox,
-      turn_timeout_ms: workflow.codex.turnTimeoutMs,
-      turn_sandbox_policy: workflow.codex.turnSandboxPolicy,
-    },
-    ci: {
-      enabled: workflow.ci.enabled,
-      on_failure: workflow.ci.onFailure,
-      wait_for_pipeline: workflow.ci.waitForPipeline,
-    },
-    poll_interval_ms: workflow.pollIntervalMs,
-  });
+    // `blockScalar: "literal"` keeps the prompt template as a `|` block
+    // so newlines / Liquid `{% %}` blocks render as written; `lineWidth: 0`
+    // disables auto-wrapping so we never split a prompt line mid-token.
+    { blockQuote: "literal", lineWidth: 0 },
+  );
 }
 
 function resolveWorkflowPath(
