@@ -40,14 +40,13 @@ Visual versions:
   - [4.2 Run the first Issue](#42-run-the-first-issue)
   - [4.3 What to do for each of the 6 label states](#43-what-to-do-for-each-of-the-6-label-states)
 - [Part 5 — V2 team mode: shared machine + multiple projects](#part-5--v2-team-mode-shared-machine--multiple-projects)
-  - [5.1 Entrypoint comparison](#51-entrypoint-comparison)
-  - [5.2 Minimal team config](#52-minimal-team-config)
-  - [5.3 Validate and launch](#53-validate-and-launch)
-  - [5.4 Phase 2 — Dashboard actions (retry / stop / archive)](#54-phase-2--dashboard-actions-retry--stop--archive)
-  - [5.5 Phase 3 — CI status auto-flip](#55-phase-3--ci-status-auto-flip)
-  - [5.6 Phase 4 — Review feedback sweep](#56-phase-4--review-feedback-sweep)
-  - [5.7 Phase 5 — Workspace retention](#57-phase-5--workspace-retention)
-  - [5.8 Current V2 boundaries and gaps](#58-current-v2-boundaries-and-gaps)
+  - [5.1 Central team config](#51-central-team-config)
+  - [5.2 Validate, render, launch](#52-validate-render-launch)
+  - [5.3 Phase 2 — Dashboard actions (retry / stop / archive)](#53-phase-2--dashboard-actions-retry--stop--archive)
+  - [5.4 Phase 3 — CI status auto-flip](#54-phase-3--ci-status-auto-flip)
+  - [5.5 Phase 4 — Review feedback sweep](#55-phase-4--review-feedback-sweep)
+  - [5.6 Phase 5 — Workspace retention](#56-phase-5--workspace-retention)
+  - [5.7 Current V2 boundaries and gaps](#57-current-v2-boundaries-and-gaps)
 - [Part 6 — Day-2 operations and troubleshooting](#part-6--day-2-operations-and-troubleshooting)
   - [6.1 Where to look](#61-where-to-look)
   - [6.2 Forensics for failed / blocked runs](#62-forensics-for-failed--blocked-runs)
@@ -86,7 +85,7 @@ IssuePilot is not a SaaS, not a cluster, and **never auto-merges MRs**.
 | --- | --- | --- |
 | Best for | Personal machine, one daemon → one project | Shared machine, one daemon → many GitLab projects |
 | Entry | `issuepilot run --workflow /path/to/WORKFLOW.md` | `issuepilot run --config /path/to/issuepilot.team.yaml` |
-| Config source of truth | Per-project `WORKFLOW.md` | `issuepilot.team.yaml` aggregating multiple `WORKFLOW.md` files |
+| Config source of truth | Per-project `WORKFLOW.md` in the business repo | Central `issuepilot-config/` directory: `issuepilot.team.yaml` + `projects/*.yaml` + `workflows/*.md` |
 | Concurrency | Single run, one worktree | 1–5, global + per-project lease prevents duplicate claim |
 | Dashboard actions | retry / stop / archive available | retry / stop / archive not yet wired (returns `503 actions_unavailable`) |
 | CI feedback | ✅ | ✅ |
@@ -104,8 +103,13 @@ right now, the fallback is to launch per-project V1 daemons.
 /path/to/issuepilot                       This repo. Build / package only here.
   pnpm release:pack                       Produces ./dist/release/issuepilot-*.tgz
 
-/path/to/target-project                   The business repo Codex modifies; hosts WORKFLOW.md.
-  WORKFLOW.md                             Loaded by IssuePilot as both prompt and contract.
+/path/to/target-project                   The business repo Codex modifies.
+  WORKFLOW.md                             V1 single-project entry: prompt + contract committed at the repo root.
+
+/path/to/issuepilot-config                V2 team-mode entry (see §5.1).
+  issuepilot.team.yaml                    Server / scheduler / projects roster.
+  projects/<id>.yaml                      Per-project facts (tracker, git, optional agent overrides).
+  workflows/<name>.md                     Reusable workflow profile (prompt + runtime guardrails).
 
 ~/.issuepilot/                            Local runtime state
   repos/                                  bare git mirror
@@ -181,7 +185,11 @@ Expected: `doctor` reports `[OK]` for Node.js, Git, Codex app-server, and
 ## Part 3 — Prepare the target GitLab project
 
 These steps are all performed in the **target project** (the business repo
-Codex modifies). One-time setup, then reusable by both V1 and V2.
+Codex modifies). One-time setup. §3.1, §3.2 and §3.4 apply to both V1 and
+V2; §3.3 (`WORKFLOW.md` in the business repo) and §3.5 (`validate
+--workflow`) are V1 single-project entries only — V2 team mode owns the
+workflow centrally (see [§5.1](#51-central-team-config) and use `issuepilot
+validate --config` instead).
 
 ### 3.1 Create workflow labels
 
@@ -494,26 +502,23 @@ Then a human reviews the MR:
 
 ## Part 5 — V2 team mode: shared machine + multiple projects
 
-V2 keeps V1 intact and adds a `--config` team entrypoint plus four sets of
-capabilities: dashboard actions, CI failure flip-back, review feedback sweep,
-and workspace retention.
+V2 reuses everything in V1 and adds a `--config` team entrypoint plus four
+capability buckets: dashboard actions, CI failure flip-back, review feedback
+sweep, and workspace retention. The V1 / V2 picker is in [§1.2](#12-v1-single-project-vs-v2-team-mode);
+the two entrypoints are **mutually exclusive** (passing both exits with an
+error).
 
-### 5.1 Entrypoint comparison
+### 5.1 Central team config
 
-| Usage | When to use | Command |
-| --- | --- | --- |
-| V1 single-project | Personal machine; one daemon → one project | `issuepilot run --workflow /path/to/WORKFLOW.md` |
-| V2 team mode | Shared machine; one daemon → many projects; lease prevents duplicate claim | `issuepilot run --config /path/to/issuepilot.team.yaml` |
+Team mode does **not** read `WORKFLOW.md` from a business repo. Instead, a
+single `issuepilot-config/` directory owns three things:
 
-They are **mutually exclusive**; passing both exits with an error.
-
-### 5.2 Minimal team config
-
-V2 team mode keeps `WORKFLOW.md` out of the business repo: an
-`issuepilot-config/` directory owns one `issuepilot.team.yaml`, a small
-project file per project, and a shared workflow profile reused across
-projects. `WORKFLOW.md` in a business repo is no longer a supported
-team-mode input.
+1. `issuepilot.team.yaml` — server / scheduler / projects roster.
+2. `projects/<id>.yaml` — one file per project, **project facts only**
+   (tracker target, repo URL, base branch, optional small agent knobs).
+3. `workflows/<name>.md` — reusable workflow profile (prompt + runtime
+   guardrails like sandbox / runner / concurrency). Multiple projects can
+   share the same profile.
 
 ```text
 issuepilot-config/
@@ -541,12 +546,6 @@ scheduler:
   lease_ttl_ms: 900000
   poll_interval_ms: 10000
 
-defaults:
-  labels: ./policies/labels.gitlab.yaml
-  codex: ./policies/codex.default.yaml
-  workspace_root: ~/.issuepilot/workspaces
-  repo_cache_root: ~/.issuepilot/repos
-
 projects:
   - id: platform-web
     name: Platform Web
@@ -559,21 +558,25 @@ projects:
     workflow_profile: ./workflows/default-node-lib.md
     enabled: true
 
-# Optional: team-level CI defaults; projects[].ci can override (all 3 keys required together)
-ci:
-  enabled: true
-  on_failure: ai-rework        # or human-review
-  wait_for_pipeline: true
+# Optional: team-wide CI override. When set, wins over the profile's `ci`
+# block; per-project `projects[].ci` wins over this. Any override must
+# carry all three keys together.
+# ci:
+#   enabled: true
+#   on_failure: ai-rework        # or human-review
+#   wait_for_pipeline: true
 
-# Optional: team-level workspace retention defaults
-retention:
-  successful_run_days: 7
-  failed_run_days: 30
-  max_workspace_gb: 50
-  cleanup_interval_ms: 3600000
+# Optional: workspace retention defaults (V1 cleanup loop today; team
+# daemon parses but does not yet enforce — see §5.6).
+# retention:
+#   successful_run_days: 7
+#   failed_run_days: 30
+#   max_workspace_gb: 50
+#   cleanup_interval_ms: 3600000
 ```
 
-`projects/platform-web.yaml` — only project facts (no token, no runner):
+`projects/platform-web.yaml` — project facts; no token, no runner, no
+prompt:
 
 ```yaml
 tracker:
@@ -586,13 +589,15 @@ git:
   base_branch: main
   branch_prefix: ai
 
-agent:
-  max_turns: 10
-  max_attempts: 2
+# Optional per-project agent override; profile values fill the rest.
+# agent:
+#   max_turns: 10
+#   max_attempts: 2
 ```
 
 `workflows/default-web.md` — prompt + runtime guardrails shared across
-projects of the same shape:
+projects of the same shape. The profile is the only place to set the
+runner / Codex sandbox / hooks; project files cannot raise those.
 
 ```md
 ---
@@ -623,42 +628,41 @@ Field constraints (violations fail at startup with a dotted path):
 | `scheduler.lease_ttl_ms` | `>= 60000` |
 | `scheduler.poll_interval_ms` | `>= 1000` |
 | `projects[].id` | lowercase alphanum + dashes; unique per config |
-| `projects[].project` | required; relative paths resolve against the team config directory |
-| `projects[].workflow_profile` | required; relative paths resolve against the team config directory |
-| `ci` (precedence) | `projects[].ci > team ci > workflow profile ci`; any override must set all three keys |
+| `projects[].project` / `projects[].workflow_profile` | both required; relative paths resolve against the team config directory |
+| `ci` (precedence) | `projects[].ci > team ci > workflow profile ci`; any override must carry all three keys |
 
 `projects[].workflow` (the legacy single-file pointer) is **no longer
-supported in team mode**; the loader rejects it with a dotted-path
-error.
+supported in team mode**; the loader rejects it with an actionable
+dotted-path error pointing at the migration target.
 
-Compiled `WorkflowConfig` for each project is internal; use
-`issuepilot render-workflow --config ... --project ...` to inspect the
-effective workflow without persisting it on disk.
-
-### 5.3 Validate and launch
+### 5.2 Validate, render, launch
 
 ```bash
-# Validate before launch (no GitLab, no daemon)
-issuepilot validate --config /path/to/issuepilot.team.yaml
+# 1. Schema check (no GitLab, no daemon)
+issuepilot validate --config /path/to/issuepilot-config/issuepilot.team.yaml
 
-# Launch the team daemon
-issuepilot run --config /path/to/issuepilot.team.yaml
-```
+# 2. Inspect the compiled effective workflow for one project (tokens / secrets
+#    redacted; safe to paste into a review ticket or diff against a previous
+#    render). The compiled workflow never lands on disk.
+issuepilot render-workflow \
+  --config  /path/to/issuepilot-config/issuepilot.team.yaml \
+  --project platform-web
 
-`validate --config` and daemon startup share one `loadTeamConfig` pipeline,
-so YAML errors and zod schema errors both surface with the dotted path.
+# 3. Launch the team daemon
+issuepilot run --config /path/to/issuepilot-config/issuepilot.team.yaml
 
-Dashboard works the same as V1:
-
-```bash
+# 4. Launch the dashboard in another terminal
 issuepilot dashboard --api-url http://127.0.0.1:4738
 ```
 
-In V2 the dashboard's `Projects` strip lists every project in team config
+`validate --config` and daemon startup share one `loadTeamConfig` pipeline,
+so YAML errors and zod schema errors both surface with the same dotted path.
+In V2 the dashboard's `Projects` strip lists every project in team-config
 order; `enabled: false` shows a neutral `disabled` badge; a project whose
-workflow fails to load shows a red `load error` badge with the error summary.
+workflow fails to compile shows a red `load error` badge with the error
+summary.
 
-### 5.4 Phase 2 — Dashboard actions (retry / stop / archive)
+### 5.3 Phase 2 — Dashboard actions (retry / stop / archive)
 
 Dashboard runs list and detail pages expose three buttons. Every action
 emits an `operator_action_*` event to the event store.
@@ -672,7 +676,7 @@ emits an `operator_action_*` event to the event store.
 Operator identity defaults to the server-side `"system"` fallback; the
 `x-issuepilot-operator` HTTP header is the hook for V3 RBAC.
 
-### 5.5 Phase 3 — CI status auto-flip
+### 5.4 Phase 3 — CI status auto-flip
 
 Enable `ci.enabled` in either `WORKFLOW.md` or team config and, while the
 Issue sits in `human-review`, the orchestrator polls the MR pipeline every
@@ -701,7 +705,7 @@ Constraints:
   **Changing `ci.enabled` requires restarting `issuepilot run`** to take effect.
 - Auto-merge is out of scope for V2.
 
-### 5.6 Phase 4 — Review feedback sweep
+### 5.5 Phase 4 — Review feedback sweep
 
 Each poll inside `human-review`, the orchestrator scans the MR's human
 comments (system notes and IssuePilot's own marker notes are skipped),
@@ -718,7 +722,7 @@ record.
 - **Always on**. No-op when there is no MR or no comment; no workflow toggle.
 - Does not auto-merge and does not replace Phase 3 CI feedback.
 
-### 5.7 Phase 5 — Workspace retention
+### 5.6 Phase 5 — Workspace retention
 
 Default retention policy (override in workflow or team config top-level
 `retention`):
@@ -769,7 +773,7 @@ Workspace cleanup dry-run
 temporary disable):
 [`docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md`](./docs/superpowers/runbooks/2026-05-15-workspace-cleanup.md).
 
-### 5.8 Current V2 boundaries and gaps
+### 5.7 Current V2 boundaries and gaps
 
 The main V2 surface is complete. **Explicitly out of scope** for V2 (will be
 handled in V3 / V4):
@@ -871,13 +875,13 @@ Restart `issuepilot run`.
 
 The V2 team daemon does not yet wire operator actions; retry / stop /
 archive return `503 actions_unavailable`
-([§5.8](#58-current-v2-boundaries-and-gaps) follow-up). Temporary
+([§5.7](#57-current-v2-boundaries-and-gaps) follow-up). Temporary
 workaround: launch that project via V1 entry.
 
 **V2 team-mode disk keeps growing**
 
 The V2 team daemon does not yet run the workspace cleanup loop
-([§5.7](#57-phase-5--workspace-retention) limitation). Run cleanup
+([§5.6](#56-phase-5--workspace-retention) limitation). Run cleanup
 manually:
 
 ```bash
@@ -908,6 +912,10 @@ issuepilot auth logout --all
 # Validate config
 issuepilot validate --workflow /path/to/WORKFLOW.md
 issuepilot validate --config /path/to/issuepilot.team.yaml
+
+# Render the compiled effective workflow for one team-mode project
+# (secrets / timestamps scrubbed; safe to diff between configs)
+issuepilot render-workflow --config /path/to/issuepilot.team.yaml --project <id>
 
 # Run orchestrator
 issuepilot run --workflow /path/to/WORKFLOW.md                    # V1 single-project
