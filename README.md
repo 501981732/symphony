@@ -392,6 +392,12 @@ The IssuePilot roadmap lives in
 §20 — the section below is a summary so you can quickly see what's usable today
 and where the project is heading.
 
+Current roadmap principle: **make the local / shared-team edition complete
+enough for the full engineering workflow before building the production-ready
+platform**. Login, permissions, budgets, production deployment, centralized
+storage, audit, and observability stay in V3; V4 first completes workflow
+intelligence and product experience on the existing V2.x runtime.
+
 ### P0 — Local single-machine loop (closed)
 
 The local single-machine loop is complete:
