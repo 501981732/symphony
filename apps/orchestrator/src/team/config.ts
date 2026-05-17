@@ -28,16 +28,43 @@ export class TeamConfigError extends Error {
   }
 }
 
+/**
+ * Central-config team defaults block. Paths are resolved against the
+ * directory that owns `issuepilot.team.yaml` so downstream consumers can
+ * treat them as absolute. `labelsPath` and `codexPath` are optional
+ * references to shared policy files; the workflow compiler does not yet
+ * consume them but they're carried through so the validator can show the
+ * resolved location.
+ */
+export interface TeamDefaultsConfig {
+  labelsPath: string | null;
+  codexPath: string | null;
+  workspaceRoot: string;
+  repoCacheRoot: string;
+}
+
 export interface TeamProjectConfig {
   id: string;
   name: string;
-  workflowPath: string;
+  /**
+   * Absolute path to the central-config project file (project facts only:
+   * tracker.project_id, git.repo_url, base_branch, optional agent
+   * overrides). Loaded by the workflow compiler, not by the team config
+   * parser itself.
+   */
+  projectPath: string;
+  /**
+   * Absolute path to the central-config workflow profile (Markdown with
+   * front matter for prompt, hooks, codex/agent overrides). Loaded by the
+   * workflow compiler, not by the team config parser itself.
+   */
+  workflowProfilePath: string;
   enabled: boolean;
   /**
    * Optional per-project CI override. Wins over the team-wide
    * {@link TeamConfig.ci} block when both are set. `null` (the absence
    * of the section under `projects[].ci`) means "fall back to team
-   * {@link TeamConfig.ci}, then to the project's WORKFLOW.md `ci`".
+   * {@link TeamConfig.ci}, then to the compiled workflow's `ci`".
    *
    * Partial overrides are *not* supported in this revision: the project
    * either supplies all three keys (`enabled`, `on_failure`,
@@ -67,7 +94,7 @@ export type TeamRetentionConfig = RetentionConfig;
  * Team-wide CI feedback override. When `enabled` is `true`, the V2
  * daemon's reconciliation loop runs the CI feedback scanner regardless
  * of per-workflow defaults. `null` (the absence of the `ci` section)
- * means "fall back to each project's WORKFLOW.md `ci` block" so an
+ * means "fall back to each project's compiled workflow `ci` block" so an
  * existing team config doesn't suddenly start polling pipelines after
  * an orchestrator upgrade.
  */
@@ -81,11 +108,12 @@ export interface TeamConfig {
   version: 1;
   server: { host: string; port: number };
   scheduler: TeamSchedulerConfig;
+  defaults: TeamDefaultsConfig;
   projects: TeamProjectConfig[];
   retention: RetentionConfig;
   /**
-   * Optional team-wide CI override; `null` means defer to per-workflow
-   * `ci` section.
+   * Optional team-wide CI override; `null` means defer to each compiled
+   * workflow's `ci` section.
    */
   ci: TeamCiConfig | null;
   source: { path: string; sha256: string; loadedAt: string };
@@ -93,27 +121,40 @@ export interface TeamConfig {
 
 const projectIdPattern = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
+const DEFAULT_WORKSPACE_ROOT = "~/.issuepilot/workspaces";
+const DEFAULT_REPO_CACHE_ROOT = "~/.issuepilot/repos";
+
 const rawProjectCiSchema = z
-  .object({
+  .strictObject({
     enabled: z.boolean().optional(),
     on_failure: z.enum(["ai-rework", "human-review"]).optional(),
     wait_for_pipeline: z.boolean().optional(),
   })
   .optional();
 
-const rawProjectSchema = z.object({
+const rawProjectSchema = z.strictObject({
   id: z
     .string()
     .min(1)
     .regex(projectIdPattern, "must be lowercase letters, digits and hyphens"),
   name: z.string().min(1),
-  workflow: z.string().min(1),
+  project: z.string().min(1),
+  workflow_profile: z.string().min(1),
   enabled: z.boolean().optional(),
   ci: rawProjectCiSchema,
 });
 
+const rawDefaultsSchema = z
+  .strictObject({
+    labels: z.string().min(1).optional(),
+    codex: z.string().min(1).optional(),
+    workspace_root: z.string().min(1).optional(),
+    repo_cache_root: z.string().min(1).optional(),
+  })
+  .optional();
+
 const rawSchedulerSchema = z
-  .object({
+  .strictObject({
     max_concurrent_runs: z.number().int().min(1).max(5).optional(),
     max_concurrent_runs_per_project: z.number().int().min(1).max(5).optional(),
     lease_ttl_ms: z.number().int().min(60_000).optional(),
@@ -122,14 +163,14 @@ const rawSchedulerSchema = z
   .optional();
 
 const rawServerSchema = z
-  .object({
+  .strictObject({
     host: z.string().min(1).optional(),
     port: z.number().int().min(1).max(65_535).optional(),
   })
   .optional();
 
 const rawRetentionSchema = z
-  .object({
+  .strictObject({
     successful_run_days: z.number().int().min(0).optional(),
     failed_run_days: z.number().int().min(0).optional(),
     max_workspace_gb: z.number().min(0).optional(),
@@ -138,17 +179,18 @@ const rawRetentionSchema = z
   .optional();
 
 const rawCiSchema = z
-  .object({
+  .strictObject({
     enabled: z.boolean().optional(),
     on_failure: z.enum(["ai-rework", "human-review"]).optional(),
     wait_for_pipeline: z.boolean().optional(),
   })
   .optional();
 
-const rawConfigSchema = z.object({
+const rawConfigSchema = z.strictObject({
   version: z.literal(1),
   server: rawServerSchema,
   scheduler: rawSchedulerSchema,
+  defaults: rawDefaultsSchema,
   projects: z.array(rawProjectSchema).min(1),
   retention: rawRetentionSchema,
   ci: rawCiSchema,
@@ -175,6 +217,22 @@ function humanisePath(issuePath: ReadonlyArray<PropertyKey>): string {
     .join(".");
 }
 
+/**
+ * Convert a zod issue to a dotted path that points at the offending
+ * YAML field. Strict-object schemas surface `unrecognized_keys`
+ * issues whose path lands on the parent object; we append the
+ * offending key so legacy fields like `projects[].workflow` show up
+ * as `projects.0.workflow` rather than the parent `projects.0`.
+ */
+function errorPathForIssue(issue: z.core.$ZodIssue): string {
+  const base = humanisePath(issue.path);
+  if (issue.code === "unrecognized_keys") {
+    const keys = issue.keys.join(".");
+    return base ? `${base}.${keys}` : keys;
+  }
+  return base || "(root)";
+}
+
 function ensureNoDuplicateProjectIds(
   projects: ReadonlyArray<{ id: string }>,
 ): void {
@@ -190,11 +248,15 @@ function ensureNoDuplicateProjectIds(
   }
 }
 
+function resolveConfigPath(configDir: string, value: string): string {
+  return path.isAbsolute(value) ? value : path.resolve(configDir, value);
+}
+
 /**
  * Parse a raw `issuepilot.team.yaml` payload into a normalised
- * {@link TeamConfig}. Relative workflow paths are resolved against the
- * directory that owns `configPath` so callers downstream can treat them as
- * absolute.
+ * {@link TeamConfig}. Relative project / workflow_profile / defaults paths
+ * are resolved against the directory that owns `configPath` so callers
+ * downstream can treat them as absolute.
  */
 export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
   let doc: unknown;
@@ -214,7 +276,7 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
   } catch (err) {
     if (err instanceof ZodError) {
       const first = err.issues[0];
-      const issuePath = first ? humanisePath(first.path) : "(root)";
+      const issuePath = first ? errorPathForIssue(first) : "(root)";
       const message = first?.message ?? "invalid team config";
       throw new TeamConfigError(`${issuePath}: ${message}`, issuePath, {
         cause: err,
@@ -226,12 +288,23 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
   ensureNoDuplicateProjectIds(parsed.projects);
 
   const configDir = path.dirname(configPath);
+
+  const defaults: TeamDefaultsConfig = {
+    labelsPath: parsed.defaults?.labels
+      ? resolveConfigPath(configDir, parsed.defaults.labels)
+      : null,
+    codexPath: parsed.defaults?.codex
+      ? resolveConfigPath(configDir, parsed.defaults.codex)
+      : null,
+    workspaceRoot: parsed.defaults?.workspace_root ?? DEFAULT_WORKSPACE_ROOT,
+    repoCacheRoot: parsed.defaults?.repo_cache_root ?? DEFAULT_REPO_CACHE_ROOT,
+  };
+
   const projects: TeamProjectConfig[] = parsed.projects.map((p) => ({
     id: p.id,
     name: p.name,
-    workflowPath: path.isAbsolute(p.workflow)
-      ? p.workflow
-      : path.resolve(configDir, p.workflow),
+    projectPath: resolveConfigPath(configDir, p.project),
+    workflowProfilePath: resolveConfigPath(configDir, p.workflow_profile),
     enabled: p.enabled ?? true,
     ci: p.ci
       ? {
@@ -285,6 +358,7 @@ export function parseTeamConfig(raw: string, configPath: string): TeamConfig {
       port: parsed.server?.port ?? 4738,
     },
     scheduler,
+    defaults,
     projects,
     retention,
     ci,
