@@ -6,6 +6,20 @@
 
 ### Changed
 
+- 2026-05-17 — **Roadmap 重排：重新划清 V3 / V4 边界**（中英 README +
+  主设计 spec 同步）。
+  - **V3 收敛为生产化执行平台**：部署形态、worker、sandbox、身份权限、
+    预算配额、Postgres 持久化、Webhook + poll、GitLab 审计 / secret 治理、
+    可选自动 merge、观测和运维 runbook。
+  - **V4 收敛为智能研发工作台**：大 Issue 拆解、跨 Issue 依赖、多 agent
+    协作、智能 review、验收材料、质量分析、workflow / skills 持续改进和
+    多执行器生态。
+  - **移除隐含的中间智能阶段**：不再把 V4 的流程智能拆成独立过渡版本；
+    V3 先解决生产可部署和治理，V4 再基于平台底座做智能编排。
+  - **主 spec §20 修正 V2 状态**：从旧的"Phase 3 已合入、下一步 Phase 4"
+    更新为 V2 Phase 1–5、V2.5 Command Center、V2.6 dashboard shell 均已
+    完成，并把可选自动 merge 从 V2 摘要下沉到 V3 生产策略。
+
 - 2026-05-17 — **USAGE 文档精简 + 中心化配置过时项修复**（中英双语同步）。
   - **§5 重构、节省 ~7 行**：合并 §5.1 入口对比到 Part 5 引言（V1/V2 选型
     已在 §1.2），后续 §5.2..§5.8 顺移为 §5.1..§5.7。

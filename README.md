@@ -492,8 +492,9 @@ workspace cleanup. Visual versions:
 
 Items deferred beyond V2 (not blocking V2):
 
-- Optional automated merge policy after CI/approval checks. The P0 default
-  remains human-controlled merge.
+- Optional automated merge policy after CI/approval checks moves to V3, where
+  it can be gated by production permissions, approvals, audit, and rollback
+  controls. The P0/V2 default remains human-controlled merge.
 
 ### V2.5 — Command Center
 
@@ -581,32 +582,66 @@ Wave 1 (the original layout refresh):
 
 ### V3 — Productionized execution platform
 
-Goal: become an internal "AI engineering execution platform" with proper
-permissions, budgets, and observability.
+Goal: turn the V2.x local/shared-machine product into an internal AI
+engineering execution platform that can be deployed, governed, audited, and
+scaled in production. V3 is not about making IssuePilot smarter first; it is
+about making it controllable, observable, and recoverable.
 
-- Pluggable workers: local, SSH worker, and container worker.
-- Docker / Kubernetes sandboxes (replacing the single-host sandbox model).
-- Token / time / concurrency / cost budgets.
-- Permission model: project, team, and admin scopes.
-- Webhook + poll hybrid scheduling to cut polling latency.
-- Stronger GitLab audit + end-to-end secret redaction.
-- Postgres / SQLite run history (replacing single-host JSONL storage).
-- OpenTelemetry / Loki / Grafana, or your internal observability stack.
+- **Deployment shape**: Docker / Compose / Kubernetes paths with explicit
+  process boundaries for API server, dashboard, workers, and storage.
+- **Multi-worker execution**: local / SSH / container workers with heartbeat,
+  capacity reporting, task dispatch, failure recovery, and queue reclamation.
+- **Production sandboxing**: Docker / Kubernetes sandboxes replace the
+  single-host sandbox model, with per-project filesystem, network, and secret
+  injection policies.
+- **Identity and permissions**: login/session support plus project, team, and
+  admin scopes; every dashboard action and automated action is written to an
+  operator-aware audit log.
+- **Budgets and quotas**: project/team limits for tokens, runtime, concurrency,
+  cost, and retry count, with explainable blocked / approval flows on breach.
+- **Persistent storage**: Postgres for production run history, reports, leases,
+  audit, and configuration state; SQLite / JSONL remain for local development
+  or single-machine mode.
+- **Webhook + poll scheduling**: GitLab webhooks for low-latency triggers,
+  with polling retained as a recovery path.
+- **GitLab audit and secret governance**: centralized credential store, token
+  rotation, least-privilege access, end-to-end redaction, and leak regression
+  tests.
+- **Production merge policy**: optional approval-, CI-, permission-, and
+  audit-gated auto-merge built on top of the V2.5 merge-readiness dry run.
+- **Observability and operations**: OpenTelemetry, structured logs, metrics,
+  traces, Grafana / Loki or an internal observability stack, plus backup /
+  restore, migration, upgrade, and rollback runbooks.
 
 ### V4 — Intelligent engineering workbench
 
-Goal: go beyond "one issue, one run" and become a workbench for engineering
-processes.
+Goal: build on the V3 production platform to go beyond "one issue, one run" and
+become a workbench that understands, decomposes, orchestrates, and improves
+engineering work. V4 does not own deployment, permissions, budgets, or
+observability; it owns workflow intelligence.
 
-- Auto-decomposition of large issues into orchestrated sub-tasks.
-- Cross-issue dependency and blocker analysis.
-- Multi-agent collaboration with a dedicated reviewer agent.
-- Auto-generated acceptance evidence: screenshots, recordings, Playwright
-  walkthrough videos.
-- Quality metrics: agent success rate, rework rate, CI pass rate, review hit
-  rate.
-- Workflow / skills recommendation and continuous-improvement loop.
-- More runners, e.g. Claude Code or your internal coding agent.
+- **Large-issue decomposition and orchestration**: split large issues into
+  executable sub-tasks with ordering, parallelism, shared context, and rollback
+  boundaries.
+- **Cross-issue dependency analysis**: detect blockers, duplicated work,
+  upstream/downstream dependencies, and mergeable tasks, then surface them as
+  an engineering work graph.
+- **Multi-agent collaboration**: coding agent, reviewer agent, and
+  test/evidence agent roles that can collaborate per sub-task and summarize
+  their results.
+- **Intelligent review workflow**: summarize MR risks, classify review
+  comments, generate rework plans, and turn review feedback into structured
+  input for the next run.
+- **Acceptance evidence generation**: screenshots, recordings, Playwright
+  walkthrough videos, test evidence, risk lists, and MR / Issue-ready
+  acceptance reports.
+- **Quality and process analytics**: success rate, rework rate, CI pass rate,
+  review hit rate, duration bottlenecks, and high-risk workflow detection.
+- **Workflow / skills continuous improvement**: recommend workflow, skill,
+  prompt, and project-rule changes from repeated failure patterns, with an
+  auditable improvement loop.
+- **Runner ecosystem**: Claude Code, internal coding agents, and other runner
+  adapters managed through the same report and audit model.
 
 > The roadmap evolves with the project. Every meaningful change is reflected
 > in the design spec and `CHANGELOG.md` in the same PR — treat the design

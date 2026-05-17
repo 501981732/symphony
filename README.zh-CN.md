@@ -467,7 +467,8 @@ CI 回流、review feedback 与 workspace 清理。视觉版本：
 
 延后到 V2 之后处理（不阻塞 V2）：
 
-- 可选自动 merge 策略（满足 CI / approval 后）。P0 默认仍由人类控制 merge。
+- 可选自动 merge 策略下沉到 V3，在生产权限、approval、audit 和回滚控制下
+  设计；P0 / V2 默认仍由人类控制 merge。
 
 ### V2.5 — Command Center
 
@@ -544,28 +545,54 @@ Center 减负、把信息密度调到合理区间。
 
 ### V3 — 生产化执行平台
 
-目标：可以作为内部"AI 工程执行平台"运行，具备权限、预算、可观测性。
+目标：把 V2.x 的本地/团队机器能力升级成可正式部署、治理、审计和扩容的内部
+AI 工程执行平台。V3 不追求"更聪明"，而是先让 IssuePilot 在生产环境可控、
+可观测、可恢复。
 
-- 多 worker 支持：本机、SSH worker、容器 worker 可插拔。
-- Docker / Kubernetes sandbox（替代单机 sandbox 模型）。
-- token / 时长 / 并发 / 成本预算控制。
-- 权限模型：项目级、团队级、管理员级。
-- Webhook + poll 混合调度，减少轮询延迟。
-- 更强的 GitLab 审计 + 全链路 secret redaction。
-- Postgres / SQLite 持久化 run history（替代 JSONL 单机存储）。
-- OpenTelemetry / Loki / Grafana 或内部观测平台集成。
+- **部署形态**：提供 Docker / Compose / Kubernetes 部署路径，明确 API server、
+  dashboard、worker、storage 的进程边界和升级方式。
+- **多 worker 执行**：支持 local / SSH / container worker，带 worker
+  heartbeat、容量上报、任务派发、失败恢复和队列回收。
+- **生产 sandbox**：用 Docker / Kubernetes sandbox 替代单机 sandbox 模型，
+  为不同项目提供隔离的 filesystem、network 和 secret 注入策略。
+- **身份与权限**：接入登录态，建立项目级、团队级、管理员级权限；所有
+  dashboard 操作和自动动作都写入带操作者身份的 audit log。
+- **预算与配额**：按项目 / 团队限制 token、运行时长、并发、成本和重试次数，
+  超限时进入可解释的 blocked / approval 流程。
+- **持久化存储**：Postgres 作为生产 run history、reports、leases、audit
+  和配置状态存储；SQLite / JSONL 仅保留为本地开发或单机模式。
+- **Webhook + poll 混合调度**：GitLab webhook 用于实时触发，poll 作为兜底，
+  减少延迟同时保留可恢复性。
+- **GitLab 审计与 secret 治理**：集中 credential store、token rotation、
+  最小权限访问、全链路 redaction 和敏感字段泄漏测试。
+- **生产合并策略**：在 V2.5 merge-readiness dry run 基础上，增加带权限、
+  approval、CI 和 audit 约束的可选自动 merge。
+- **观测与运维**：OpenTelemetry、结构化日志、metrics、trace、Grafana /
+  Loki 或内部观测平台集成；提供 backup / restore、migration、升级 / 回滚
+  runbook。
 
 ### V4 — 智能研发工作台
 
-目标：超越"单 Issue 单 run"的模型，做面向研发流程的智能工作台。
+目标：在 V3 的生产平台底座上，超越"单 Issue 单 run"模型，成为能理解、
+拆解、编排和改进研发流程的智能工作台。V4 不再负责部署、权限、预算这些平台
+底座，而是专注研发流程智能。
 
-- 自动拆分大 Issue 为子任务，子任务之间编排执行。
-- 跨 Issue 的依赖与 blocker 分析。
-- 多 agent 协作 + 独立 reviewer agent。
-- 自动生成验收材料：截图、录屏、Playwright walkthrough video。
-- agent 成功率、返工率、CI 通过率、review 命中率等质量指标。
-- workflow / skills 推荐与持续改进闭环。
-- 支持更多执行器，例如 Claude Code 或内部 coding agent。
+- **大 Issue 拆解与编排**：自动把大 Issue 拆成可执行子任务，识别顺序、
+  并行度、共享上下文和回滚边界。
+- **跨 Issue 依赖分析**：发现 blocker、重复工作、上下游依赖和可合并任务，
+  在 dashboard 中形成研发工作图谱。
+- **多 agent 协作**：实现 coding agent、reviewer agent、test/evidence
+  agent 等角色分工，支持子任务级协作和汇总。
+- **智能 review 工作流**：自动总结 MR 风险、归类 review 评论、生成返工计划，
+  并把 review 反馈转成下一轮 agent 的结构化输入。
+- **验收材料自动生成**：产出截图、录屏、Playwright walkthrough video、
+  测试证据、风险清单和可直接贴到 MR / Issue 的验收报告。
+- **质量与过程分析**：分析成功率、返工率、CI 通过率、review 命中率、耗时
+  瓶颈和高风险 workflow。
+- **workflow / skills 持续改进**：根据失败模式推荐 workflow、skills、prompt
+  和项目规则调整，形成可审计的改进闭环。
+- **多执行器生态**：支持 Claude Code、内部 coding agent 或其他 runner
+  adapter，并用统一报告和审计模型管理其输出。
 
 > Roadmap 内容会随实际进展调整，每次较大变更都会同步更新 design spec 和
 > `CHANGELOG.md`，请以 spec 为准。

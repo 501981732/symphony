@@ -1002,46 +1002,99 @@ V2 的详细设计以
 为准；该文件顶部维护 Phase 顺序、当前进度、补充 spec 和 plan 的对应矩阵。本节只保留产品路线摘要。
 
 当前 V2 进度：Phase 1 Team Runtime Foundation、Phase 2 Dashboard Operations、
-Phase 3 CI Feedback 已合入；下一步是 Phase 4 Review Feedback Sweep。
+Phase 3 CI Feedback、Phase 4 Review Feedback Sweep、Phase 5 Workspace
+Retention 已全部合入 `main`。V2.5 / V2.6 已在此基础上完成 Command Center
+和 dashboard shell 的产品化打磨。
 
 目标：从“个人单机”升级为“团队共享”，可以在内网或团队机器上承载日常工作。
 
-- 部署到团队共享机器或内网服务，支持多用户读状态。
-- 单 daemon 支持多项目 workflow 配置。
-- 并发从 1 扩展到 2-5，加入槽位调度和 lease 策略。
+- 使用中心化 `issuepilot-config/`：`issuepilot.team.yaml` 管理 server /
+  scheduler / projects roster，`projects/*.yaml` 管理项目事实，
+  `workflows/*.md` 管理可复用 workflow profile。
+- 单 daemon 支持多项目 workflow 配置；并发从 1 扩展到 2-5，加入槽位调度和
+  lease 策略。
 - dashboard 增加基础操作：`retry`、`stop`、`archive run`。
 - CI 状态读取，CI 失败自动回流到 `ai-rework`。
 - PR/MR review feedback sweep，把人工 review 评论喂给下一轮 agent。
 - review 工作流打磨：dashboard 和报告中直接展示 handoff / failure / closing note
   的结构化字段。
-- 可选自动 merge 策略，满足 CI / approval 后执行；默认仍保留人工 merge。
-- 更完整的运行报告：diff summary、测试结果、风险点、耗时分解。
-- workspace 清理和保留策略：按状态、时间和大小分级处理。
+- workspace 清理和保留策略：按状态、时间和大小分级处理，失败现场默认保留。
+- V2 仍保留人工 merge 默认路径；可选自动 merge 下沉到 V3 生产权限 / 审计 /
+  approval 策略里做。
+
+### V2.5：Command Center
+
+目标：把“概览页 + 运行详情页”合并成 Linear 风格的 Command Center，让运维人员
+在一个屏幕里完成 triage、review 和质量观察；GitLab notes 与 dashboard 共用同一份事实。
+
+- `RunReportArtifact` 持久化在 `~/.issuepilot/.../reports/<runId>.json`，
+  与 JSONL 事件存储并排，作为 dashboard、GitLab note、Markdown 报告和
+  merge-readiness dry run 的统一事实来源。
+- Command Center 首页支持 List / Board 视图，并围绕 IssuePilot run 而不是通用
+  ticket 管理建模。
+- Run Detail 升级为 Review Packet，直接展示 handoff、validation、risks、
+  follow-ups、checks 和 merge-readiness 判定结果。
+- Reports 页面聚合 ready-to-merge、blocked、failed、耗时等本地质量指标。
+- Merge readiness 仅做 dry run，不调用 GitLab merge API。
+
+### V2.6：Dashboard shell + 布局重构
+
+目标：在 V2.5 内容堆完之后，把 Command Center 的信息密度调到工程运营工具应有的水平。
+
+- 顶部水平导航替换左侧 sidebar，释放 board 视图横向空间。
+- List / Board 使用混合 inspector：list 保留 split-pane，board 使用 GitLab 风右侧
+  overlay。
+- 三个主页面统一 `max-w-[1440px]`，避免页面切换时主容器宽度抖动。
+- ServiceHeader 折叠低频 metadata，Reports counter 增加 7 日趋势 sparkline。
 
 ### V3：生产化执行平台
 
-目标：作为内部“AI 工程执行平台”运行，具备权限、预算和可观测性。
+目标：把 V2.x 的本地/团队机器能力升级成可正式部署、治理、审计和扩容的内部
+AI 工程执行平台。V3 不追求“更聪明”，而是先让 IssuePilot 在生产环境可控、
+可观测、可恢复。
 
-- 多 worker 支持：本机、SSH worker、容器 worker 可插拔。
-- Docker 或 Kubernetes sandbox。
-- token、时长、并发、成本预算控制。
-- 权限模型：项目级、团队级、管理员级。
-- Webhook + poll 混合调度，降低轮询延迟。
-- 更强的 GitLab 审计和 secret redaction。
-- Postgres/SQLite 持久化 run history。
-- OpenTelemetry、Loki/Grafana 或内部观测平台集成。
+- 部署形态：Docker / Compose / Kubernetes，明确 API server、dashboard、
+  worker、storage 的进程边界和升级方式。
+- 多 worker 执行：local / SSH / container worker，带 heartbeat、容量上报、
+  任务派发、失败恢复和队列回收。
+- 生产 sandbox：Docker / Kubernetes sandbox 替代单机 sandbox，为不同项目提供
+  隔离的 filesystem、network 和 secret 注入策略。
+- 身份与权限：接入登录态，建立项目级、团队级、管理员级权限；所有 dashboard
+  操作和自动动作都写入带操作者身份的 audit log。
+- 预算与配额：按项目 / 团队限制 token、运行时长、并发、成本和重试次数，超限时
+  进入可解释的 blocked / approval 流程。
+- 持久化存储：Postgres 作为生产 run history、reports、leases、audit 和配置状态
+  存储；SQLite / JSONL 仅保留为本地开发或单机模式。
+- Webhook + poll 混合调度：GitLab webhook 用于实时触发，poll 作为兜底。
+- GitLab 审计与 secret 治理：集中 credential store、token rotation、最小权限访问、
+  全链路 redaction 和敏感字段泄漏测试。
+- 生产合并策略：在 V2.5 merge-readiness dry run 基础上，增加带权限、approval、
+  CI 和 audit 约束的可选自动 merge。
+- 观测与运维：OpenTelemetry、结构化日志、metrics、trace、Grafana / Loki 或内部
+  观测平台集成；提供 backup / restore、migration、升级 / 回滚 runbook。
 
 ### V4：智能研发工作台
 
-目标：超越“单 Issue 单 run”，成为面向研发流程的智能工作台。
+目标：在 V3 的生产平台底座上，超越“单 Issue 单 run”模型，成为能理解、拆解、
+编排和改进研发流程的智能工作台。V4 不再负责部署、权限、预算这些平台底座，
+而是专注研发流程智能。
 
-- 自动拆分大 Issue 为子任务，并对子任务编排执行。
-- 跨 Issue 依赖和 blocker 分析。
-- 多 agent 协作和 reviewer agent。
-- 自动生成验收材料：截图、录屏、Playwright walkthrough。
-- agent 成功率、返工率、CI 通过率、review 命中率评估。
-- workflow/skills 推荐和持续改进机制。
-- 支持更多执行器，例如 Claude Code 或内部 coding agent。
+- 大 Issue 拆解与编排：自动把大 Issue 拆成可执行子任务，识别顺序、并行度、
+  共享上下文和回滚边界。
+- 跨 Issue 依赖分析：发现 blocker、重复工作、上下游依赖和可合并任务，在
+  dashboard 中形成研发工作图谱。
+- 多 agent 协作：coding agent、reviewer agent、test/evidence agent 等角色分工，
+  支持子任务级协作和汇总。
+- 智能 review 工作流：自动总结 MR 风险、归类 review 评论、生成返工计划，并把
+  review 反馈转成下一轮 agent 的结构化输入。
+- 验收材料自动生成：产出截图、录屏、Playwright walkthrough video、测试证据、
+  风险清单和可直接贴到 MR / Issue 的验收报告。
+- 质量与过程分析：分析成功率、返工率、CI 通过率、review 命中率、耗时瓶颈和
+  高风险 workflow。
+- workflow / skills 持续改进：根据失败模式推荐 workflow、skills、prompt 和项目规则
+  调整，形成可审计的改进闭环。
+- 多执行器生态：支持 Claude Code、内部 coding agent 或其他 runner adapter，并用
+  统一报告和审计模型管理其输出。
 
 ## 21. MVP Definition of Done
 
