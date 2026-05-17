@@ -493,6 +493,24 @@ CI 失败回流、review feedback sweep、workspace retention 自动清理。
 
 ### 5.2 team config 最小模板
 
+V2 团队模式把 `WORKFLOW.md` 从业务 repo 中剥离：使用独立的
+`issuepilot-config/` 目录统一管理 `issuepilot.team.yaml`、每个项目一份
+project 文件、以及可复用的 workflow profile。业务 repo 内的
+`WORKFLOW.md` 不再是 team 模式的合法输入。
+
+```text
+issuepilot-config/
+  issuepilot.team.yaml
+  projects/
+    platform-web.yaml
+    infra-tools.yaml
+  workflows/
+    default-web.md
+    default-node-lib.md
+```
+
+`issuepilot-config/issuepilot.team.yaml`：
+
 ```yaml
 version: 1
 
@@ -506,14 +524,22 @@ scheduler:
   lease_ttl_ms: 900000
   poll_interval_ms: 10000
 
+defaults:
+  labels: ./policies/labels.gitlab.yaml
+  codex: ./policies/codex.default.yaml
+  workspace_root: ~/.issuepilot/workspaces
+  repo_cache_root: ~/.issuepilot/repos
+
 projects:
   - id: platform-web
     name: Platform Web
-    workflow: /srv/repos/platform-web/WORKFLOW.md
+    project: ./projects/platform-web.yaml
+    workflow_profile: ./workflows/default-web.md
     enabled: true
   - id: infra-tools
     name: Infra Tools
-    workflow: /srv/repos/infra-tools/WORKFLOW.md
+    project: ./projects/infra-tools.yaml
+    workflow_profile: ./workflows/default-node-lib.md
     enabled: true
 
 # 可选：team 级 CI 默认值；projects[].ci 可再覆盖（必须三键齐发）
@@ -530,6 +556,46 @@ retention:
   cleanup_interval_ms: 3600000
 ```
 
+`projects/platform-web.yaml` — 仅记录项目事实（不含 token、不含 runner）：
+
+```yaml
+tracker:
+  kind: gitlab
+  base_url: https://gitlab.example.com
+  project_id: group/platform-web
+
+git:
+  repo_url: git@gitlab.example.com:group/platform-web.git
+  base_branch: main
+  branch_prefix: ai
+
+agent:
+  max_turns: 10
+  max_attempts: 2
+```
+
+`workflows/default-web.md` — 可被多个同类项目复用的 prompt + 运行护栏：
+
+```md
+---
+agent:
+  runner: codex-app-server
+  max_concurrent_agents: 1
+
+codex:
+  approval_policy: never
+  thread_sandbox: workspace-write
+
+ci:
+  enabled: true
+  on_failure: ai-rework
+  wait_for_pipeline: true
+---
+
+你正在处理 GitLab 项目 `{{ project.tracker.project_id }}` 的 issue。
+目标仓库 `{{ project.git.repo_url }}`，默认分支 `{{ project.git.base_branch }}`。
+```
+
 字段约束（违反会启动失败并报具体 dotted path）：
 
 | 字段 | 约束 |
@@ -539,11 +605,16 @@ retention:
 | `scheduler.lease_ttl_ms` | `>= 60000` |
 | `scheduler.poll_interval_ms` | `>= 1000` |
 | `projects[].id` | 小写字母数字 + 中划线；同一 config 不能重复 |
-| `projects[].workflow` | 相对路径会基于 config 文件目录解析为绝对路径 |
-| `ci`（precedence） | `projects[].ci > team ci > workflow ci`；override 必须三键齐发 |
+| `projects[].project` | 必填；相对路径基于 team config 目录解析为绝对路径 |
+| `projects[].workflow_profile` | 必填；相对路径基于 team config 目录解析为绝对路径 |
+| `ci`（precedence） | `projects[].ci > team ci > workflow profile ci`；override 必须三键齐发 |
 
-team config **不复制** workflow 的 GitLab labels / prompt / hooks；这些仍
-由各 project 自己的 `WORKFLOW.md` 决定。
+`projects[].workflow`（旧的单文件指针）在 team 模式下**已不再支持**，
+loader 会按 dotted path 报错拒绝加载。
+
+每个项目编译出的 `WorkflowConfig` 是内部数据；用
+`issuepilot render-workflow --config ... --project ...` 即可查看 effective
+workflow，无需把它落到磁盘。
 
 ### 5.3 校验与启动
 

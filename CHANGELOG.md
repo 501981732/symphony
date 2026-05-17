@@ -4,6 +4,43 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 2026-05-17 — **IssuePilot 中心化 workflow 配置（破坏式替换 team mode 输入模型）**。
+  按 `docs/superpowers/plans/2026-05-17-issuepilot-central-workflow-config.md` 全量落地
+  `docs/superpowers/specs/2026-05-17-issuepilot-central-workflow-config-design.md`：
+  - **schema**：`issuepilot.team.yaml -> projects[]` 字段从单一 `workflow`
+    拆成必填的 `project`（项目事实文件）+ `workflow_profile`（工作流模板），
+    新增可选 `defaults`（`labels` / `codex` / `workspaceRoot` / `repoCacheRoot`）。
+    `apps/orchestrator/src/team/config.ts` 改用 `z.strictObject`，遇到
+    遗留的 `projects[].workflow` 会显式报 `projects.<n>.workflow:
+    Unrecognized key`。
+  - **compiler**：新增 `@issuepilot/workflow#compileCentralWorkflowProject`
+    （`packages/workflow/src/central.ts`），先用新的 `parseWorkflowString`
+    把 profile 内容解析为 base `WorkflowConfig`，再合并 project 文件里
+    project-level 字段；profile 不允许覆盖 high-risk 字段（issue 筛选 /
+    queue / Codex 路由 / labels / runtime），违反时抛
+    `CentralWorkflowConfigError(code: "profile_field_forbidden")`。
+  - **registry & daemon**：`createProjectRegistry` 改为依赖
+    `compileCentralWorkflowProject` 而非 `loadWorkflow`；`startTeamDaemon`
+    把 compiler 作为可注入依赖。`RegisteredProject` 新增
+    `projectPath` / `workflowProfilePath` / `effectiveWorkflowPath`。
+  - **shared contracts**：`ProjectSummary` 移除 `workflowPath`，新增
+    `projectPath` / `profilePath` / `effectiveWorkflowPath`，供 dashboard 展示。
+  - **CLI**：`issuepilot validate --config` 输出改为
+    `project=... profile=...`；新增 `issuepilot render-workflow
+    --config <path> --project <id>`，把 effective `WorkflowConfig`
+    渲染成 YAML 方便人工审查。
+  - **dashboard**：`ProjectList` 把单一 Workflow 列拆成 `Project` /
+    `Profile` 两列（显示 basename，悬停查看绝对路径）；en/zh i18n 同步。
+  - **docs/specs**：`USAGE.md` / `USAGE.zh-CN.md` 的 team config
+    最小模板改成中心化目录布局，明确"`projects[].workflow` 已不再支持"。
+    spec `2026-05-17` 状态标为「已实现」，master spec `2026-05-15` 第 2 章
+    更新为「已破坏式替换 team-mode 输入模型」。
+  - **测试**：`@issuepilot/workflow` 58 cases / `@issuepilot/orchestrator`
+    282 cases / `@issuepilot/shared-contracts` 42 cases / `@issuepilot/dashboard`
+    97 cases 全部通过；四个包 `tsc --noEmit` 全绿。
+
 ### Added
 
 - 2026-05-16 — **dashboard 布局抛光：三页等宽、non-modal Sheet、Board polish、

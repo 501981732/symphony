@@ -28,9 +28,11 @@
 V2 团队可运营版本的功能交付已经完成；剩余条目集中在「真实试点验证」与「team-mode
 workspace cleanup wiring」两个面向（详见 §16 Phase 5 与 §17 完成标准）。
 2026-05-17 新增的中心化 workflow 配置设计是后续 team-mode 配置收敛增强，不改变
-Phase 1-5 已落地状态；由于当前仍是实验阶段，它可以破坏式替换
-`issuepilot.team.yaml -> projects[].workflow` 输入模型，直接改为中心配置管理 workflow
-profile、项目事实和 effective workflow 编译。
+Phase 1-5 已落地状态；由于当前仍是实验阶段，已经按计划破坏式替换了
+`issuepilot.team.yaml -> projects[].workflow` 输入模型，team mode 现在统一通过
+中心配置目录管理 `project` 文件和 `workflow_profile`，并在内部编译为 effective
+workflow。落地详情参见 `docs/superpowers/specs/2026-05-17-issuepilot-central-workflow-config-design.md`
+与 `docs/superpowers/plans/2026-05-17-issuepilot-central-workflow-config.md`。
 
 | 顺序 | Phase | 状态 | 对应 spec | 对应 plan |
 | --- | --- | --- | --- | --- |

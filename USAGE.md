@@ -509,6 +509,25 @@ They are **mutually exclusive**; passing both exits with an error.
 
 ### 5.2 Minimal team config
 
+V2 team mode keeps `WORKFLOW.md` out of the business repo: an
+`issuepilot-config/` directory owns one `issuepilot.team.yaml`, a small
+project file per project, and a shared workflow profile reused across
+projects. `WORKFLOW.md` in a business repo is no longer a supported
+team-mode input.
+
+```text
+issuepilot-config/
+  issuepilot.team.yaml
+  projects/
+    platform-web.yaml
+    infra-tools.yaml
+  workflows/
+    default-web.md
+    default-node-lib.md
+```
+
+`issuepilot-config/issuepilot.team.yaml`:
+
 ```yaml
 version: 1
 
@@ -522,14 +541,22 @@ scheduler:
   lease_ttl_ms: 900000
   poll_interval_ms: 10000
 
+defaults:
+  labels: ./policies/labels.gitlab.yaml
+  codex: ./policies/codex.default.yaml
+  workspace_root: ~/.issuepilot/workspaces
+  repo_cache_root: ~/.issuepilot/repos
+
 projects:
   - id: platform-web
     name: Platform Web
-    workflow: /srv/repos/platform-web/WORKFLOW.md
+    project: ./projects/platform-web.yaml
+    workflow_profile: ./workflows/default-web.md
     enabled: true
   - id: infra-tools
     name: Infra Tools
-    workflow: /srv/repos/infra-tools/WORKFLOW.md
+    project: ./projects/infra-tools.yaml
+    workflow_profile: ./workflows/default-node-lib.md
     enabled: true
 
 # Optional: team-level CI defaults; projects[].ci can override (all 3 keys required together)
@@ -546,6 +573,47 @@ retention:
   cleanup_interval_ms: 3600000
 ```
 
+`projects/platform-web.yaml` — only project facts (no token, no runner):
+
+```yaml
+tracker:
+  kind: gitlab
+  base_url: https://gitlab.example.com
+  project_id: group/platform-web
+
+git:
+  repo_url: git@gitlab.example.com:group/platform-web.git
+  base_branch: main
+  branch_prefix: ai
+
+agent:
+  max_turns: 10
+  max_attempts: 2
+```
+
+`workflows/default-web.md` — prompt + runtime guardrails shared across
+projects of the same shape:
+
+```md
+---
+agent:
+  runner: codex-app-server
+  max_concurrent_agents: 1
+
+codex:
+  approval_policy: never
+  thread_sandbox: workspace-write
+
+ci:
+  enabled: true
+  on_failure: ai-rework
+  wait_for_pipeline: true
+---
+
+You are working on GitLab project `{{ project.tracker.project_id }}`.
+Target repo: `{{ project.git.repo_url }}`, default branch `{{ project.git.base_branch }}`.
+```
+
 Field constraints (violations fail at startup with a dotted path):
 
 | Field | Constraint |
@@ -555,11 +623,17 @@ Field constraints (violations fail at startup with a dotted path):
 | `scheduler.lease_ttl_ms` | `>= 60000` |
 | `scheduler.poll_interval_ms` | `>= 1000` |
 | `projects[].id` | lowercase alphanum + dashes; unique per config |
-| `projects[].workflow` | relative paths resolved against the config file directory |
-| `ci` (precedence) | `projects[].ci > team ci > workflow ci`; any override must set all three keys |
+| `projects[].project` | required; relative paths resolve against the team config directory |
+| `projects[].workflow_profile` | required; relative paths resolve against the team config directory |
+| `ci` (precedence) | `projects[].ci > team ci > workflow profile ci`; any override must set all three keys |
 
-Team config **does not duplicate** workflow labels / prompt / hooks; those
-still come from each project's own `WORKFLOW.md`.
+`projects[].workflow` (the legacy single-file pointer) is **no longer
+supported in team mode**; the loader rejects it with a dotted-path
+error.
+
+Compiled `WorkflowConfig` for each project is internal; use
+`issuepilot render-workflow --config ... --project ...` to inspect the
+effective workflow without persisting it on disk.
 
 ### 5.3 Validate and launch
 

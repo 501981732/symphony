@@ -1,7 +1,7 @@
 # IssuePilot 中心化 Workflow 配置设计
 
 日期：2026-05-17
-状态：已确认，实施计划已补充
+状态：已实现
 对应计划：`docs/superpowers/plans/2026-05-17-issuepilot-central-workflow-config.md`
 上级设计：
 
