@@ -26,6 +26,13 @@ export {
 } from "./parse.js";
 
 export {
+  CentralWorkflowConfigError,
+  compileCentralWorkflowProject,
+  type CentralWorkflowDefaults,
+  type CompileCentralWorkflowProjectInput,
+} from "./central.js";
+
+export {
   expandHomePath,
   expandWorkflowPaths,
   resolveTrackerSecret,
