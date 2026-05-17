@@ -19,7 +19,11 @@ export type {
   WorkspaceConfig,
 } from "./types.js";
 
-export { parseWorkflowFile, WorkflowConfigError } from "./parse.js";
+export {
+  parseWorkflowFile,
+  parseWorkflowString,
+  WorkflowConfigError,
+} from "./parse.js";
 
 export {
   expandHomePath,

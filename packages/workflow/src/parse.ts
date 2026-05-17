@@ -17,6 +17,7 @@ import type {
   HooksConfig,
   TrackerConfig,
   WorkflowConfig,
+  WorkflowSource,
   WorkspaceConfig,
 } from "./types.js";
 
@@ -175,12 +176,38 @@ export async function parseWorkflowFile(
   filePath: string,
 ): Promise<WorkflowConfig> {
   const raw = await readWorkflowFile(filePath);
+  return parseWorkflowString(raw, filePath);
+}
+
+/**
+ * Parse an in-memory WORKFLOW.md-compatible payload into a typed
+ * {@link WorkflowConfig}. Used by the central workflow compiler so a
+ * generated effective workflow can be validated without round-tripping
+ * through disk; `sourcePath` is recorded on `source.path` verbatim
+ * (typically pointing at a virtual `.generated/<project>.workflow.md`).
+ */
+export function parseWorkflowString(
+  raw: string,
+  sourcePath: string,
+): WorkflowConfig {
   const parsed = parseFrontMatter(raw);
   const fm = validateFrontMatter(parsed.data);
 
   const promptTemplate = parsed.content.replace(/^\n+/, "");
   const sha256 = createHash("sha256").update(raw, "utf8").digest("hex");
 
+  return buildWorkflowConfig(fm, promptTemplate, {
+    path: sourcePath,
+    sha256,
+    loadedAt: new Date().toISOString(),
+  });
+}
+
+function buildWorkflowConfig(
+  fm: WorkflowFrontMatter,
+  promptTemplate: string,
+  source: WorkflowSource,
+): WorkflowConfig {
   const tracker: TrackerConfig = {
     kind: fm.tracker.kind,
     baseUrl: fm.tracker.base_url,
@@ -258,11 +285,7 @@ export async function parseWorkflowFile(
     retention,
     pollIntervalMs: fm.poll_interval_ms,
     promptTemplate,
-    source: {
-      path: filePath,
-      sha256,
-      loadedAt: new Date().toISOString(),
-    },
+    source,
   };
 }
 

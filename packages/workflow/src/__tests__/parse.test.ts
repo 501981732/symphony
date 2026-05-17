@@ -3,7 +3,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
 
-import { parseWorkflowFile, WorkflowConfigError } from "../parse.js";
+import {
+  parseWorkflowFile,
+  parseWorkflowString,
+  WorkflowConfigError,
+} from "../parse.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name: string): string =>
@@ -199,5 +203,31 @@ describe("parseWorkflowFile", () => {
       name: "WorkflowConfigError",
       path: "tracker.token_env",
     });
+  });
+
+  it("parses workflow content from a generated source path", () => {
+    const raw = `---
+tracker:
+  kind: gitlab
+  base_url: "https://gitlab.example.com"
+  project_id: "group/project"
+git:
+  repo_url: "git@gitlab.example.com:group/project.git"
+---
+
+Handle issue {{ issue.identifier }}.
+`;
+
+    const cfg = parseWorkflowString(
+      raw,
+      "/srv/issuepilot-config/.generated/platform-web.workflow.md",
+    );
+
+    expect(cfg.source.path).toBe(
+      "/srv/issuepilot-config/.generated/platform-web.workflow.md",
+    );
+    expect(cfg.tracker.projectId).toBe("group/project");
+    expect(cfg.git.baseBranch).toBe("main");
+    expect(cfg.promptTemplate).toContain("Handle issue");
   });
 });
